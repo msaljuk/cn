@@ -727,6 +727,43 @@ let generate_global_assignments
       generate_ail_stat_strs
         ([], global_unmapping_stmts_ @ [ free_ghost_frame_stack_decl ])
     in
+
+    let global_unmapping_and_deinit_str =
+      let global_unmapping_stmts_ = List.map OE.generate_c_local_ownership_exit globals in
+
+      let deinit_stmts = 
+        match runtime with
+          | RC.C -> 
+              let free_ghost_array_fn_str = "free_ghost_array" in
+              let free_ghost_array_decl =
+                A.(
+                  AilSexpr
+                    (mk_expr
+                      (AilEcall (mk_expr (AilEident (Sym.fresh free_ghost_array_fn_str)), []))))
+              in
+
+              ([free_ghost_array_decl])
+          | RC.Lua ->
+              ([
+                gen_void_call("lua_cn_unload_runtime");
+                gen_void_call("lua_deinit")
+              ])
+      in
+
+      generate_ail_stat_strs ([], global_unmapping_stmts_ @ deinit_stmts)
+    in
+
+    (* luaL_close(L); *)
+
+    let lua_closelibs_sym = Sym.fresh "lua_close" in
+
+    let lua_closelibs_stmt = 
+      A.AilSexpr (mk_expr (A.AilEcall (mk_expr (A.AilEident lua_closelibs_sym), [lua_global_expr])))
+    in
+
+    let global_unmapping_str =
+      generate_ail_stat_strs ([], global_unmapping_stmts_ @ [ lua_closelibs_stmt ] @ [ free_ghost_array_decl ])
+    in
     [ (main_sym, (init_and_global_mapping_str, global_unmapping_str)) ]
 
 
