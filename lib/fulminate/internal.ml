@@ -675,6 +675,53 @@ let generate_global_assignments
       (stmt)
     in
 
+    let lua_global_sym =
+      CF.Symbol.fresh_description (CF.Symbol.SD_Id "L") in
+
+    let lua_global_expr
+      = mk_expr (A.AilEident lua_global_sym) in
+
+    (* L = luaL_newState(); *)
+
+    let lua_newstate_sym = Sym.fresh "luaL_newstate" in
+
+    let lua_init_stmt =
+      let call =
+        A.AilEassign
+          ( mk_expr (A.AilEident lua_global_sym),
+            mk_expr
+              (A.AilEcall
+                ( mk_expr (A.AilEident lua_newstate_sym),
+                  [] ))
+          )
+      in
+      A.AilSexpr (mk_expr call)
+    in
+
+    (* luaL_openLibs(L); *)
+
+    let lua_openlibs_sym = Sym.fresh "luaL_openlibs" in
+
+    let lua_openlibs_stmt = 
+      A.AilSexpr (mk_expr (A.AilEcall (mk_expr (A.AilEident lua_openlibs_sym), [ lua_global_expr ])))
+    in
+
+    (* luaL_dostring(L, "print('hello from lua')"); *)
+
+    let lua_doString_sym = Sym.fresh "luaL_dostring" in
+
+    let lua_print_string =
+      mk_expr
+        (A.AilEstr
+          ( None,
+            [
+              (Locations.other __LOC__, ["print('hello from lua')"])
+            ]
+          )) in
+
+    let lua_helloworld_stmt = 
+      A.AilSexpr (mk_expr (A.AilEcall (mk_expr (A.AilEident lua_doString_sym), [lua_global_expr; lua_print_string]))) in
+
     let init_and_global_mapping_str =
       let init_stmts = 
         match runtime with
@@ -784,7 +831,13 @@ let generate_global_assignments
 
       generate_ail_stat_strs
         ( [],
-            init_stmts
+          [ lua_init_stmt; lua_openlibs_stmt; lua_helloworld_stmt ] 
+          @ assignments
+          @ List.map
+              generate_flag_init_stat
+              [ (exec_c_locs_mode, "exec_c_locs_mode");
+                (experimental_ownership_stack_mode, "ownership_stack_mode")
+              ]
           @ global_map_stmts_ )
     in
 
@@ -813,7 +866,18 @@ let generate_global_assignments
       generate_ail_stat_strs ([], global_unmapping_stmts_ @ deinit_stmts)
     in
 
-    [ (main_sym, (init_and_global_mapping_str, global_unmapping_and_deinit_str)) ]
+    (* luaL_close(L); *)
+
+    let lua_closelibs_sym = Sym.fresh "lua_close" in
+
+    let lua_closelibs_stmt = 
+      A.AilSexpr (mk_expr (A.AilEcall (mk_expr (A.AilEident lua_closelibs_sym), [lua_global_expr])))
+    in
+
+    let global_unmapping_str =
+      generate_ail_stat_strs ([], global_unmapping_stmts_ @ [ lua_closelibs_stmt ] @ [ free_ghost_array_decl ])
+    in
+    [ (main_sym, (init_and_global_mapping_str, global_unmapping_str)) ]
 
 
 (* Needed for handling typedef definitions *)
