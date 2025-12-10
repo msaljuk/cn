@@ -174,6 +174,8 @@ void std_free_all(void) {
 void std_set_default_alloc(void) {
   ensure_initialized();
 
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wcast-function-type"
   cn_test_set_alloc(&g_std_alloc,
       (void* (*)(void*, size_t))std_malloc_aux,
       (void* (*)(void*, size_t, size_t))std_calloc_aux,
@@ -181,4 +183,5 @@ void std_set_default_alloc(void) {
       (void* (*)(void*, size_t, size_t))std_aligned_alloc_aux,
       (void (*)(void*, void*))std_free_aux,
       (void (*)(void*))std_free_all_aux);
+  #pragma GCC diagnostic pop
 }
