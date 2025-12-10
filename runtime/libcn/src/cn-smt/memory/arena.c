@@ -318,6 +318,8 @@ void cn_arena_free(cn_arena* arena, void* ptr) {
 void cn_arena_set_default_alloc(cn_arena* arena) {
   assert(arena != NULL);
 
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wcast-function-type"
   cn_test_set_alloc(arena,
       (void* (*)(void*, size_t))cn_arena_malloc,
       (void* (*)(void*, size_t, size_t))cn_arena_calloc,
@@ -325,11 +327,14 @@ void cn_arena_set_default_alloc(cn_arena* arena) {
       (void* (*)(void*, size_t, size_t))cn_arena_aligned_alloc,
       (void (*)(void*, void*))cn_arena_free,
       (void (*)(void*))cn_arena_free_all);
+  #pragma GCC diagnostic pop
 }
 
 void cn_arena_push_alloc(cn_arena* arena) {
   assert(arena != NULL);
 
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wcast-function-type"
   cn_test_push_alloc(arena,
       (void* (*)(void*, size_t))cn_arena_malloc,
       (void* (*)(void*, size_t, size_t))cn_arena_calloc,
@@ -337,4 +342,5 @@ void cn_arena_push_alloc(cn_arena* arena) {
       (void* (*)(void*, size_t, size_t))cn_arena_aligned_alloc,
       (void (*)(void*, void*))cn_arena_free,
       (void (*)(void*))cn_arena_free_all);
+  #pragma GCC diagnostic pop
 }
