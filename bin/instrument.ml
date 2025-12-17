@@ -10,7 +10,7 @@ let build_lua ~lua_src_dir ~print_steps =
     exit 1
   )
 
-let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~print_steps =
+let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~print_steps ~experimental_lua_runtime =
   let instrumented_filename =
     Option.value ~default:(Fulminate.get_instrumented_filename filename) output
   in
@@ -22,12 +22,15 @@ let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~prin
   let opam_switch_prefix = Sys.getenv "OPAM_SWITCH_PREFIX" in
   let runtime_prefix = opam_switch_prefix ^ "/lib/cn/runtime" in
 
-  let lua_src_dir = Sys.getcwd() ^ "/runtime/lua/src" in
-  build_lua ~lua_src_dir ~print_steps;
-
-  let includes =
-    "-I" ^ runtime_prefix ^ "/include/ -I" ^ lua_src_dir
+  let lua_src_dir, lua_inc_flags, lua_link_flags =
+    if not experimental_lua_runtime then ("", "", "") else
+    let src_dir = Sys.getcwd() ^ "/runtime/lua/src" in
+    (src_dir, " -I" ^ src_dir, Filename.concat src_dir "liblua.a -ldl -lm")
   in
+
+  if experimental_lua_runtime then build_lua ~lua_src_dir ~print_steps;
+
+  let includes = "-I" ^ runtime_prefix ^ "/include/" ^ lua_inc_flags in
   
   if not (Sys.file_exists runtime_prefix) then (
     print_endline
@@ -71,8 +74,7 @@ let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~prin
        ^ " "
        ^ Filename.concat runtime_prefix "libcn_exec.a"
        ^ " "
-       ^ Filename.concat lua_src_dir "liblua.a"
-       ^ " -ldl -lm")
+       ^ lua_link_flags)
     == 0
   then (
     if print_steps then
@@ -217,7 +219,8 @@ let generate_executable_specs
              ~no_debug_info
              ~output
              ~output_dir
-             ~print_steps))
+             ~print_steps
+             ~experimental_lua_runtime))
 
 
 open Cmdliner
