@@ -782,6 +782,7 @@ let main
           basefile
           ~exec_c_locs_mode
           ~experimental_ownership_stack_mode
+          ~experimental_lua_runtime
           ?max_bump_blocks
           ?bump_block_size
           cabs_tunit
@@ -800,7 +801,9 @@ let main
       | RC.Lua -> [ "#include <lua_wrappers.h>\n" ; "#include <cn-executable/utils.h>\n"]);
 
   output_to_oc oc cn_header_decls_list;
-  output_to_oc oc [ "#include <lua.h>\n"; "#include <lauxlib.h>\n"; "#include <lualib.h>\n" ];
+  if experimental_lua_runtime then (
+      output_to_oc oc [ "#include <lua.h>\n"; "#include <lauxlib.h>\n"; "#include <lualib.h>\n" ];
+  );
   output_to_oc
     oc
     [ "#ifndef offsetof\n";
@@ -813,9 +816,11 @@ let main
     oc
     ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
      ^ Globals.accessors_prototypes filename cabs_tunit prog5);
-  output_to_oc
-    oc
-    [ "/* GLOBAL LUA STATE */\n"; "lua_State *L;\n"; ];
+  if experimental_lua_runtime then (
+      output_to_oc
+        oc
+        [ "/* GLOBAL LUA STATE */\n"; "lua_State *L;\n"; ];
+  );
   (match
      Source_injection.(
        output_injections

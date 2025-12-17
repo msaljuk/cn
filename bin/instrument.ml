@@ -10,7 +10,7 @@ let build_lua ~lua_src_dir ~print_steps =
     exit 1
   )
 
-let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~print_steps =
+let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~print_steps ~experimental_lua_runtime =
   let instrumented_filename =
     Option.value ~default:(Fulminate.get_instrumented_filename filename) output
   in
@@ -22,12 +22,15 @@ let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~prin
   let opam_switch_prefix = Sys.getenv "OPAM_SWITCH_PREFIX" in
   let runtime_prefix = opam_switch_prefix ^ "/lib/cn/runtime" in
 
-  let lua_src_dir = Sys.getcwd() ^ "/runtime/lua/src" in
-  build_lua ~lua_src_dir ~print_steps;
-
-  let includes =
-    "-I" ^ runtime_prefix ^ "/include/ -I" ^ lua_src_dir
+  let lua_src_dir, lua_inc_flags, lua_link_flags =
+    if not experimental_lua_runtime then ("", "", "") else
+    let src_dir = Sys.getcwd() ^ "/runtime/lua/src" in
+    (src_dir, " -I" ^ src_dir, Filename.concat src_dir "liblua.a -ldl -lm")
   in
+
+  if experimental_lua_runtime then build_lua ~lua_src_dir ~print_steps;
+
+  let includes = "-I" ^ runtime_prefix ^ "/include/" ^ lua_inc_flags in
   
   if not (Sys.file_exists runtime_prefix) then (
     print_endline
@@ -71,8 +74,7 @@ let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~prin
        ^ " "
        ^ Filename.concat runtime_prefix "libcn_exec.a"
        ^ " "
-       ^ Filename.concat lua_src_dir "liblua.a"
-       ^ " -ldl -lm")
+       ^ lua_link_flags)
     == 0
   then (
     if print_steps then
@@ -218,8 +220,8 @@ let generate_executable_specs
              ~output
              ~output_dir
              ~print_steps
-             ~experimental_lua_runtime
-             ~is_handwritten))
+             ~experimental_lua_runtime))
+
 
 open Cmdliner
 
@@ -415,6 +417,42 @@ let run_existing_term =
   Term.(
     const run_existing
     $ Common.Flags.cc
+    $ Common.Flags.macros
+    $ Common.Flags.permissive
+    $ Common.Flags.incl_dirs
+    $ Common.Flags.incl_files
+    $ Verify.Flags.loc_pp
+    $ Common.Flags.debug_level
+    $ Common.Flags.print_level
+    $ Common.Flags.print_sym_nums
+    $ Common.Flags.no_timestamps
+    $ Flags.only
+    $ Flags.skip
+    $ Verify.Flags.diag
+    $ Common.Flags.csv_times
+    $ Common.Flags.astprints
+    $ Verify.Flags.dont_use_vip
+    $ Verify.Flags.fail_fast
+    $ Common.Flags.no_inherit_loc
+    $ Common.Flags.magic_comment_char_dollar
+    $ Common.Flags.allow_split_magic_comments
+    $ Flags.output
+    $ Flags.output_dir
+    $ Flags.without_ownership_checking
+    $ Flags.without_loop_invariants
+    $ Flags.with_loop_leak_checks
+    $ Flags.without_lemma_checks
+    $ Term.map
+        (fun (x, y) -> x || y)
+        (Term.product Flags.with_test_gen Flags.with_testing)
+    $ Flags.run
+    $ Flags.no_debug_info
+    $ Flags.exec_c_locs_mode
+    $ Flags.experimental_ownership_stack_mode
+    $ Flags.experimental_unions
+    $ Flags.experimental_curly_braces
+    $ Flags.experimental_lua_runtime
+    $ Flags.mktemp
     $ Flags.print_steps
     $ Flags.experimental_lua_runtime
     $ one_file
