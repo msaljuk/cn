@@ -2,16 +2,26 @@ module CF = Cerb_frontend
 module CB = Cerb_backend
 open Cn
 
-let build_lua ~lua_src_dir ~print_steps =
-  let cmd = Printf.sprintf "make -C %s liblua.a" lua_src_dir in
-  if print_steps then Printf.printf "Building Lua: %s\n%!" cmd;
-  if Sys.command cmd <> 0 then (
-    Printf.eprintf "Failed to build Lua in %s\n%!" lua_src_dir;
+let build_lua ~lua_root_dir ~print_steps =
+  let src_dir = lua_root_dir ^ "/src" in
+  let cn_dir = lua_root_dir ^ "/cn" in
+
+  let src_cmd = Printf.sprintf "make -C %s liblua.a" src_dir in
+  if print_steps then Printf.printf "Building Lua source: %s\n%!" src_cmd;
+  if Sys.command src_cmd <> 0 then (
+    Printf.eprintf "Failed to build Lua source in %s\n%!" src_dir;
+    exit 1
+  );
+
+  let cn_cmd = Printf.sprintf "make -C %s lua_wrappers.a" cn_dir in
+  if print_steps then Printf.printf "Building Lua cn wrappers: %s\n%!" cn_cmd;
+  if Sys.command cn_cmd <> 0 then (
+    Printf.eprintf "Failed to build Lua cn wrappers in %s\n%!" cn_dir;
     exit 1
   )
 
-let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~print_steps ~experimental_lua_runtime =
-  let instrumented_filename =
+let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~print_steps ~experimental_lua_runtime ~is_handwritten =
+  let instrumented_filename = if is_handwritten then filename else
     Option.value ~default:(Fulminate.get_instrumented_filename filename) output
   in
   let in_folder ?ext fn =
@@ -22,13 +32,23 @@ let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~prin
   let opam_switch_prefix = Sys.getenv "OPAM_SWITCH_PREFIX" in
   let runtime_prefix = opam_switch_prefix ^ "/lib/cn/runtime" in
 
-  let lua_src_dir, lua_inc_flags, lua_link_flags =
+  let lua_root_dir, lua_inc_flags, lua_link_flags =
     if not experimental_lua_runtime then ("", "", "") else
-    let src_dir = Sys.getcwd() ^ "/runtime/lua/src" in
-    (src_dir, " -I" ^ src_dir, Filename.concat src_dir "liblua.a -ldl -lm")
+
+    let root_dir = Sys.getcwd() ^ "/runtime/lua" in
+    let src_dir = root_dir ^ "/src" in
+    let cn_dir = root_dir ^ "/cn" in
+    
+    let combined_includes = " -I" ^ src_dir ^ " -I" ^ cn_dir in
+
+    let src_link = Printf.sprintf " %s/liblua.a" src_dir in
+    let cn_wrapper_link = Printf.sprintf " %s/lua_wrappers.a" cn_dir in
+    let combined_links = Printf.sprintf "%s %s -ldl -lm" src_link cn_wrapper_link in
+
+    (root_dir, combined_includes, combined_links)
   in
 
-  if experimental_lua_runtime then build_lua ~lua_src_dir ~print_steps;
+  if experimental_lua_runtime then build_lua ~lua_root_dir ~print_steps;
 
   let includes = "-I" ^ runtime_prefix ^ "/include/" ^ lua_inc_flags in
   
@@ -210,6 +230,8 @@ let generate_executable_specs
         ();
       Or_TypeError.return
         (if run then
+           let is_handwritten = false in
+
            run_instrumented_file
              ~filename
              ~cc
@@ -217,8 +239,8 @@ let generate_executable_specs
              ~output
              ~output_dir
              ~print_steps
-             ~experimental_lua_runtime))
-
+             ~experimental_lua_runtime
+             ~is_handwritten))
 
 open Cmdliner
 
@@ -388,55 +410,97 @@ module Flags = struct
     Arg.(value & flag & info [ "experimental-lua-runtime" ] ~doc)
 end
 
-let cmd =
-  let open Term in
-  let instrument_t =
-    const generate_executable_specs
-    $ Common.Flags.file
+let run_existing
+    cc
+    print_steps
+    experimental_lua_runtime
+    filename
+  =
+  let is_handwritten = true in
+  let output_dir = "" in
+
+  run_instrumented_file
+    ~filename
+    ~cc
+    ~no_debug_info:false
+    ~output:None
+    ~output_dir
+    ~print_steps
+    ~experimental_lua_runtime
+    ~is_handwritten
+
+let run_existing_term =
+  let one_file =
+    Term.map Common.there_can_only_be_one Common.Flags.file in
+
+  Term.(
+    const run_existing
     $ Common.Flags.cc
-    $ Common.Flags.macros
-    $ Common.Flags.permissive
-    $ Common.Flags.incl_dirs
-    $ Common.Flags.incl_files
-    $ Verify.Flags.loc_pp
-    $ Common.Flags.debug_level
-    $ Common.Flags.print_level
-    $ Common.Flags.print_sym_nums
-    $ Common.Flags.no_timestamps
-    $ Flags.only
-    $ Flags.skip
-    $ Verify.Flags.diag
-    $ Common.Flags.csv_times
-    $ Common.Flags.astprints
-    $ Verify.Flags.dont_use_vip
-    $ Verify.Flags.fail_fast
-    $ Common.Flags.no_inherit_loc
-    $ Common.Flags.magic_comment_char_dollar
-    $ Common.Flags.allow_split_magic_comments
-    $ Flags.output
-    $ Flags.output_dir
-    $ Flags.without_ownership_checking
-    $ Flags.without_loop_invariants
-    $ Flags.with_loop_leak_checks
-    $ Flags.without_lemma_checks
-    $ Term.map
-        (fun (x, y) -> x || y)
-        (Term.product Flags.with_test_gen Flags.with_testing)
-    $ Flags.run
-    $ Flags.no_debug_info
-    $ Flags.exec_c_locs_mode
-    $ Flags.experimental_ownership_stack_mode
-    $ Flags.experimental_unions
-    $ Flags.experimental_curly_braces
-    $ Flags.experimental_lua_runtime
-    $ Flags.mktemp
     $ Flags.print_steps
-    $ Flags.max_bump_blocks
-    $ Flags.bump_block_size
+    $ Flags.experimental_lua_runtime
+    $ one_file
+  )
+
+let run_existing_cmd =
+  let doc =
+    "Run an already-instrumented CN executable C file"
   in
+  let info =
+    Cmd.info "run-existing" ~doc
+  in
+  Cmd.v info run_existing_term
+
+let instrument_term =
+  let open Term in
+  const generate_executable_specs
+  $ Common.Flags.file
+  $ Common.Flags.cc
+  $ Common.Flags.macros
+  $ Common.Flags.permissive
+  $ Common.Flags.incl_dirs
+  $ Common.Flags.incl_files
+  $ Verify.Flags.loc_pp
+  $ Common.Flags.debug_level
+  $ Common.Flags.print_level
+  $ Common.Flags.print_sym_nums
+  $ Common.Flags.no_timestamps
+  $ Flags.only
+  $ Flags.skip
+  $ Verify.Flags.diag
+  $ Common.Flags.csv_times
+  $ Common.Flags.astprints
+  $ Verify.Flags.dont_use_vip
+  $ Verify.Flags.fail_fast
+  $ Common.Flags.no_inherit_loc
+  $ Common.Flags.magic_comment_char_dollar
+  $ Common.Flags.allow_split_magic_comments
+  $ Flags.output
+  $ Flags.output_dir
+  $ Flags.without_ownership_checking
+  $ Flags.without_loop_invariants
+  $ Flags.with_loop_leak_checks
+  $ Flags.without_lemma_checks
+  $ Term.map
+      (fun (x, y) -> x || y)
+      (Term.product Flags.with_test_gen Flags.with_testing)
+  $ Flags.run
+  $ Flags.no_debug_info
+  $ Flags.exec_c_locs_mode
+  $ Flags.experimental_ownership_stack_mode
+  $ Flags.experimental_unions
+  $ Flags.experimental_curly_braces
+  $ Flags.experimental_lua_runtime
+  $ Flags.mktemp
+  $ Flags.print_steps
+  $ Flags.max_bump_blocks
+  $ Flags.bump_block_size
+
+let instrument_cmd =
   let doc =
     "Instruments [FILE] with runtime C assertions that check the properties provided in \
      CN specifications.\n"
   in
   let info = Cmd.info "instrument" ~doc in
-  Cmd.v info instrument_t
+  Cmd.v info instrument_term
+
+let cmds = [ instrument_cmd; run_existing_cmd ]
