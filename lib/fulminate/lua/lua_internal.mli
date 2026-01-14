@@ -1,13 +1,6 @@
 open Cerb_frontend
 
-type executable_spec =
-  { pre_post : (AilSyntax.ail_identifier * (string list * string list)) list;
-    in_stmt : (Cerb_location.t * string list) list;
-    returns :
-      (Cerb_location.t
-      * (GenTypes.genTypeCategory AilSyntax.expression option * string list))
-        list
-  }
+type executable_spec = Internal.executable_spec
 
 val generate_c_assume_pres_internal
   :  string ->
@@ -99,6 +92,7 @@ val generate_global_assignments
   ?experimental_ownership_stack_mode:bool ->
   ?max_bump_blocks:int ->
   ?bump_block_size:int ->
+  String.t ->
   Cabs.translation_unit ->
   GenTypes.genTypeCategory AilSyntax.sigma ->
   unit Mucore.file ->

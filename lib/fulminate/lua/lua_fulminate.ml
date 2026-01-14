@@ -1,12 +1,11 @@
 module CF = Cerb_frontend
-module Cn_to_ail = Cn_to_ail
+module Cn_to_ail = Lua_cn_to_ail
 module A = CF.AilSyntax
 module Extract = Extract
 module Globals = Globals
-module Internal = Internal
-module Lua_Fulminate = Lua.Lua_fulminate
+module Internal = Lua_internal
 module Records = Records
-module Ownership = Ownership
+module Ownership = Lua_ownership
 module Utils = Utils
 
 let rec group_toplevel_defs new_list = function
@@ -504,6 +503,8 @@ let get_instrumented_filename filename =
   Filename.(remove_extension (basename filename)) ^ ".exec.c"
 
 
+let get_lua_filename basefile = (Filename.remove_extension basefile) ^ ".lua"
+
 let get_filename_with_prefix output_dir filename = Filename.concat output_dir filename
 
 (* TODO: fix + add CLI flag *)
@@ -534,7 +535,7 @@ let _gen_compile_commands_json cc output_dir out_filename =
   close_out compile_commands_json_oc
 
 
-let main_c
+let main
   ~without_ownership_checking
   ~without_loop_invariants
   ~with_loop_leak_checks
@@ -546,9 +547,10 @@ let main_c
   ~skip_and_only
   ?max_bump_blocks
   ?bump_block_size
+  basefile
   filename
   _cc
-  in_filename
+  in_filename (* WARNING: this file will be deleted after this function *)
   out_filename
   output_dir
   cabs_tunit
@@ -556,12 +558,14 @@ let main_c
     ail_prog)
   prog5
   =
-  let out_filename = get_filename_with_prefix output_dir out_filename in
+  let out_c_filename = get_filename_with_prefix output_dir out_filename in
+  let out_lua_filename = get_lua_filename basefile in
   (* disabled until fixed *)
-  (* _gen_compile_commands_json cc output_dir out_filename; *)
+  (* _gen_compile_commands_json cc output_dir out_c_filename; *)
   let (full_instrumentation : Extract.instrumentation list), _ =
     Extract.collect_instrumentation cabs_tunit prog5
   in
+
   (* Filters based on functions passed to --only and/or --skip *)
   let filtered_instrumentation, filtered_sigm =
     filter_using_skip_and_only skip_and_only (prog5, sigm, full_instrumentation)
@@ -574,8 +578,8 @@ let main_c
   in
   let filtered_ail_prog = (startup_sym_opt, filtered_sigm) in
   Records.populate_record_map filtered_instrumentation prog5;
-  let executable_spec 
-    = generate_c_specs
+  let executable_spec =
+    generate_c_specs
         without_ownership_checking
         without_loop_invariants
         with_loop_leak_checks
@@ -587,29 +591,8 @@ let main_c
         prog5
   in
   let c_datatype_defs = generate_c_datatypes sigm in
-  let c_function_defs, c_function_decls, _c_function_locs =
-    generate_c_functions filename cabs_tunit prog5 sigm
-  in
-  let c_predicate_defs, c_predicate_decls, _c_predicate_locs =
-    generate_c_predicates filename cabs_tunit prog5 sigm
-  in
-  let c_lemma_defs, c_lemma_decls =
-    if without_lemma_checks then
-      ("", "")
-    else
-      generate_c_lemmas filename cabs_tunit sigm prog5
-  in
-  let conversion_function_defs, conversion_function_decls =
-    generate_conversion_and_equality_functions filename sigm
-  in
-  let ownership_function_defs, ownership_function_decls =
-    generate_ownership_functions without_ownership_checking !Cn_to_ail.ownership_ctypes
-  in
   let ordered_ail_tag_defs = order_ail_tag_definitions sigm.tag_definitions in
   let c_tag_defs = generate_c_tag_def_strs ordered_ail_tag_defs in
-  let cn_converted_struct_defs = generate_cn_versions_of_structs ordered_ail_tag_defs in
-  let record_fun_defs, record_fun_decls = Records.generate_c_record_funs sigm in
-  let record_defs = Records.generate_all_record_strs () in
   let fn_call_ghost_args_injs =
     generate_fn_call_ghost_args_injs filename cabs_tunit sigm prog5
   in
@@ -623,60 +606,13 @@ let main_c
              can't include them here, they'll clash in essentially unavoidable
              ways with the stuff we already included and processed *)
           "#include <cn-executable/cerb_types.h>\n";
-          (* TODO necessary because of the types in the struct decls. proper
-             handling would be to hoist all definitions and toposort them *)
-          (* TODO actually instead of *hoisting* types we can *lower* structs
-             etc to the highest place they're valid *)
-          "typedef __cerbty_intptr_t intptr_t;\n";
-          "typedef __cerbty_uintptr_t uintptr_t;\n";
-          "typedef __cerbty_intmax_t intmax_t;\n";
-          "typedef __cerbty_uintmax_t uintmax_t;\n";
-          (* TODO need to inject definitions for all the __cerbvars in cerberus
-             builtins.lem. Hoisting/lowering doesn't affect needing to do this *)
-          "static const int __cerbvar_INT_MAX = 0x7fffffff;\n";
-          "static const int __cerbvar_INT_MIN = ~0x7fffffff;\n";
-          "static const unsigned long long __cerbvar_SIZE_MAX = ~(0ULL);\n";
-          "_Noreturn void abort(void);"
         ];
         [ c_tag_defs ];
-        [ (if not (String.equal record_defs "") then "\n/* CN RECORDS */\n\n" else "");
-          record_defs;
-          cn_converted_struct_defs
-        ];
-        (if List.is_empty c_datatype_defs then [] else [ "/* CN DATATYPES */" ]);
-        List.map snd c_datatype_defs;
-        [ "\n\n/* OWNERSHIP FUNCTIONS */\n\n";
-          ownership_function_decls;
-          "/* CONVERSION FUNCTIONS */\n";
-          conversion_function_decls;
-          "/* RECORD FUNCTIONS */\n";
-          record_fun_decls;
-          c_function_decls;
-          "\n";
-          c_predicate_decls;
-          c_lemma_decls;
+        [
           cn_ghost_enum
         ];
         cn_ghost_call_site_glob
       ]
-  in
-  (* Definitions for CN helper functions *)
-  (* TODO: Topological sort *)
-  let cn_defs_list =
-    [ (* record_equality_fun_strs; *)
-      (* record_equality_fun_strs'; *)
-      "/* RECORD */\n";
-      record_fun_defs;
-      "/* CONVERSION */\n";
-      conversion_function_defs;
-      "/* OWNERSHIP FUNCTIONS */\n";
-      ownership_function_defs;
-      "/* CN FUNCTIONS */\n";
-      c_function_defs;
-      "\n";
-      c_predicate_defs;
-      c_lemma_defs
-    ]
   in
   let c_datatype_locs = List.map fst c_datatype_defs in
   let toplevel_locs = group_toplevel_defs [] c_datatype_locs in
@@ -757,6 +693,7 @@ let main_c
           ~experimental_ownership_stack_mode
           ?max_bump_blocks
           ?bump_block_size
+          out_lua_filename
           cabs_tunit
           sigm
           prog5
@@ -764,21 +701,9 @@ let main_c
       global_ownership_init_pair @ executable_spec.pre_post)
   in
   (* Save things *)
-  let oc = Stdlib.open_out out_filename in
-  output_to_oc oc [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ];
+  let oc = Stdlib.open_out out_c_filename in
+  output_to_oc oc [ "#include <lua_wrappers.h>\n" ; "#include <cn-executable/utils.h>\n"];
   output_to_oc oc cn_header_decls_list;
-  output_to_oc
-    oc
-    [ "#ifndef offsetof\n";
-      "#define offsetof(st, m) ((__cerbty_size_t)((char *)&((st *)0)->m - (char *)0))\n";
-      "#endif\n"
-    ];
-  output_string oc "#pragma GCC diagnostic ignored \"-Wattributes\"\n";
-  output_string oc "\n/* GLOBAL ACCESSORS */\n";
-  output_string
-    oc
-    ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
-     ^ Globals.accessors_prototypes filename cabs_tunit prog5);
   (match
      Source_injection.(
        output_injections
@@ -799,73 +724,5 @@ let main_c
      (* TODO(Christopher/Rini): maybe lift this error to the exception monad? *)
      prerr_endline str);
   output_to_oc oc [ Globals.accessors_str filename cabs_tunit prog5 ];
-  output_to_oc oc cn_defs_list;
   close_out oc;
   Stdlib.Sys.remove in_filename
-
-let main
-      ~without_ownership_checking
-      ~without_loop_invariants
-      ~with_loop_leak_checks
-      ~without_lemma_checks
-      ~exec_c_locs_mode
-      ~experimental_ownership_stack_mode
-      ~experimental_curly_braces
-      ~experimental_lua_runtime
-      ~with_testing
-      ~skip_and_only
-      ?max_bump_blocks
-      ?bump_block_size
-      basefile
-      filename
-      _cc
-      in_filename (* WARNING: this file will be deleted after this function *)
-      out_filename
-      output_dir
-      cabs_tunit
-      ail_prog
-      prog5
-  =
-    if experimental_lua_runtime then
-      Lua_Fulminate.main
-        ~without_ownership_checking
-        ~without_loop_invariants
-        ~with_loop_leak_checks
-        ~without_lemma_checks
-        ~exec_c_locs_mode
-        ~experimental_ownership_stack_mode
-        ~experimental_curly_braces
-        ~with_testing
-        ~skip_and_only
-        ?max_bump_blocks
-        ?bump_block_size
-        basefile
-        filename
-        _cc
-        in_filename
-        out_filename
-        output_dir
-        cabs_tunit
-        ail_prog
-        prog5
-    else
-      main_c 
-        ~without_ownership_checking
-        ~without_loop_invariants
-        ~with_loop_leak_checks
-        ~without_lemma_checks
-        ~exec_c_locs_mode
-        ~experimental_ownership_stack_mode
-        ~experimental_curly_braces
-        ~with_testing
-        ~skip_and_only
-        ?max_bump_blocks
-        ?bump_block_size
-        filename
-        _cc
-        in_filename
-        out_filename
-        output_dir
-        cabs_tunit
-        ail_prog
-        prog5

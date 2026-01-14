@@ -2,17 +2,12 @@ open PPrint
 open Utils
 module CF = Cerb_frontend
 module C = CF.Ctype
+module Cn_to_ail = Lua_cn_to_ail
 module A = CF.AilSyntax
 module AT = ArgumentTypes
-module OE = Ownership
+module OE = Lua_ownership
 
-type executable_spec =
-  { pre_post : (CF.Symbol.sym * (string list * string list)) list;
-    in_stmt : (Cerb_location.t * string list) list;
-    returns :
-      (Cerb_location.t * (CF.GenTypes.genTypeCategory A.expression option * string list))
-        list
-  }
+type executable_spec = Internal.executable_spec
 
 let doc_to_pretty_string = CF.Pp_utils.to_plain_pretty_string
 
@@ -163,7 +158,7 @@ let empty_cn_spec_inj_info : cn_spec_inj_info =
   { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = [] }
 
 
-let generate_c_specs_from_cn_internal
+let generate_c_specs_lua_from_cn_internal
       without_ownership_checking
       without_loop_invariants
       with_loop_leak_checks
@@ -220,7 +215,7 @@ let generate_c_specs_from_cn_internal
   { pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs }
 
 
-let generate_c_specs_internal
+let generate_c_specs_lua_internal
       without_ownership_checking
       without_loop_invariants
       with_loop_leak_checks
@@ -238,7 +233,7 @@ let generate_c_specs_internal
   in
   let cn_spec_inj_info =
     if contains_user_spec then
-      generate_c_specs_from_cn_internal
+      generate_c_specs_lua_from_cn_internal
         without_ownership_checking
         without_loop_invariants
         with_loop_leak_checks
@@ -327,7 +322,7 @@ let generate_c_specs
   : executable_spec
   =
   let generate_c_spec (instrumentation : Extract.instrumentation) =
-    generate_c_specs_internal
+    generate_c_specs_lua_internal
       without_ownership_checking
       without_loop_invariants
       with_loop_leak_checks
@@ -643,79 +638,124 @@ let get_main (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =
 let has_main (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =
   List.non_empty (get_main sigm)
 
-
 let generate_global_assignments
       ?(exec_c_locs_mode = false)
       ?(experimental_ownership_stack_mode = false)
-      ?max_bump_blocks
-      ?bump_block_size
+      ?(max_bump_blocks = 0)
+      ?(bump_block_size = 0)
+      (lua_filename : String.t)
       (cabs_tunit : CF.Cabs.translation_unit)
       (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
       (prog5 : unit Mucore.file)
   =
-  (* For the experimental ownership stack mode, source locations are required *)
+  
   let exec_c_locs_mode =
     if experimental_ownership_stack_mode then false else exec_c_locs_mode
-  in
-  let generate_flag_init_stat (flag, str) =
-    let gen_ail_const_from_flag flag =
-      A.(
-        AilEconst
-          (ConstantInteger (IConstant (Z.of_int (Bool.to_int flag), Decimal, None))))
-    in
-    let ownership_stack_mode_init_expr_ =
-      A.(
-        AilEcall
-          ( mk_expr (AilEident (Sym.fresh ("initialise_" ^ str))),
-            [ mk_expr (gen_ail_const_from_flag flag) ] ))
-    in
-    A.AilSexpr (mk_expr ownership_stack_mode_init_expr_)
   in
   match get_main sigm with
   | [] -> []
   | (main_sym, _) :: _ ->
     let globals = Cn_to_ail.extract_global_variables cabs_tunit prog5 in
-    let global_map_fcalls = List.map OE.generate_c_local_ownership_entry_fcall globals in
-    let global_map_stmts_ = List.map (fun e -> A.AilSexpr e) global_map_fcalls in
-    let ghost_array_size = Extract.max_num_of_ghost_args prog5 in
-    let assignments =
-      OE.get_ownership_global_init_stats
-        ~ghost_array_size
-        ?max_bump_blocks
-        ?bump_block_size
-        ()
-    in
 
-    let maybe_lua_main_init_stmts = ref [] in
+    let gen_lua_void_call (fn_name: String.t) = 
+      let sym = Sym.fresh fn_name in
+      let stmt = 
+        (A.AilSexpr (mk_expr (A.AilEcall (mk_expr (A.AilEident sym), [ ]))))
+      in
+      (stmt)
+    in
 
     let init_and_global_mapping_str =
+      let gen_lua_runtime_load (
+        filename,
+        ghost_array_size,
+        max_bump_blocks,
+        bump_block_size,
+        exec_c_locs_mode,
+        ownership_stack_mode) 
+      =
+        let gen_ail_const_from_int (integer :int) = 
+          mk_expr (
+            A.(
+              AilEconst
+                (ConstantInteger (IConstant (Z.of_int (integer), Decimal, None)))))
+        in
+
+        let gen_ail_const_from_bool (boolean: bool) =
+          mk_expr (
+            A.(
+              AilEconst
+                (ConstantInteger (IConstant (Z.of_int (Bool.to_int boolean), Decimal, None)))))
+        in
+
+        let lua_load_runtime_sym = Sym.fresh "lua_cn_load_runtime" in
+
+        let lua_runtime_file_expr =
+          mk_expr (
+            A.AilEstr ( 
+              None,
+                [
+                  (Locations.other __LOC__, ["./" ^ filename])
+                ]
+              )
+            ) 
+        in
+        let ghost_array_size_expr = gen_ail_const_from_int ghost_array_size in
+        let max_bump_blocks_expr = gen_ail_const_from_int max_bump_blocks in
+        let bump_block_size_expr = gen_ail_const_from_int bump_block_size in
+        let exec_c_locs_mode_expr = gen_ail_const_from_bool exec_c_locs_mode in
+        let ownership_stack_mode_expr = gen_ail_const_from_bool ownership_stack_mode in
+
+        let lua_load_runtime_stmt = 
+            A.AilSexpr (
+              mk_expr (
+                A.AilEcall (mk_expr (
+                  A.AilEident lua_load_runtime_sym), 
+                  [ 
+                    lua_runtime_file_expr; 
+                    ghost_array_size_expr; 
+                    max_bump_blocks_expr;
+                    bump_block_size_expr;
+                    exec_c_locs_mode_expr; 
+                    ownership_stack_mode_expr ]))) 
+        in
+
+      (lua_load_runtime_stmt)
+      in
+
+      let global_map_fcalls = List.map OE.generate_c_local_ownership_entry_fcall globals in
+      let global_map_stmts_ = List.map (fun e -> A.AilSexpr e) global_map_fcalls in
+      let ghost_array_size = Extract.max_num_of_ghost_args prog5 in
+
       generate_ail_stat_strs
         ( [],
-          !maybe_lua_main_init_stmts
-          @ assignments
-          @ List.map
-              generate_flag_init_stat
-              [ (exec_c_locs_mode, "exec_c_locs_mode");
-                (experimental_ownership_stack_mode, "ownership_stack_mode")
-              ]
+          [
+            gen_lua_void_call("lua_init"); 
+            gen_lua_runtime_load(
+              lua_filename,
+              ghost_array_size,
+              max_bump_blocks,
+              bump_block_size,
+              exec_c_locs_mode,
+              experimental_ownership_stack_mode
+            );
+          ]
           @ global_map_stmts_ )
     in
-    let global_unmapping_stmts_ = List.map OE.generate_c_local_ownership_exit globals in
-    let free_ghost_array_fn_str = "free_ghost_array" in
-    let free_ghost_array_decl =
-      A.(
-        AilSexpr
-          (mk_expr
-             (AilEcall (mk_expr (AilEident (Sym.fresh free_ghost_array_fn_str)), []))))
+
+    let global_unmapping_and_deinit_str =
+      let global_unmapping_stmts_ = List.map OE.generate_c_local_ownership_exit globals in
+      let deinit_stmts = 
+      [
+        gen_lua_void_call("lua_cn_unload_runtime");
+        gen_lua_void_call("lua_deinit")
+      ]
+      in
+
+      generate_ail_stat_strs ([], global_unmapping_stmts_ @ deinit_stmts)
     in
 
-
-    let maybe_lua_main_deinit_stmts = ref [] in
-
-    let global_unmapping_str =
-      generate_ail_stat_strs ([], global_unmapping_stmts_ @ !maybe_lua_main_deinit_stmts @ [ free_ghost_array_decl ])
-    in
-    [ (main_sym, (init_and_global_mapping_str, global_unmapping_str)) ]
+    [ (main_sym, (init_and_global_mapping_str, global_unmapping_and_deinit_str)) ]
 
 
 (* Needed for handling typedef definitions *)

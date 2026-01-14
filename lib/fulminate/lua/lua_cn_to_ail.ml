@@ -11,7 +11,7 @@ module LRT = LogicalReturnTypes
 module RT = ReturnTypes
 module LAT = LogicalArgumentTypes
 module AT = ArgumentTypes
-module OE = Ownership
+module OE = Lua_ownership
 
 let getter_str filename sym =
   "cn_test_get_" ^ Utils.static_prefix filename ^ "_" ^ Sym.pp_string sym
@@ -514,7 +514,6 @@ let wrap_with_convert_from_cn_bool expr =
 let cn_bool_true_expr : CF.GenTypes.genTypeCategory A.expression =
   mk_expr (wrap_with_convert_to true_const BT.Bool)
 
-
 let gen_bump_alloc_bs_and_ss () =
   let frame_id_ctype =
     mk_ctype ~annots:[ CF.Annot.Atypedef (Sym.fresh "cn_bump_frame_id") ] Void
@@ -537,6 +536,15 @@ let gen_bump_alloc_bs_and_ss () =
   in
   let end_stat_ = A.(AilSexpr (mk_expr end_fn_call)) in
   (frame_id_binding, start_stat_, end_stat_)
+
+let gen_lua_function_frames () = 
+  let push_fn_call =
+    A.(AilEcall (mk_expr (AilEident (Sym.fresh "lua_cn_frame_push_function")), []))
+  in
+  let pop_fn_call = 
+    A.(AilEcall (mk_expr (AilEident (Sym.fresh "lua_cn_frame_pop_function")), []))
+  in
+  (A.AilSexpr (mk_expr push_fn_call), A.AilSexpr (mk_expr pop_fn_call))
 
 let gen_bool_while_loop sym bt start_expr while_cond ?(if_cond_opt = None) (bs, ss, e) =
   (*
@@ -4458,19 +4466,10 @@ let rec cn_to_ail_lat_2
     in
     let ail_loop_invariants = List.filter_map Fun.id ail_loop_invariants in
     let post_bs, post_ss = cn_to_ail_post filename dts globals preds post in
-    let ownership_stats_ =
-      if without_ownership_checking then
-        []
-      else
-        List.map
-          (fun fn_sym ->
-             mk_stmt (A.AilSexpr (mk_expr (AilEcall (mk_expr (AilEident fn_sym), [])))))
-          OE.[ cn_stack_depth_decr_sym; cn_postcondition_leak_check_sym ]
-    in
     let block =
       A.(
         AilSblock
-          (return_cn_binding @ post_bs, return_cn_decl @ post_ss @ ownership_stats_))
+          (return_cn_binding @ post_bs, return_cn_decl @ post_ss))
     in
     { pre = ([], []);
       post = ([], [ block ]);
@@ -4670,25 +4669,24 @@ let cn_to_ail_pre_post
           ail_executable_spec
           ([ ghost_spec_binding ], [ ghost_spec_decl ])
     in
-    let ownership_stats_ =
-      if without_ownership_checking then
-        []
-      else (
-        let cn_stack_depth_incr_stat_ =
-          A.AilSexpr
-            (mk_expr (AilEcall (mk_expr (AilEident OE.cn_stack_depth_incr_sym), [])))
-        in
-        [ cn_stack_depth_incr_stat_ ])
+    let lua_frame_function_push, lua_frame_function_pop =
+      gen_lua_function_frames ()
     in
-    let bump_alloc_binding, bump_alloc_start_stat_, bump_alloc_end_stat_ =
-      gen_bump_alloc_bs_and_ss ()
-    in
+
+    (*
+    @note saljuk: making this empty for now and not using it. Eventually, this logic
+    will be replaced with lua wrapper calls instead of the current inline pre/post/assert
+    checks but I need more context on AIL before that happens
+    *)
     let ail_executable_spec' =
-      prepend_to_precondition
+      if true then
+        prepend_to_precondition
+          empty_ail_executable_spec
+          ([ ], [ lua_frame_function_push; ] )
+      else
         ail_executable_spec
-        ([ bump_alloc_binding ], bump_alloc_start_stat_ :: ownership_stats_)
     in
-    append_to_postcondition ail_executable_spec' ([], [ bump_alloc_end_stat_ ])
+    append_to_postcondition ail_executable_spec' ([], [ lua_frame_function_pop; ])
   | None -> empty_ail_executable_spec
 
 
