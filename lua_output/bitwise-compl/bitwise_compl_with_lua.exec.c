@@ -20,7 +20,7 @@ int main()
   lua_init();
   lua_cn_load_runtime("./lua_output/bitwise-compl/bitwise_compl.lua");
 
-  lua_cn_frame_push();
+  lua_cn_frame_push_function();
 
   /*@ assert (~0i32 == -1i32); @*/
   lua_cn_main_assert_a();
@@ -39,7 +39,7 @@ int main()
   lua_cn_ghost_remove((&x), sizeof(signed int));
   lua_cn_ghost_remove((&y), sizeof(signed int));
 
-  lua_cn_frame_pop();
+  lua_cn_frame_pop_function();
 
   lua_cn_unload_runtime();
   lua_deinit();
