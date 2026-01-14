@@ -20,7 +20,7 @@ function cn.divison.postcondition(ret)
     cn.assert(cn.frames.get_local("return") == (cn.frames.get_local("x") // cn.frames.get_local("y")), cn.spec_mode.POST);
     cn.error_stack.pop()
 
-    print("Precondition Passed in Lua")
+    print("Postcondition Passed in Lua")
 end
 
 return cn
