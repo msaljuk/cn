@@ -18,7 +18,7 @@ void foo(enum flags flag, u32 level) {
   lua_cn_ghost_add((&table), sizeof(_Bool), lua_cn_get_stack_depth());
 
   if (CN_LOAD(table) && (CN_LOAD(flag) & flag_1)) {
-    c_remove_from_ghost_state((&table), sizeof(_Bool));
+    lua_cn_ghost_remove((&table), sizeof(_Bool));
   }
 
   lua_cn_ghost_remove((&table), sizeof(_Bool));
