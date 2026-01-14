@@ -1,6 +1,15 @@
 local cn = require("lua_cn_runtime_core")
 
+-- C calls
+
 -- CN spec
+
+--[[static cn_bool* bw_compl_expr()
+{
+  cn_bits_i32* x = convert_to_cn_bits_i32(2LL);
+  return cn_bits_i32_equality(cn_bits_i32_bw_compl(cn_bits_i32_add(x, x)), convert_to_cn_bits_i32(-5LL));
+}
+]]--
 
 local function bw_compl_expr()
     local x = 2;
@@ -29,7 +38,8 @@ end
 
 function cn.main.assert.c(y)
     cn.error_stack.push("    /*@ assert(y == -1i32); @*/\n       ^~~~~~~~~~~~~~~~~~~~~~ ./tests/cn/bitwise_compl.c:14:8-30")
-    cn.assert(y == -1, cn.spec_mode.STATEMENT);
+    local y_val = cn.c.get_integer(y)
+    cn.assert(y_val == -1, cn.spec_mode.STATEMENT);
     cn.error_stack.pop()
 end
 
