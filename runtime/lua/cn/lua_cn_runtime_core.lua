@@ -51,13 +51,7 @@ local cn = {
 
         -- c types reading
         get_integer = {},
-        get_pointer = {},
-        get_integer_size = {},
-        get_pointer_size = {},
-
-        -- c loop checks
-        initialise_loop_ownership_state = {},
-        loop_put_back_ownership = {},
+        get_pointer = {}
     }
 }
 
@@ -85,22 +79,14 @@ end
 FRAME
 --]]
 
-function cn.frames.push_function()
+function cn.frames.push()
     cn.frames[#cn.frames + 1] = {}
     cn.c.ghost_state_depth_incr()
 end
 
-function cn.frames.pop_function()
+function cn.frames.pop()
     cn.c.ghost_state_depth_decr()
     cn.c.postcondition_leak_check()
-    cn.frames[#cn.frames] = nil
-end
-
-function cn.frames.push_loop()
-    cn.frames[#cn.frames + 1] = {}
-end
-
-function cn.frames.pop_loop()
     cn.frames[#cn.frames] = nil
 end
 
@@ -120,8 +106,8 @@ end
 OWNERSHIP GHOST STATE
 --]]
 
-function cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
-    cn.c.get_or_put_ownership(mode, base_addr, size, loop_ownership)
+function cn.ghost_state.get_or_put_ownership(mode, base_addr, size)
+    cn.c.get_or_put_ownership(mode, base_addr, size, 0)
 end
 
 function cn.ghost_state.stack_depth_incr()
