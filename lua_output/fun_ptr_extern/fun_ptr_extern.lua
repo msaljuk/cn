@@ -4,14 +4,6 @@ local cn = require("lua_cn_runtime_core")
 CN spec
 --]]
 
---[[
-predicate (void) Is_Known_Binop (pointer f) {
-  assert (ptr_eq(f, &f1) || ptr_eq(f, &f2));
-  return;
-}
-@*/
---]]
-
 local function Is_Known_Binop(ret)
     return (ret == cn.frames.get_local("f1") or ret == cn.frames.get_local("f2"))
 end
