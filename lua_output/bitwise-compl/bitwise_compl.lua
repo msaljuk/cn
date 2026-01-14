@@ -29,7 +29,7 @@ end
 
 function cn.main.assert.c(y)
     cn.error_stack.push("    /*@ assert(y == -1i32); @*/\n       ^~~~~~~~~~~~~~~~~~~~~~ ./tests/cn/bitwise_compl.c:14:8-30")
-    cn.assert(y == -1, cn.spec_mode.STATEMENT);
+    cn.assert(cn.c.get_integer(y) == -1, cn.spec_mode.STATEMENT);
     cn.error_stack.pop()
 end
 
