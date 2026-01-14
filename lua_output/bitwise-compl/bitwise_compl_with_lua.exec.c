@@ -11,7 +11,7 @@ function (boolean) bw_compl_expr() {
 
 void lua_cn_main_assert_a();
 void lua_cn_main_assert_b();
-void lua_cn_main_assert_c(int* y);
+void lua_cn_main_assert_c(int y);
 
 int main()
 {
@@ -34,7 +34,7 @@ int main()
   lua_cn_ghost_add((&y), sizeof(signed int), get_cn_stack_depth());
 
   /*@ assert(y == -1i32); @*/
-  lua_cn_main_assert_c(&y);
+  lua_cn_main_assert_c(y);
 
   lua_cn_ghost_remove((&x), sizeof(signed int));
   lua_cn_ghost_remove((&y), sizeof(signed int));
@@ -79,7 +79,7 @@ void lua_cn_main_assert_b() {
   lua_pop(L, 2);
 }
 
-void lua_cn_main_assert_c(int* y) {
+void lua_cn_main_assert_c(int y) {
   lua_State* L = lua_get_state();
 
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
@@ -87,7 +87,7 @@ void lua_cn_main_assert_c(int* y) {
   lua_getfield(L, -1, "assert");
   lua_getfield(L, -1, "c");
 
-  lua_pushinteger(L, lua_convert_ptr_to_int(y));
+  lua_pushinteger(L, y);
 
   if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
       fprintf(stderr, "Error calling main.assert.c: %s\n", lua_tostring(L, -1));
