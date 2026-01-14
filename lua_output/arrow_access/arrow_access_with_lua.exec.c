@@ -20,7 +20,7 @@ void lua_cn_arrow_access_2_postcondition();
 
 void arrow_access_1()
 {
-  lua_cn_frame_push();
+  lua_cn_frame_push_function();
   
   struct s origin = { .x = 0, .y = 0 };
 
@@ -48,7 +48,7 @@ void arrow_access_1()
   lua_cn_ghost_remove((&p), sizeof(struct s*));
   lua_cn_ghost_remove((&q), sizeof(struct s*));
 
-  lua_cn_frame_pop();
+  lua_cn_frame_pop_function();
 }
 
 void arrow_access_2 (struct s *origin)
@@ -62,7 +62,7 @@ ensures
   (*origin).y == 7i32;
 @*/
 {
-  lua_cn_frame_push();
+  lua_cn_frame_push_function();
 
   /* EXECUTABLE CN PRECONDITION */
   lua_cn_arrow_access_2_precondition(origin);
@@ -78,7 +78,7 @@ ensures
   /* EXECUTABLE CN POSTCONDITION */
   lua_cn_arrow_access_2_postcondition();
 
-  lua_cn_frame_pop();
+  lua_cn_frame_pop_function();
 }
 
 int main(void)
