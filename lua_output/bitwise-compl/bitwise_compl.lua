@@ -1,7 +1,5 @@
 local cn = require("lua_cn_runtime_core")
 
--- C calls
-
 -- CN spec
 
 local function bw_compl_expr()
