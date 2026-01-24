@@ -166,7 +166,13 @@ void bind_cn_c_functions() {
     lua_cn_register_c_func("loop_put_back_ownership", c_loop_put_back_ownership);
 }
 
-void lua_cn_load_runtime(const char* filename) {
+void lua_cn_load_runtime(
+    const char* filename, 
+    int ghost_array_size,
+    int max_bump_blocks,
+    int bump_block_size,
+    _Bool exec_c_locs_mode,
+    _Bool ownership_stack_mode) {
     assert(lua_state != NULL);
 
     // C runtime (keeping this as is for now, especially because some of the Lua
@@ -176,7 +182,17 @@ void lua_cn_load_runtime(const char* filename) {
     alloc_ghost_array(0);
     initialise_exec_c_locs_mode(0);
     initialise_ownership_stack_mode(0);
+    alloc_ghost_array(ghost_array_size);
+    initialise_exec_c_locs_mode(exec_c_locs_mode);
+    initialise_ownership_stack_mode(ownership_stack_mode);
 
+    if (max_bump_blocks > 0) {
+        cn_bump_set_max_blocks(max_bump_blocks);
+    }
+    if (bump_block_size > 0) {
+        cn_bump_set_block_size(bump_block_size);
+    }
+    
     lua_getglobal(lua_state, "package");
     lua_getfield(lua_state, -1, "path"); // get package.path
     const char *current_path = lua_tostring(lua_state, -1);
