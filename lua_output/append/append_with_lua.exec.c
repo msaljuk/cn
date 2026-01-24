@@ -90,7 +90,7 @@ int main(void)
   signed int ret = 0;
 
   lua_init();
-  lua_cn_load_runtime("./lua_output/append.lua");
+  lua_cn_load_runtime("./lua_output/append.lua", 0, 0, 0, 0, 0);
   lua_cn_register_c_func("read_int_list", lua_cn_read_int_list);
   
   struct int_list i1 = {.head = 2, .tail = 0};
