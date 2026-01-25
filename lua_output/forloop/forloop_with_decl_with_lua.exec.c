@@ -54,7 +54,7 @@ int main(void)
   signed int ret = 0;
 
   lua_init();
-  lua_cn_load_runtime("./lua_output/forloop/forloop_with_decl.lua");
+  lua_cn_load_runtime("./lua_output/forloop/forloop_with_decl.lua", 0, 0, 0, 0, 0);
   
   int r = for_with_decl();
 
