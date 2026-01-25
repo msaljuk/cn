@@ -44,7 +44,7 @@ int main(void)
   signed int __ret;
 
   lua_init();
-  lua_cn_load_runtime("./lua_output/division_casting/division_casting.lua");
+  lua_cn_load_runtime("./lua_output/division_casting/division_casting.lua", 0, 0, 0, 0, 0);
 
   unsigned int x = 5;
   lua_cn_ghost_add((&x), sizeof(unsigned int), lua_cn_get_stack_depth());
