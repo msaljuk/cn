@@ -18,7 +18,7 @@ int main()
   signed int ret = 0;
 
   lua_init();
-  lua_cn_load_runtime("./lua_output/bitwise-compl/bitwise_compl.lua");
+  lua_cn_load_runtime("./lua_output/bitwise-compl/bitwise_compl.lua", 0, 0, 0, 0, 0);
 
   lua_cn_frame_push_function();
 
