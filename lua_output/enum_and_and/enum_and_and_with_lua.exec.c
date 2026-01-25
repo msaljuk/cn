@@ -30,7 +30,7 @@ int main(void)
 /*@ trusted; @*/
 {
   lua_init();
-  lua_cn_load_runtime("./lua_output/enum_and_and/enum_and_and.lua");
+  lua_cn_load_runtime("./lua_output/enum_and_and/enum_and_and.lua", 0, 0, 0, 0, 0);
 
   foo(flag_1, 1);
 
