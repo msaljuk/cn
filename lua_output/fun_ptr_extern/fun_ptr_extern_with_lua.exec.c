@@ -121,7 +121,7 @@ int main(void)
   signed int __cn_ret = 0;
   
   lua_init();
-  lua_cn_load_runtime("./lua_output/fun_ptr_extern/fun_ptr_extern.lua");
+  lua_cn_load_runtime("./lua_output/fun_ptr_extern/fun_ptr_extern.lua", 0, 0, 0, 0, 0);
   
   lua_cn_ghost_add((&g1), sizeof(signed int (*) (signed int, signed int)), lua_cn_get_stack_depth());
 
