@@ -85,7 +85,7 @@ int main(void)
 /*@ trusted; @*/
 {
   lua_init();
-  lua_cn_load_runtime("./lua_output/arrow_access/arrow_access.lua");
+  lua_cn_load_runtime("./lua_output/arrow_access/arrow_access.lua", 0, 0, 0, 0, 0);
   lua_cn_register_c_func("read_s", lua_cn_read_s);
   
   arrow_access_1();
