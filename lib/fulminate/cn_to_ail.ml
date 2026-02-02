@@ -12,6 +12,7 @@ module RT = ReturnTypes
 module LAT = LogicalArgumentTypes
 module AT = ArgumentTypes
 module OE = Ownership
+module RC = Runtime_config
 
 let getter_str filename sym =
   "cn_test_get_" ^ Utils.static_prefix filename ^ "_" ^ Sym.pp_string sym
@@ -4680,15 +4681,51 @@ let cn_to_ail_pre_post
         in
         [ cn_stack_depth_incr_stat_ ])
     in
-    let bump_alloc_binding, bump_alloc_start_stat_, bump_alloc_end_stat_ =
-      gen_bump_alloc_bs_and_ss ()
+
+    let final_ail_executable_spec =
+      match RC.get_runtime() with
+        | RC.C -> 
+            let bump_alloc_binding, bump_alloc_start_stat_, bump_alloc_end_stat_ =
+              gen_bump_alloc_bs_and_ss ()
+            in
+
+            let precond_ail_exec_spec =
+              prepend_to_precondition
+                ail_executable_spec
+                ([ bump_alloc_binding ], bump_alloc_start_stat_ :: ownership_stats_)
+            in
+
+            append_to_postcondition precond_ail_exec_spec ([], [ bump_alloc_end_stat_ ])
+        | RC.Lua ->
+            let gen_lua_function_frames () = 
+              let push_fn_call =
+                A.(AilEcall (mk_expr (AilEident (Sym.fresh "lua_cn_frame_push_function")), []))
+              in
+              let pop_fn_call = 
+                A.(AilEcall (mk_expr (AilEident (Sym.fresh "lua_cn_frame_pop_function")), []))
+              in
+              (A.AilSexpr (mk_expr push_fn_call), A.AilSexpr (mk_expr pop_fn_call))
+            in
+
+            let lua_frame_function_push, lua_frame_function_pop 
+              = gen_lua_function_frames()
+            in
+
+            let precond_ail_exec_spec = 
+              prepend_to_precondition
+                (*
+                @note saljuk: making this empty for now and not using it. Eventually, this logic
+                will be replaced with lua wrapper calls instead of the current inline pre/post/assert
+                checks but I need more context on AIL before that happens
+                *)
+                empty_ail_executable_spec
+                ([ ], [ lua_frame_function_push; ] )
+            in
+            
+            append_to_postcondition precond_ail_exec_spec ([], [ lua_frame_function_pop; ])
     in
-    let ail_executable_spec' =
-      prepend_to_precondition
-        ail_executable_spec
-        ([ bump_alloc_binding ], bump_alloc_start_stat_ :: ownership_stats_)
-    in
-    append_to_postcondition ail_executable_spec' ([], [ bump_alloc_end_stat_ ])
+
+    ( final_ail_executable_spec )
   | None -> empty_ail_executable_spec
 
 
