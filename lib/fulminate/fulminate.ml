@@ -4,7 +4,6 @@ module A = CF.AilSyntax
 module Extract = Extract
 module Globals = Globals
 module Internal = Internal
-module Lua_Fulminate = Lua.Lua_fulminate
 module Records = Records
 module Ownership = Ownership
 module Utils = Utils
@@ -534,27 +533,28 @@ let _gen_compile_commands_json cc output_dir out_filename =
   close_out compile_commands_json_oc
 
 
-let main_c
-  ~without_ownership_checking
-  ~without_loop_invariants
-  ~with_loop_leak_checks
-  ~without_lemma_checks
-  ~exec_c_locs_mode
-  ~experimental_ownership_stack_mode
-  ~experimental_curly_braces
-  ~with_testing
-  ~skip_and_only
-  ?max_bump_blocks
-  ?bump_block_size
-  filename
-  _cc
-  in_filename
-  out_filename
-  output_dir
-  cabs_tunit
-  ((startup_sym_opt, (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)) as
-    ail_prog)
-  prog5
+let main
+      ~without_ownership_checking
+      ~without_loop_invariants
+      ~with_loop_leak_checks
+      ~without_lemma_checks
+      ~exec_c_locs_mode
+      ~experimental_ownership_stack_mode
+      ~experimental_curly_braces
+      ~experimental_lua_runtime
+      ~with_testing
+      ~skip_and_only
+      ?max_bump_blocks
+      ?bump_block_size
+      filename
+      _cc
+      in_filename (* WARNING: this file will be deleted after this function *)
+      out_filename
+      output_dir
+      cabs_tunit
+      ((startup_sym_opt, (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)) as
+       ail_prog)
+      prog5
   =
   let out_filename = get_filename_with_prefix output_dir out_filename in
   (* disabled until fixed *)
@@ -574,17 +574,17 @@ let main_c
   in
   let filtered_ail_prog = (startup_sym_opt, filtered_sigm) in
   Records.populate_record_map filtered_instrumentation prog5;
-  let executable_spec 
-    = generate_c_specs
-        without_ownership_checking
-        without_loop_invariants
-        with_loop_leak_checks
-        without_lemma_checks
-        filename
-        filtered_instrumentation
-        cabs_tunit
-        sigm
-        prog5
+  let executable_spec =
+    generate_c_specs
+      without_ownership_checking
+      without_loop_invariants
+      with_loop_leak_checks
+      without_lemma_checks
+      filename
+      filtered_instrumentation
+      cabs_tunit
+      sigm
+      prog5
   in
   let c_datatype_defs = generate_c_datatypes sigm in
   let c_function_defs, c_function_decls, _c_function_locs =
@@ -755,6 +755,7 @@ let main_c
         generate_global_assignments
           ~exec_c_locs_mode
           ~experimental_ownership_stack_mode
+          ~experimental_lua_runtime
           ?max_bump_blocks
           ?bump_block_size
           cabs_tunit
@@ -767,6 +768,9 @@ let main_c
   let oc = Stdlib.open_out out_filename in
   output_to_oc oc [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ];
   output_to_oc oc cn_header_decls_list;
+  if experimental_lua_runtime then (
+      output_to_oc oc [ "#include <lua.h>\n"; "#include <lauxlib.h>\n"; "#include <lualib.h>\n" ];
+  );
   output_to_oc
     oc
     [ "#ifndef offsetof\n";
@@ -779,6 +783,11 @@ let main_c
     oc
     ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
      ^ Globals.accessors_prototypes filename cabs_tunit prog5);
+  if experimental_lua_runtime then (
+      output_to_oc
+        oc
+        [ "/* GLOBAL LUA STATE */\n"; "lua_State *L;\n"; ];
+  );
   (match
      Source_injection.(
        output_injections
@@ -802,70 +811,3 @@ let main_c
   output_to_oc oc cn_defs_list;
   close_out oc;
   Stdlib.Sys.remove in_filename
-
-let main
-      ~without_ownership_checking
-      ~without_loop_invariants
-      ~with_loop_leak_checks
-      ~without_lemma_checks
-      ~exec_c_locs_mode
-      ~experimental_ownership_stack_mode
-      ~experimental_curly_braces
-      ~experimental_lua_runtime
-      ~with_testing
-      ~skip_and_only
-      ?max_bump_blocks
-      ?bump_block_size
-      basefile
-      filename
-      _cc
-      in_filename (* WARNING: this file will be deleted after this function *)
-      out_filename
-      output_dir
-      cabs_tunit
-      ail_prog
-      prog5
-  =
-    if experimental_lua_runtime then
-      Lua_Fulminate.main
-        ~without_ownership_checking
-        ~without_loop_invariants
-        ~with_loop_leak_checks
-        ~without_lemma_checks
-        ~exec_c_locs_mode
-        ~experimental_ownership_stack_mode
-        ~experimental_curly_braces
-        ~with_testing
-        ~skip_and_only
-        ?max_bump_blocks
-        ?bump_block_size
-        basefile
-        filename
-        _cc
-        in_filename
-        out_filename
-        output_dir
-        cabs_tunit
-        ail_prog
-        prog5
-    else
-      main_c 
-        ~without_ownership_checking
-        ~without_loop_invariants
-        ~with_loop_leak_checks
-        ~without_lemma_checks
-        ~exec_c_locs_mode
-        ~experimental_ownership_stack_mode
-        ~experimental_curly_braces
-        ~with_testing
-        ~skip_and_only
-        ?max_bump_blocks
-        ?bump_block_size
-        filename
-        _cc
-        in_filename
-        out_filename
-        output_dir
-        cabs_tunit
-        ail_prog
-        prog5
