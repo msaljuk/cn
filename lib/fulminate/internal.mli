@@ -95,9 +95,9 @@ val generate_conversion_and_equality_functions
 val has_main : GenTypes.genTypeCategory AilSyntax.sigma -> bool
 
 val generate_global_assignments
-  :  ?exec_c_locs_mode:bool ->
+  :  string ->
+  ?exec_c_locs_mode:bool ->
   ?experimental_ownership_stack_mode:bool ->
-  ?experimental_lua_runtime:bool ->
   ?max_bump_blocks:int ->
   ?bump_block_size:int ->
   Cabs.translation_unit ->
