@@ -758,7 +758,6 @@ let main
           ~exec_c_locs_mode
           ~correct_missing_ownership_mode
           ~experimental_ownership_stack_mode
-          ~experimental_lua_runtime
           ?max_bump_blocks
           ?bump_block_size
           cabs_tunit
@@ -771,26 +770,24 @@ let main
   let oc = Stdlib.open_out out_filename in
   output_to_oc oc [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ];
   output_to_oc oc cn_header_decls_list;
-  if experimental_lua_runtime then (
-      output_to_oc oc [ "#include <lua.h>\n"; "#include <lauxlib.h>\n"; "#include <lualib.h>\n" ];
+
+  (match RC.get_runtime() with
+    | RC.C ->
+        output_to_oc
+          oc
+          [ "#ifndef offsetof\n";
+            "#define offsetof(st, m) ((__cerbty_size_t)((char *)&((st *)0)->m - (char *)0))\n";
+            "#endif\n"
+          ];
+        output_string oc "#pragma GCC diagnostic ignored \"-Wattributes\"\n";
+        output_string oc "\n/* GLOBAL ACCESSORS */\n";
+        output_string
+          oc
+          ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
+          ^ Globals.accessors_prototypes filename cabs_tunit prog5);
+    | _ -> ();
   );
-  output_to_oc
-    oc
-    [ "#ifndef offsetof\n";
-      "#define offsetof(st, m) ((__cerbty_size_t)((char *)&((st *)0)->m - (char *)0))\n";
-      "#endif\n"
-    ];
-  output_string oc "#pragma GCC diagnostic ignored \"-Wattributes\"\n";
-  output_string oc "\n/* GLOBAL ACCESSORS */\n";
-  output_string
-    oc
-    ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
-     ^ Globals.accessors_prototypes filename cabs_tunit prog5);
-  if experimental_lua_runtime then (
-      output_to_oc
-        oc
-        [ "/* GLOBAL LUA STATE */\n"; "lua_State *L;\n"; ];
-  );
+
   (match
      Source_injection.(
        output_injections
