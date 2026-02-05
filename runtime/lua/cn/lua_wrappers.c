@@ -179,9 +179,6 @@ void lua_cn_load_runtime(
     // runtime still binds to C)
     initialise_ownership_ghost_state();
     initialise_ghost_stack_depth();
-    alloc_ghost_array(0);
-    initialise_exec_c_locs_mode(0);
-    initialise_ownership_stack_mode(0);
     alloc_ghost_array(ghost_array_size);
     initialise_exec_c_locs_mode(exec_c_locs_mode);
     initialise_ownership_stack_mode(ownership_stack_mode);
