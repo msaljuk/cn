@@ -4,6 +4,7 @@ module A = CF.AilSyntax
 module Extract = Extract
 module Globals = Globals
 module Internal = Internal
+module RC = Runtime_config
 module Records = Records
 module Ownership = Ownership
 module Utils = Utils
@@ -546,6 +547,7 @@ let main
       ~skip_and_only
       ?max_bump_blocks
       ?bump_block_size
+      basefile
       filename
       _cc
       in_filename (* WARNING: this file will be deleted after this function *)
@@ -556,6 +558,8 @@ let main
        ail_prog)
       prog5
   =
+  RC.set_runtime (if experimental_lua_runtime then RC.Lua else RC.C);
+  
   let out_filename = get_filename_with_prefix output_dir out_filename in
   (* disabled until fixed *)
   (* _gen_compile_commands_json cc output_dir out_filename; *)
@@ -616,68 +620,90 @@ let main
   let cn_ghost_enum = generate_ghost_enum prog5 in
   let cn_ghost_call_site_glob = generate_ghost_call_site_glob () in
   (* Forward declarations and CN types *)
-  let cn_header_decls_list =
-    List.concat
-      (* TODO instead use hcat on these includes and typedefs *)
-      [ [ (* TODO need handling for the stuff in stdlib.h and stdint.h but we
-             can't include them here, they'll clash in essentially unavoidable
-             ways with the stuff we already included and processed *)
-          "#include <cn-executable/cerb_types.h>\n";
-          (* TODO necessary because of the types in the struct decls. proper
-             handling would be to hoist all definitions and toposort them *)
-          (* TODO actually instead of *hoisting* types we can *lower* structs
-             etc to the highest place they're valid *)
-          "typedef __cerbty_intptr_t intptr_t;\n";
-          "typedef __cerbty_uintptr_t uintptr_t;\n";
-          "typedef __cerbty_intmax_t intmax_t;\n";
-          "typedef __cerbty_uintmax_t uintmax_t;\n";
-          (* TODO need to inject definitions for all the __cerbvars in cerberus
-             builtins.lem. Hoisting/lowering doesn't affect needing to do this *)
-          "static const int __cerbvar_INT_MAX = 0x7fffffff;\n";
-          "static const int __cerbvar_INT_MIN = ~0x7fffffff;\n";
-          "static const unsigned long long __cerbvar_SIZE_MAX = ~(0ULL);\n";
-          "_Noreturn void abort(void);"
-        ];
-        [ c_tag_defs ];
-        [ (if not (String.equal record_defs "") then "\n/* CN RECORDS */\n\n" else "");
-          record_defs;
-          cn_converted_struct_defs
-        ];
-        (if List.is_empty c_datatype_defs then [] else [ "/* CN DATATYPES */" ]);
-        List.map snd c_datatype_defs;
-        [ "\n\n/* OWNERSHIP FUNCTIONS */\n\n";
-          ownership_function_decls;
-          "/* CONVERSION FUNCTIONS */\n";
-          conversion_function_decls;
-          "/* RECORD FUNCTIONS */\n";
-          record_fun_decls;
-          c_function_decls;
-          "\n";
-          c_predicate_decls;
-          c_lemma_decls;
-          cn_ghost_enum
-        ];
-        cn_ghost_call_site_glob
-      ]
+  
+  let generate_cn_decls_and_defs () =
+    match RC.get_runtime() with
+      | RC.C ->
+          let cn_header_decls = 
+            List.concat
+            (* TODO instead use hcat on these includes and typedefs *)
+            [ [ (* TODO need handling for the stuff in stdlib.h and stdint.h but we
+                  can't include them here, they'll clash in essentially unavoidable
+                  ways with the stuff we already included and processed *)
+                "#include <cn-executable/cerb_types.h>\n";
+                (* TODO necessary because of the types in the struct decls. proper
+                  handling would be to hoist all definitions and toposort them *)
+                (* TODO actually instead of *hoisting* types we can *lower* structs
+                  etc to the highest place they're valid *)
+                "typedef __cerbty_intptr_t intptr_t;\n";
+                "typedef __cerbty_uintptr_t uintptr_t;\n";
+                "typedef __cerbty_intmax_t intmax_t;\n";
+                "typedef __cerbty_uintmax_t uintmax_t;\n";
+                (* TODO need to inject definitions for all the __cerbvars in cerberus
+                  builtins.lem. Hoisting/lowering doesn't affect needing to do this *)
+                "static const int __cerbvar_INT_MAX = 0x7fffffff;\n";
+                "static const int __cerbvar_INT_MIN = ~0x7fffffff;\n";
+                "static const unsigned long long __cerbvar_SIZE_MAX = ~(0ULL);\n";
+                "_Noreturn void abort(void);"
+              ];
+              [ c_tag_defs ];
+              [ (if not (String.equal record_defs "") then "\n/* CN RECORDS */\n\n" else "");
+                record_defs;
+                cn_converted_struct_defs
+              ];
+              (if List.is_empty c_datatype_defs then [] else [ "/* CN DATATYPES */" ]);
+              List.map snd c_datatype_defs;
+              [ "\n\n/* OWNERSHIP FUNCTIONS */\n\n";
+                ownership_function_decls;
+                "/* CONVERSION FUNCTIONS */\n";
+                conversion_function_decls;
+                "/* RECORD FUNCTIONS */\n";
+                record_fun_decls;
+                c_function_decls;
+                "\n";
+                c_predicate_decls;
+                c_lemma_decls;
+                cn_ghost_enum
+              ];
+              cn_ghost_call_site_glob
+            ] 
+          in
+
+          (* Definitions for CN helper functions *)
+          (* TODO: Topological sort *)
+          let cn_defs_list =
+            [ (* record_equality_fun_strs; *)
+              (* record_equality_fun_strs'; *)
+              "/* RECORD */\n";
+              record_fun_defs;
+              "/* CONVERSION */\n";
+              conversion_function_defs;
+              "/* OWNERSHIP FUNCTIONS */\n";
+              ownership_function_defs;
+              "/* CN FUNCTIONS */\n";
+              c_function_defs;
+              "\n";
+              c_predicate_defs;
+              c_lemma_defs
+            ]
+          in
+
+          (cn_header_decls, cn_defs_list)
+
+      | RC.Lua ->
+          (List.concat
+          [ 
+            [ "#include <cn-executable/cerb_types.h>\n"; ];
+            [ c_tag_defs ];
+            [ cn_ghost_enum ];
+            cn_ghost_call_site_glob
+          ], [])
   in
-  (* Definitions for CN helper functions *)
-  (* TODO: Topological sort *)
-  let cn_defs_list =
-    [ (* record_equality_fun_strs; *)
-      (* record_equality_fun_strs'; *)
-      "/* RECORD */\n";
-      record_fun_defs;
-      "/* CONVERSION */\n";
-      conversion_function_defs;
-      "/* OWNERSHIP FUNCTIONS */\n";
-      ownership_function_defs;
-      "/* CN FUNCTIONS */\n";
-      c_function_defs;
-      "\n";
-      c_predicate_defs;
-      c_lemma_defs
-    ]
+
+  let cn_header_decls_list, cn_defs_list = 
+    generate_cn_decls_and_defs() 
   in
+
   let c_datatype_locs = List.map fst c_datatype_defs in
   let toplevel_locs = group_toplevel_defs [] c_datatype_locs in
   let toplevel_injections = List.map (fun loc -> (loc, [ "" ])) toplevel_locs in
@@ -753,9 +779,9 @@ let main
       (* Inject ownership init function calls and mapping and unmapping of globals into provided main function *)
       let global_ownership_init_pair =
         generate_global_assignments
+          basefile
           ~exec_c_locs_mode
           ~experimental_ownership_stack_mode
-          ~experimental_lua_runtime
           ?max_bump_blocks
           ?bump_block_size
           cabs_tunit
@@ -764,30 +790,34 @@ let main
       in
       global_ownership_init_pair @ executable_spec.pre_post)
   in
+
   (* Save things *)
   let oc = Stdlib.open_out out_filename in
-  output_to_oc oc [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ];
+
+  output_to_oc oc 
+    (match RC.get_runtime() with
+      | RC.C -> [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ]
+      | RC.Lua -> [ "#include <lua_wrappers.h>\n" ; "#include <cn-executable/utils.h>\n"]);
+
   output_to_oc oc cn_header_decls_list;
-  if experimental_lua_runtime then (
-      output_to_oc oc [ "#include <lua.h>\n"; "#include <lauxlib.h>\n"; "#include <lualib.h>\n" ];
+
+  (match RC.get_runtime() with
+    | RC.C ->
+        output_to_oc
+          oc
+          [ "#ifndef offsetof\n";
+            "#define offsetof(st, m) ((__cerbty_size_t)((char *)&((st *)0)->m - (char *)0))\n";
+            "#endif\n"
+          ];
+        output_string oc "#pragma GCC diagnostic ignored \"-Wattributes\"\n";
+        output_string oc "\n/* GLOBAL ACCESSORS */\n";
+        output_string
+          oc
+          ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
+          ^ Globals.accessors_prototypes filename cabs_tunit prog5);
+    | _ -> ();
   );
-  output_to_oc
-    oc
-    [ "#ifndef offsetof\n";
-      "#define offsetof(st, m) ((__cerbty_size_t)((char *)&((st *)0)->m - (char *)0))\n";
-      "#endif\n"
-    ];
-  output_string oc "#pragma GCC diagnostic ignored \"-Wattributes\"\n";
-  output_string oc "\n/* GLOBAL ACCESSORS */\n";
-  output_string
-    oc
-    ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
-     ^ Globals.accessors_prototypes filename cabs_tunit prog5);
-  if experimental_lua_runtime then (
-      output_to_oc
-        oc
-        [ "/* GLOBAL LUA STATE */\n"; "lua_State *L;\n"; ];
-  );
+
   (match
      Source_injection.(
        output_injections

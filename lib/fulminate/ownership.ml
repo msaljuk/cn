@@ -2,6 +2,7 @@ open Utils
 module CF = Cerb_frontend
 module A = CF.AilSyntax
 module C = CF.Ctype
+module RC = Runtime_config
 
 type ail_bindings_and_statements =
   A.bindings * CF.GenTypes.genTypeCategory A.statement_ list
@@ -22,7 +23,13 @@ type ownership_injection =
     injection_kind : injection_kind
   }
 
-let get_cn_stack_depth_sym = Sym.fresh "get_cn_stack_depth"
+let gen_get_cn_stack_depth_sym () = 
+  let runtime_based_call = 
+    match RC.get_runtime() with
+      | RC.C -> "get_cn_stack_depth"
+      | RC.Lua -> "lua_cn_get_stack_depth"
+  in
+  ( Sym.fresh runtime_based_call )
 
 let cn_stack_depth_incr_sym = Sym.fresh "ghost_stack_depth_incr"
 
@@ -34,9 +41,21 @@ let cn_loop_put_back_ownership_sym = Sym.fresh "cn_loop_put_back_ownership"
 
 let cn_loop_leak_check_sym = Sym.fresh "cn_loop_leak_check"
 
-let c_add_ownership_fn_sym = Sym.fresh "c_add_to_ghost_state"
+let gen_c_add_ownership_fn_sym () = 
+  let runtime_based_call = 
+    match RC.get_runtime() with
+      | RC.C -> "c_add_to_ghost_state"
+      | RC.Lua -> "lua_cn_ghost_add"
+  in
+  ( Sym.fresh runtime_based_call )
 
-let c_remove_ownership_fn_sym = Sym.fresh "c_remove_from_ghost_state"
+let gen_c_remove_ownership_fn_sym () = 
+  let runtime_based_call = 
+    match RC.get_runtime() with
+      | RC.C -> "c_remove_from_ghost_state"
+      | RC.Lua -> "lua_cn_ghost_remove"
+  in
+  ( Sym.fresh runtime_based_call )
 
 (* TODO: Use these to reduce verbosity of output. Mirrors C+CN input slightly less since
    we replace declarations with a call to one of these macros
@@ -117,10 +136,10 @@ let generate_c_local_ownership_entry_fcall (local_sym, local_ctype) =
   let local_ident = mk_expr A.(AilEident local_sym) in
   let arg1 = A.(AilEunary (Address, local_ident)) in
   let arg2 = A.(AilEsizeof (C.no_qualifiers, local_ctype)) in
-  let arg3 = A.(AilEcall (mk_expr (AilEident get_cn_stack_depth_sym), [])) in
+  let arg3 = A.(AilEcall (mk_expr (AilEident ( gen_get_cn_stack_depth_sym() )), [])) in
   mk_expr
     (AilEcall
-       (mk_expr (AilEident c_add_ownership_fn_sym), List.map mk_expr [ arg1; arg2; arg3 ]))
+       (mk_expr (AilEident ( gen_c_add_ownership_fn_sym() )), List.map mk_expr [ arg1; arg2; arg3 ]))
 
 
 let generate_c_local_ownership_entry sym_ctype_pair =
@@ -130,8 +149,13 @@ let generate_c_local_ownership_entry sym_ctype_pair =
 let generate_c_local_ownership_entry_bs_and_ss (sym, ctype) =
   let entry_fcall_stat = generate_c_local_ownership_entry (sym, ctype) in
   let addr_cn_binding, addr_cn_decl = generate_c_local_cn_addr_var sym in
-  ([ addr_cn_binding ], [ entry_fcall_stat; addr_cn_decl ])
-
+  match RC.get_runtime() with
+    | RC.C -> ([ addr_cn_binding ], [ entry_fcall_stat; addr_cn_decl ])
+    (*
+      @note saljuk: clearing this for now since we don't need cn pointer generation in c
+      when using a Lua runtime.
+    *)
+    | RC.Lua -> ([], [ entry_fcall_stat ])
 
 (* int x = 0, y = 5;
 
@@ -209,7 +233,7 @@ let generate_c_local_ownership_exit (local_sym, local_ctype) =
       (mk_expr
          A.(
            AilEcall
-             ( mk_expr (AilEident c_remove_ownership_fn_sym),
+             ( mk_expr (AilEident ( gen_c_remove_ownership_fn_sym() )),
                List.map mk_expr [ arg1; arg2 ] ))))
 
 
