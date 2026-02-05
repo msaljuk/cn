@@ -100,7 +100,6 @@ val generate_global_assignments
   :  ?exec_c_locs_mode:bool ->
   ?correct_missing_ownership_mode:bool ->
   ?experimental_ownership_stack_mode:bool ->
-  ?experimental_lua_runtime:bool ->
   ?max_bump_blocks:int ->
   ?bump_block_size:int ->
   Cabs.translation_unit ->
