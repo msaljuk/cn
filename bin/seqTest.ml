@@ -80,6 +80,7 @@ let run_seq_tests
              ~experimental_lua_runtime:false
              ~with_testing:true
              ~skip_and_only:([], [])
+             basefile
              filename
              cc
              pp_file

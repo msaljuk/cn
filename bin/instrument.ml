@@ -216,6 +216,7 @@ let generate_executable_specs
                 ~skip_and_only:(skip, only)
                 ?max_bump_blocks
                 ?bump_block_size
+                basefile
                 filename
                 cc
                 pp_file
