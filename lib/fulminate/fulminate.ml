@@ -1,5 +1,6 @@
 module CF = Cerb_frontend
 module Cn_to_ail = Cn_to_ail
+module Cn_lua = Lua.Cn_lua
 module A = CF.AilSyntax
 module Extract = Extract
 module Globals = Globals
@@ -8,6 +9,7 @@ module RC = Runtime_config
 module Records = Records
 module Ownership = Ownership
 module Utils = Utils
+module CnL = Lua.Cn_lua
 
 let rec group_toplevel_defs new_list = function
   | [] -> new_list
@@ -590,6 +592,7 @@ let main
       sigm
       prog5
   in
+
   let c_datatype_defs = generate_c_datatypes sigm in
   let c_function_defs, c_function_decls, _c_function_locs =
     generate_c_functions filename cabs_tunit prog5 sigm
@@ -840,4 +843,18 @@ let main
   output_to_oc oc [ Globals.accessors_str filename cabs_tunit prog5 ];
   output_to_oc oc cn_defs_list;
   close_out oc;
+
+  (* Create any alt files needed *)
+  (match RC.get_runtime() with
+    | RC.Lua ->
+        let lua_filename = 
+          get_filename_with_prefix output_dir (CnL.generate_lua_filename basefile) in
+        let lua_oc = Stdlib.open_out lua_filename in
+        output_to_oc
+          lua_oc
+          executable_spec.alt_file;
+        close_out lua_oc;
+    | _ -> ();
+  );
+
   Stdlib.Sys.remove in_filename
