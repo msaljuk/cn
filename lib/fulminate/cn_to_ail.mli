@@ -237,6 +237,7 @@ val cn_to_ail_pre_post
   AilSyntax.sigma_cn_datatype list ->
   (Sym.t * Definition.Predicate.t) list ->
   (Sym.t * Ctype.ctype) list ->
+  (Sym.t * ((Ctype.union_tag * Ctype.ctype) list)) ->
   Ctype.ctype ->
   int option ->
   Extract.fn_args_and_body option ->
