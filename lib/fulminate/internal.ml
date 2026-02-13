@@ -170,6 +170,17 @@ type cn_spec_inj_info =
 let empty_cn_spec_inj_info : cn_spec_inj_info =
   { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = []; alt_file = [] }
 
+let generate_func_c_sig sym (sigm : _ CF.AilSyntax.sigma) : (Sym.t * ((Sym.t * CF.Ctype.ctype) list)) = 
+  match
+    ( List.assoc_opt Sym.equal sym sigm.function_definitions,
+      List.assoc_opt Sym.equal sym sigm.declarations )
+  with
+  | ( Some (_, _, _, param_syms, _fn_body),
+      Some (_, _, Decl_function (_, _, param_types, _, _, _)) ) ->
+    let param_types = List.map (fun (_, ctype, _) -> ctype) param_types in
+    let func_params = List.combine param_syms param_types in
+    (sym, func_params)
+  | _, _ -> (sym, [])
 
 let generate_c_specs_from_cn_internal
       without_ownership_checking
@@ -191,6 +202,7 @@ let generate_c_specs_from_cn_internal
     | _ -> failwith (__LOC__ ^ ": C function to be instrumented not found in Ail AST")
   in
   let globals = Cn_to_ail.extract_global_variables cabs_tunit prog5 in
+  let func_c_sig = generate_func_c_sig instrumentation.fn sigm in
   let ghost_array_size = Extract.max_num_of_ghost_args prog5 in
   let ail_executable_spec =
     Cn_to_ail.cn_to_ail_pre_post
@@ -201,6 +213,7 @@ let generate_c_specs_from_cn_internal
       dts
       preds
       globals
+      func_c_sig
       c_return_type
       (Some ghost_array_size)
       instrumentation.internal
@@ -233,25 +246,33 @@ let generate_c_specs_from_cn_internal
       | RC.Lua ->
         let open Lua.Pp_lua in
 
-        let alt_pre_str = [] in
-        let alt_post_str = [] in
-        let alt_in_stmt = 
-          let _, ail_bindings_and_statements = List.split ail_executable_spec.in_stmt in
-          let _, _, lua_stmts_list = list_split_three ail_bindings_and_statements in
-          let lua_stmts = List.concat lua_stmts_list in
-          (List.map pp_stmt lua_stmts);
+        let func_name, _ = func_c_sig in
+
+        let pre_post_prefix = "cn." ^ (Sym.pp_string func_name) ^ "." in
+
+        let alt_pre_str = 
+          let _, _, lua_stmts = ail_executable_spec.pre in
+          (pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "precondition", [], lua_stmts)))
+        in
+        
+        let alt_post_str = 
+          let _, _, lua_stmts = ail_executable_spec.post in
+          (pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "postcondition", [], lua_stmts)))
         in
 
-        ( alt_pre_str @ alt_in_stmt @ alt_post_str )
+        let alt_in_stmt = 
+          let _, ail_bindings_and_statements_list = List.split ail_executable_spec.in_stmt in
+          let _, _, lua_stmts = list_split_three ail_bindings_and_statements_list in
+          let lua_stmts_strings = List.map pp_stmt (List.concat lua_stmts) in
+          ( lua_stmts_strings )
+        in
+
+        ( [ alt_pre_str; ] @ alt_in_stmt @ [ alt_post_str; ] )
   in
 
   let c_specs = (match RC.get_runtime() with
     | RC.C -> { pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; alt_file = [] }
-    (* 
-      @note saljuk: nulling out everything but the alt file for now since we're not generating the wrappers as yet 
-      (and I don't want to add the noise of the C runtime pre/post/in stmts in the generated code)
-    *)
-    | RC.Lua -> { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = []; alt_file = alt_file }
+    | RC.Lua -> { pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; alt_file = alt_file }
   ) in
 
   (c_specs)
@@ -272,6 +293,7 @@ let generate_c_specs_internal
   let stack_local_var_inj_info : stack_local_var_inj_info =
     generate_stack_local_var_inj_strs instrumentation.fn sigm
   in
+
   let cn_spec_inj_info =
     if contains_user_spec then
       generate_c_specs_from_cn_internal

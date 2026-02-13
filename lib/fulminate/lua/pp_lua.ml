@@ -28,7 +28,7 @@ let rec pp_stmt = function
       let args_list = List.map pp_expr args in
       let header = Printf.sprintf "function %s(%s)" fn (String.concat ", " args_list) in
       let indented_body = indent (List.map pp_stmt body) in
-      header ^ "\n" ^ indented_body ^ "\nend"
+      header ^ "\n" ^ indented_body ^ "\nend\n\n"
   | LuaS.FunctionCall (fn, args) ->
       pp_expr (LuaS.Call(fn, args))
   | _ -> ""

@@ -3726,7 +3726,8 @@ let cn_to_ail_predicates preds filename dts globals cn_preds
 
 
 (* TODO: Add destination passing? *)
-let rec cn_to_ail_post_aux filename dts globals preds spec_mode_opt = function
+let rec cn_to_ail_post_aux filename dts globals preds spec_mode_opt = 
+  function
   | LRT.Define ((name, it), (_loc, _), t) ->
     let new_name = generate_sym_with_suffix ~suffix:"_cn" name in
     let new_lrt =
@@ -4485,7 +4486,7 @@ let rec cn_to_ail_lat_2
         loop
     in
     let ail_loop_invariants = List.filter_map Fun.id ail_loop_invariants in
-    let post_bs, post_ss, _ = cn_to_ail_post filename dts globals preds post in
+    let post_bs, post_ss, post_ls = cn_to_ail_post filename dts globals preds post in
     let ownership_stats_ =
       if without_ownership_checking then
         []
@@ -4502,7 +4503,7 @@ let rec cn_to_ail_lat_2
     in
 
     { pre = ([], [], []);
-      post = ([], [ block ], []);
+      post = ([], [ block ], post_ls);
       in_stmt = ail_statements;
       loops = ail_loop_invariants
     }
@@ -4644,6 +4645,7 @@ let cn_to_ail_pre_post
       dts
       preds
       globals
+      (func_c_sig : (Sym.t * ((C.union_tag * C.ctype) list)))
       c_return_type
       ghost_array_size_opt
   = function
@@ -4726,8 +4728,28 @@ let cn_to_ail_pre_post
             append_to_postcondition precond_ail_exec_spec ([], [ bump_alloc_end_stat_ ], [])
         | RC.Lua ->
             let gen_lua_function_frames () = 
+              let func_name, func_params = func_c_sig in
+
+              let func_params_expr
+                =
+                  if (List.is_empty (func_params)) then (
+                    ([])
+                  ) else (
+                    let func_param_syms, _ = List.split func_params in
+                    
+                    (
+                      List.map (fun sym ->
+                        mk_expr (A.AilEunary (Address, mk_expr (A.AilEident sym)) )
+                      ) func_param_syms
+                    )
+                  )
+              in
+
               let push_fn_call =
-                A.(AilEcall (mk_expr (AilEident (Sym.fresh "lua_cn_frame_push_function")), []))
+                A.(AilEcall (
+                  mk_expr (AilEident (
+                    Sym.fresh ("lua_cn_frame_push_function_" ^ Sym.pp_string func_name))), 
+                    func_params_expr))
               in
               let pop_fn_call = 
                 A.(AilEcall (mk_expr (AilEident (Sym.fresh "lua_cn_frame_pop_function")), []))
@@ -4744,7 +4766,7 @@ let cn_to_ail_pre_post
                 ail_executable_spec
                 ([ ], [ lua_frame_function_push; ], [ ] )
             in
-            
+
             append_to_postcondition precond_ail_exec_spec ([], [ lua_frame_function_pop; ], [])
     in
 
@@ -4775,6 +4797,7 @@ let cn_to_ail_lemma filename dts preds globals (sym, (loc, lemmat)) =
       dts
       preds
       globals
+      (sym, [])
       ret_type
       None
       (Some transformed_lemmat)
