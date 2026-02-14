@@ -7,6 +7,7 @@ module AT = ArgumentTypes
 module LAT = LogicalArgumentTypes
 module CtA = Fulminate.Cn_to_ail
 module Utils = Fulminate.Utils
+module CnL = Fulminate.Cn_lua
 
 let pp_ctype = CF.Pp_ail.pp_ctype ~is_human:false C.no_qualifiers
 
@@ -465,12 +466,13 @@ let owned_sct_call
       (pointer : IT.t)
   : A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
+    * CnL.cn_stmts
     * CF.GenTypes.genTypeCategory A.expression
   =
-  let b1, s1, e1 = compile_it filename sigma prog5 pointer in
+  let b1, s1, l1, e1 = compile_it filename sigma prog5 pointer in
   let fsym = owned_sct_sym (Sctypes.to_ctype sct) in
   let e2 = mk_expr A.(AilEcall (mk_expr (AilEident fsym), [ e1 ])) in
-  (b1, s1, e2)
+  (b1, s1, l1, e2)
 
 
 let compile_req
@@ -481,6 +483,7 @@ let compile_req
       (loc : Locations.t)
   : A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
+    * CnL.cn_stmts
     * CF.GenTypes.genTypeCategory A.expression
   =
   let rec aux (req : Request.t) =
@@ -489,32 +492,32 @@ let compile_req
       assert (List.is_empty iargs);
       owned_sct_call filename sigma prog5 sct pointer
     | P { name = PName name; pointer; iargs } ->
-      let b, s, es =
+      let b, s, l, es =
         pointer :: iargs
         |> List.map (compile_it filename sigma prog5)
         |> List.fold_left
-             (fun (b, s, es) (b', s', e) -> (b @ b', s @ s', es @ [ e ]))
-             ([], [], [])
+             (fun (b, s, l, es) (b', s', l', e') -> (b @ b', s @ s', l @ l', es @ [ e' ]))
+             ([], [], [], [])
       in
       let e = A.(mk_expr (AilEcall (mk_expr (AilEident (pred_sym name)), es))) in
-      (b, s, e)
+      (b, s, l, e)
     | Q { name; pointer; q = q_sym, q_bt; q_loc; step; permission; iargs } ->
       assert (List.is_empty iargs);
       let q_it = IT.sym_ (q_sym, q_bt, q_loc) in
       let e_perm =
-        let b_perm, s_perm, e_perm = compile_it filename sigma prog5 permission in
+        let b_perm, s_perm, _, e_perm = compile_it filename sigma prog5 permission in
         A.(
           mk_expr
             (AilEgcc_statement (b_perm, List.map mk_stmt (s_perm @ [ AilSexpr e_perm ]))))
       in
-      let b1, s1, e_min, e_max =
+      let b1, s1, l1, e_min, e_max =
         let it_min, it_max = IT.Bounds.get_bounds (q_sym, q_bt) permission in
-        let b1, s1, e_min = compile_it filename sigma prog5 it_min in
-        let b2, s2, e_max = compile_it filename sigma prog5 it_max in
-        (b1 @ b2, s1 @ s2, e_min, e_max)
+        let b1, s1, l1, e_min = compile_it filename sigma prog5 it_min in
+        let b2, s2, l2, e_max = compile_it filename sigma prog5 it_max in
+        (b1 @ b2, s1 @ s2, l1 @ l2, e_min, e_max)
       in
       let map_sym = Sym.fresh_anon () in
-      let b_val, s_val, e_val =
+      let b_val, s_val, l_val, e_val =
         aux
           (P { name; pointer = IT.arrayShift_ ~base:pointer ~index:q_it step loc; iargs })
       in
@@ -546,30 +549,30 @@ let compile_req
                       @ [ e_val; e_max ] )))
           ]
       in
-      (b1 @ b_val, s1 @ s2, mk_expr (A.AilEident map_sym))
+      (b1 @ b_val, s1 @ s2, l1 @ l_val, mk_expr (A.AilEident map_sym))
   in
   aux req
 
 
 let compile_lat
-      ?(f : 'a -> A.bindings * CF.GenTypes.genTypeCategory A.statement_ list =
-        fun _ -> ([], []))
+      ?(f : 'a -> A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.cn_stmts =
+        fun _ -> ([], [], []))
       filename
       (sigma : CF.GenTypes.genTypeCategory A.sigma)
       (prog5 : unit Mucore.file)
       (lat : 'a LAT.t)
-  : A.bindings * CF.GenTypes.genTypeCategory A.statement_ list
+  : A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.cn_stmts
   =
   let rec aux (lat : 'a LAT.t) =
     match lat with
     | Define ((x, it), _, lat') ->
-      let b1, s1, e = compile_it filename sigma prog5 it in
+      let b1, s1, l1, e = compile_it filename sigma prog5 it in
       let b2 = [ Utils.create_binding x (bt_to_ctype (IT.get_bt it)) ] in
       let s2 = A.[ AilSdeclaration [ (x, Some e) ] ] in
-      let b3, s3 = aux lat' in
-      (b1 @ b2 @ b3, s1 @ s2 @ s3)
+      let b3, s3, l3 = aux lat' in
+      (b1 @ b2 @ b3, s1 @ s2 @ s3, l1 @ l3)
     | Resource ((x, (req, bt)), (loc, _), lat') ->
-      let b1, s1, e = compile_req filename sigma prog5 req loc in
+      let b1, s1, l1, e = compile_req filename sigma prog5 req loc in
       let b2 = [ Utils.create_binding x (bt_to_ctype bt) ] in
       let s2 =
         if BT.equal bt BT.Unit then
@@ -577,8 +580,8 @@ let compile_lat
         else
           A.[ AilSdeclaration [ (x, Some e) ] ]
       in
-      let b3, s3 = aux lat' in
-      (b1 @ b2 @ b3, s1 @ s2 @ s3)
+      let b3, s3, l3 = aux lat' in
+      (b1 @ b2 @ b3, s1 @ s2 @ s3, l1 @ l3)
     | Constraint (_, _, lat') -> aux lat'
     | I i -> f i
   in
@@ -590,26 +593,26 @@ let compile_clauses
       (sigma : CF.GenTypes.genTypeCategory A.sigma)
       (prog5 : unit Mucore.file)
       (cls : Definition.Clause.t list)
-  : A.bindings * CF.GenTypes.genTypeCategory A.statement_ list
+  : A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.cn_stmts
   =
   let rec aux (cls : Definition.Clause.t list)
-    : A.bindings * CF.GenTypes.genTypeCategory A.statement_ list
+    : A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.cn_stmts
     =
     let aux_it it =
       if BT.equal (IT.get_bt it) BT.Unit then
-        ([], [ A.AilSreturnVoid ])
+        ([], [ A.AilSreturnVoid ], [])
       else (
-        let b, s, e = compile_it filename sigma prog5 it in
-        (b, s @ [ AilSreturn e ]))
+        let b, s, l, e = compile_it filename sigma prog5 it in
+        (b, s @ [ AilSreturn e ], l))
     in
     match cls with
     | [ cl ] ->
       assert (IT.is_true cl.guard);
       compile_lat ~f:aux_it filename sigma prog5 cl.packing_ft
     | cl :: cls' ->
-      let b_if, s_if, e_if = compile_it filename sigma prog5 cl.guard in
-      let b_then, s_then = compile_lat ~f:aux_it filename sigma prog5 cl.packing_ft in
-      let b_else, s_else = aux cls' in
+      let b_if, s_if, l_if, e_if = compile_it filename sigma prog5 cl.guard in
+      let b_then, s_then, _ = compile_lat ~f:aux_it filename sigma prog5 cl.packing_ft in
+      let b_else, s_else, _ = aux cls' in
       let s_then_else =
         A.
           [ AilSif
@@ -618,7 +621,7 @@ let compile_clauses
                 mk_stmt (AilSblock (b_else, List.map mk_stmt s_else)) )
           ]
       in
-      (b_if, s_if @ s_then_else)
+      (b_if, s_if @ s_then_else, l_if)
     | [] -> failwith ("unreachable @ " ^ __LOC__)
   in
   aux cls
@@ -634,10 +637,10 @@ let compile_pred
   =
   let fsym = pred_sym sym in
   let ret_type = CtA.bt_to_ail_ctype ~pred_sym:(Some sym) (snd pred.oarg) in
-  let bs, ss =
+  let bs, ss, _ =
     match pred.clauses with
     | Some clauses -> compile_clauses filename sigma prog5 clauses
-    | None -> ([], [])
+    | None -> ([], [], [])
   in
   let params =
     List.map
@@ -739,7 +742,7 @@ let compile_spec
       (AT.get_lat at)
   in
   (* Generate function *)
-  let bs2, ss2 = compile_lat filename sigma prog5 lat in
+  let bs2, ss2, _ = compile_lat filename sigma prog5 lat in
   let bs3, ss3 =
     let bs, ss =
       (args |> List.map_snd snd |> List.map (fun x -> (false, x)))
