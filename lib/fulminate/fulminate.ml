@@ -703,13 +703,15 @@ let main
               [ c_tag_defs ];
               [ cn_ghost_enum ];
               cn_ghost_call_site_glob;
+              (*@saljuk HACK: Make this not be a global printed like this *)
+              [ "lua_State* L;\n" ]
             ]
             @
             (if List.is_empty helper_decs then 
               ([]) 
             else List.concat (
               [
-                [ "/* HELPER FUNCTIONS DECLARATIONS */\n" ];
+                [ "/* HELPER FUNCTION DECLARATIONS */\n" ];
                 helper_decs;
               ]
             ))
@@ -720,13 +722,17 @@ let main
               ([]) 
             else List.concat (
               [
-                [ "/* HELPER FUNCTIONS DEFINITIONS */\n" ];
+                [ "/* HELPER FUNCTION DEFINITIONS */\n" ];
                 helper_defs;
               ]
             ))
           in
+
+          let enclose_with_newlines str_list = 
+            [ "\n" ] @ str_list @ [ "\n" ]
+          in
             
-          (headers, defs)
+          (enclose_with_newlines headers, enclose_with_newlines defs)
   in
 
   let cn_header_decls_list, cn_defs_list = 
