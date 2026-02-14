@@ -21,6 +21,14 @@ val generate_lua_filename :
 
 val generate_lua_runtime_core_req : LuaS.stmt
 
+val generate_lua_precondition_fn_name : Sym.t -> string
+
+val generate_lua_postcondition_fn_name : Sym.t -> string
+
+val generate_lua_precondition_fn_wrapper_name : Sym.t -> string
+
+val generate_lua_postcondition_fn_wrapper_name : Sym.t -> string
+
 val generate_lua_cn_assert 
     : string -> 
     CF.GenTypes.genTypeCategory A.expression -> 
