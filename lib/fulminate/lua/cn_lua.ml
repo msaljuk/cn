@@ -36,8 +36,62 @@ let concat (exec_list : lua_cn_exec list) =
 
   (merged_lua_stmts, merged_wrapper_statements)
 
+let generate_c_fn_wrapper_prefix (c_fn_name : Sym.t)
+  = "lua_cn_" ^ (Sym.pp_string c_fn_name) ^ "_"
+
+let generate_c_precondition_fn_wrapper_name (c_fn_name : Sym.t)
+  = (generate_c_fn_wrapper_prefix c_fn_name) ^ ("precondition")
+
+let generate_c_postcondition_fn_wrapper_name (c_fn_name : Sym.t)
+  = (generate_c_fn_wrapper_prefix c_fn_name) ^ ("postcondition")
+
+let generate_c_fn_wrapper_def 
+  (_lua_fn_name : string)
+  (_wrapper_fn_name : string)
+  (_wrapper_fn_params : CF.GenTypes.genTypeCategory A.expression list)
+  : (CF.GenTypes.genTypeCategory A.statement_ list)
+  = 
+  (*
+  Example 
+
+  Input: 
+  lua_fn_name: "cn.frames.push_function.arrow_access_1"
+  wrapper_fn_name: "cn.frames.push_function.arrow_access_1"
+  wrapper_fn_params: [struct s** origin]
+  
+  output:
+  void lua_cn_frame_push_function_arrow_access_1(struct s** origin)
+  {
+    lua_State* L = lua_get_state();
+
+    lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+    lua_getfield(L, -1, "frames");
+    lua_getfield(L, -1, "push_function");
+    lua_getfield(L, -1, "arrow_access_1");
+
+    lua_pushinteger(L, lua_convert_ptr_to_int(*origin));
+
+    if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+        fprintf(stderr, "Error calling cn.frames.push_function.arrow_access_1: %s\n", lua_tostring(L, -1));
+        lua_pop(L, 1);
+    }
+
+    lua_pop(L, 2);
+  }
+  *)*)
+  [ A.AilSbreak; ]
+
 let generate_lua_filename basefile 
   = (Filename.remove_extension basefile) ^ ".lua"
+
+let generate_lua_fn_prefix (c_fn_name : Sym.t)
+  = (Pp_lua.pp_expr cn_sym) ^ (".") ^ (Sym.pp_string c_fn_name) ^ (".")
+
+let generate_lua_precondition_fn_name (c_fn_name : Sym.t)
+  = (generate_lua_fn_prefix c_fn_name) ^ ("precondition")
+
+let generate_lua_postcondition_fn_name (c_fn_name : Sym.t)
+  = (generate_lua_fn_prefix c_fn_name) ^ ("postcondition")
 
 let generate_lua_runtime_core_req
   (* local cn = require("lua_cn_runtime_core") *)
@@ -46,23 +100,14 @@ let generate_lua_runtime_core_req
         LuaS.Call( "require", [ LuaS.String("lua_cn_runtime_core") ] )
       ))
 
-let generate_lua_fn_prefix (c_fn_name : Sym.t)
-  = (Pp_lua.pp_expr cn_sym) ^ (".") ^ (Sym.pp_string c_fn_name) ^ (".")
-
-let generate_lua_fn_wrapper_prefix (c_fn_name : Sym.t)
-  = "lua_cn_" ^ (Sym.pp_string c_fn_name) ^ "_"
-
-let generate_lua_precondition_fn_name (c_fn_name : Sym.t)
-  = (generate_lua_fn_prefix c_fn_name) ^ ("precondition")
-
-let generate_lua_postcondition_fn_name (c_fn_name : Sym.t)
-  = (generate_lua_fn_prefix c_fn_name) ^ ("postcondition")
-
-let generate_lua_precondition_fn_wrapper_name (c_fn_name : Sym.t)
-  = (generate_lua_fn_wrapper_prefix c_fn_name) ^ ("precondition")
-
-let generate_lua_postcondition_fn_wrapper_name (c_fn_name : Sym.t)
-  = (generate_lua_fn_wrapper_prefix c_fn_name) ^ ("postcondition")
+let generate_lua_cn_error_stack_push (msg: string)
+  = (LuaS.FunctionCall(
+      get_expr_str cn_error_stack_push_sym,
+      [ LuaS.String(msg) ]))
+let generate_lua_cn_error_stack_pop 
+  = (LuaS.FunctionCall(
+      get_expr_str cn_error_stack_pop_sym,
+      []))
 
 let generate_lua_cn_assert fn_name ail_expr error_msg
   = 
@@ -105,12 +150,3 @@ let generate_lua_cn_assert fn_name ail_expr error_msg
 
     ( func_stmt )
   ) else ( LuaS.Empty )
-
-let generate_lua_cn_error_stack_push (msg: string)
-  = (LuaS.FunctionCall(
-      get_expr_str cn_error_stack_push_sym,
-      [ LuaS.String(msg) ]))
-let generate_lua_cn_error_stack_pop 
-  = (LuaS.FunctionCall(
-      get_expr_str cn_error_stack_pop_sym,
-      []))
