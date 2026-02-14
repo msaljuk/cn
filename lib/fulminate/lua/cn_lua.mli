@@ -2,9 +2,13 @@ module CF = Cerb_frontend
 module A = CF.AilSyntax
 module LuaS = Lua_syntax
 
+type lua_statements = (LuaS.stmt list)
+type ail_bindings_and_statements = (A.bindings * CF.GenTypes.genTypeCategory A.statement_ list)
 (* Corresponds to a list of Lua statements and the wrapper C functions that call into it *)
-type lua_cn_exec = (LuaS.stmt list) * (CF.GenTypes.genTypeCategory A.statement_ list)
+type lua_cn_exec = (lua_statements * ail_bindings_and_statements)
 
+val get_empty_lua_stmts : LuaS.stmt list
+val get_empty_ail_bindings_and_stmts : ail_bindings_and_statements
 val get_empty_lua_cn_exec : lua_cn_exec
 
 val concat :

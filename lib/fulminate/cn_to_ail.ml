@@ -744,7 +744,7 @@ let dest_with_unit_check
             @TODO saljuk: here, we'd also need to generate an ail statement for the wrapper call from C.
             And then also create that wrapper later on 
           *)
-          ([], [], ( [ lua_assert_stmt ], [])));
+          ([], [], ( [ lua_assert_stmt ], ([], []))));
   | Return ->
     let return_stmt = if is_unit then A.(AilSreturnVoid) else A.(AilSreturn e) in
     (b, s @ [ return_stmt ], l)
@@ -4418,7 +4418,10 @@ let rec cn_to_ail_lat_2
               c_return_type
               lat
           in
-          let merged_ls = [ [ upd_l ], [] ] @ [ l1 ] @ [ [ pop_l ], [] ] in
+          let merged_ls = 
+            [ [ upd_l ], CnL.get_empty_ail_bindings_and_stmts ] 
+            @ [ l1 ] 
+            @ [ [ pop_l ], CnL.get_empty_ail_bindings_and_stmts ] in
           prepend_to_precondition ail_executable_spec (b1, s1, CnL.concat ( merged_ls ))
     );
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->

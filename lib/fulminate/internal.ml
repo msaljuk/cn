@@ -14,6 +14,7 @@ type executable_spec =
     returns :
       (Cerb_location.t * (CF.GenTypes.genTypeCategory A.expression option * string list))
         list;
+    helpers : (string list * string list);
     alt_file : string list
   }
 
@@ -164,11 +165,12 @@ type cn_spec_inj_info =
   { pre_str : string list;
     post_str : string list;
     in_stmt_and_loop_inv_injs : (Cerb_location.t * string list) list;
+    helpers : string list * string list;
     alt_file : string list
   }
 
 let empty_cn_spec_inj_info : cn_spec_inj_info =
-  { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = []; alt_file = [] }
+  { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = []; helpers = ([], []); alt_file = [] }
 
 let generate_func_c_sig sym (sigm : _ CF.AilSyntax.sigma) : (Sym.t * ((Sym.t * CF.Ctype.ctype) list)) = 
   match
@@ -240,9 +242,9 @@ let generate_c_specs_from_cn_internal
     generate_c_loop_invariants without_loop_invariants ail_executable_spec
   in
 
-  let alt_file : string list =
+  let helpers, alt_file =
     match RC.get_runtime() with
-      | RC.C ->  []
+      | RC.C ->  (([], []), [])
       | RC.Lua ->
         let open Lua.Pp_lua in
 
@@ -250,35 +252,65 @@ let generate_c_specs_from_cn_internal
 
         let pre_post_prefix = "cn." ^ (Sym.pp_string func_name) ^ "." in
 
+        let gen_wrapper_dec_and_def_strs wrapper_stmts =
+          let bs, ss = wrapper_stmts in
+          ([], generate_ail_stat_strs (bs, ss, []))
+        in
+
         let alt_pre_str = 
           let _, _, cn_stmts = ail_executable_spec.pre in
-          let lua_stmts, _ = cn_stmts in
-          (pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "precondition", [], lua_stmts)))
+          let lua_stmts, wrapper_stmts = cn_stmts in
+
+          (
+            gen_wrapper_dec_and_def_strs wrapper_stmts, 
+            [ pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "precondition", [], lua_stmts)) ]
+          )
         in
         
         let alt_post_str = 
           let _, _, cn_stmts = ail_executable_spec.post in
-          let lua_stmts, _ = cn_stmts in
-          (pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "postcondition", [], lua_stmts)))
+          let lua_stmts, wrapper_stmts = cn_stmts in
+
+          (
+            gen_wrapper_dec_and_def_strs wrapper_stmts, 
+            [ pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "postcondition", [], lua_stmts)) ]
+          )
         in
 
         let alt_in_stmt = 
           let _, ail_bindings_and_statements_list = List.split ail_executable_spec.in_stmt in
           let _, _, cn_stmts = list_split_three ail_bindings_and_statements_list in
-          let lua_stmts, _ = List.split cn_stmts in
-          let lua_stmts_strings = List.map pp_stmt (List.concat lua_stmts) in
-          ( lua_stmts_strings )
+          let lua_stmts_list, wrapper_stmts_list = List.split cn_stmts in
+
+          let lua_strs = List.map pp_stmt (List.concat lua_stmts_list) in
+
+          let wrapper_dec_strs_list, wrapper_def_strs_list =
+            List.split
+              (List.map 
+              (fun wrapper_stmts -> gen_wrapper_dec_and_def_strs wrapper_stmts)
+              wrapper_stmts_list)
+          in
+          let wrapper_dec_and_def_strs = 
+            (
+              List.concat wrapper_dec_strs_list, 
+              List.concat wrapper_def_strs_list) 
+          in
+
+          ( wrapper_dec_and_def_strs, lua_strs )
         in
 
-        ( [ alt_pre_str; ] @ alt_in_stmt @ [ alt_post_str; ] )
+        let (w_pre_dec, w_pre_def), l_pre = alt_pre_str in
+        let (w_in_dec, w_in_def), l_in = alt_in_stmt in
+        let (w_post_dec, w_post_def), l_post = alt_post_str in
+
+        let w_dec = List.concat [ w_pre_dec; w_in_dec; w_post_dec ] in
+        let w_def = List.concat [ w_pre_def; w_in_def; w_post_def ] in
+        let l = List.concat [ l_pre; l_in; l_post ] in
+
+        ( ( w_dec, w_def ), l)
   in
 
-  let c_specs = (match RC.get_runtime() with
-    | RC.C -> { pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; alt_file = [] }
-    | RC.Lua -> { pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; alt_file = alt_file }
-  ) in
-
-  (c_specs)
+  ({ pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; helpers; alt_file })
 
 let generate_c_specs_internal
       without_ownership_checking
@@ -333,6 +365,7 @@ let generate_c_specs_internal
     cn_spec_inj_info.in_stmt_and_loop_inv_injs
     @ stack_local_var_inj_info.block_ownership_stmts,
     stack_local_var_inj_info.return_ownership_stmts,
+    cn_spec_inj_info.helpers,
     cn_spec_inj_info.alt_file )
 
 
@@ -402,10 +435,14 @@ let generate_c_specs
       prog5
   in
   let specs = List.map generate_c_spec instrumentation_list in
-  let pre_post, in_stmt, returns, alt_file = Utils.list_split_four specs in
+  let pre_post, in_stmt, returns, helpers, alt_file = Utils.list_split_five specs in
+
+  let helper_decs_list, helper_defs_lis = List.split helpers in
+
   { pre_post = List.concat pre_post;
     in_stmt = List.concat in_stmt;
     returns = List.concat returns;
+    helpers = (List.concat helper_decs_list, List.concat helper_defs_lis);
     alt_file = List.concat alt_file
   }
 
