@@ -4795,13 +4795,13 @@ let cn_to_ail_pre_post
               let precond_fn_wrapper_call =
                 A.(AilEcall (
                   mk_expr (AilEident (
-                    Sym.fresh (CnL.generate_lua_precondition_fn_wrapper_name func_name))), 
+                    Sym.fresh (CnL.generate_c_precondition_fn_wrapper_name func_name))), 
                     []))
               in
               let postcond_fn_wrapper_call =
                 A.(AilEcall (
                   mk_expr (AilEident (
-                    Sym.fresh (CnL.generate_lua_postcondition_fn_wrapper_name func_name))), 
+                    Sym.fresh (CnL.generate_c_postcondition_fn_wrapper_name func_name))), 
                     []))
               in
 
