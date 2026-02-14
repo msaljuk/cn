@@ -2,9 +2,11 @@ open Utils
 module CF = Cerb_frontend
 module A = CF.AilSyntax
 module C = CF.Ctype
+module RC = Runtime_config
+module CnL = Lua.Cn_lua
 
 type ail_bindings_and_statements =
-  A.bindings * CF.GenTypes.genTypeCategory A.statement_ list
+  A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.cn_stmts
 
 (* Differentiate between whether return statement carries an expression or not *)
 type return_kind =
@@ -22,7 +24,13 @@ type ownership_injection =
     injection_kind : injection_kind
   }
 
-let get_cn_stack_depth_sym = Sym.fresh "get_cn_stack_depth"
+let gen_get_cn_stack_depth_sym () = 
+  let runtime_based_call = 
+    match RC.get_runtime() with
+      | RC.C -> "get_cn_stack_depth"
+      | RC.Lua -> "lua_cn_get_stack_depth"
+  in
+  ( Sym.fresh runtime_based_call )
 
 let cn_stack_depth_incr_sym = Sym.fresh "ghost_stack_depth_incr"
 
@@ -34,9 +42,21 @@ let cn_loop_put_back_ownership_sym = Sym.fresh "cn_loop_put_back_ownership"
 
 let cn_loop_leak_check_sym = Sym.fresh "cn_loop_leak_check"
 
-let c_add_ownership_fn_sym = Sym.fresh "c_add_to_ghost_state"
+let gen_c_add_ownership_fn_sym () = 
+  let runtime_based_call = 
+    match RC.get_runtime() with
+      | RC.C -> "c_add_to_ghost_state"
+      | RC.Lua -> "lua_cn_ghost_add"
+  in
+  ( Sym.fresh runtime_based_call )
 
-let c_remove_ownership_fn_sym = Sym.fresh "c_remove_from_ghost_state"
+let gen_c_remove_ownership_fn_sym () = 
+  let runtime_based_call = 
+    match RC.get_runtime() with
+      | RC.C -> "c_remove_from_ghost_state"
+      | RC.Lua -> "lua_cn_ghost_remove"
+  in
+  ( Sym.fresh runtime_based_call )
 
 (* TODO: Use these to reduce verbosity of output. Mirrors C+CN input slightly less since
    we replace declarations with a call to one of these macros
@@ -103,10 +123,10 @@ let generate_c_local_ownership_entry_fcall (local_sym, local_ctype) =
   let local_ident = mk_expr A.(AilEident local_sym) in
   let arg1 = A.(AilEunary (Address, local_ident)) in
   let arg2 = A.(AilEsizeof (C.no_qualifiers, local_ctype)) in
-  let arg3 = A.(AilEcall (mk_expr (AilEident get_cn_stack_depth_sym), [])) in
+  let arg3 = A.(AilEcall (mk_expr (AilEident ( gen_get_cn_stack_depth_sym() )), [])) in
   mk_expr
     (AilEcall
-       (mk_expr (AilEident c_add_ownership_fn_sym), List.map mk_expr [ arg1; arg2; arg3 ]))
+       (mk_expr (AilEident ( gen_c_add_ownership_fn_sym() )), List.map mk_expr [ arg1; arg2; arg3 ]))
 
 
 let generate_c_local_ownership_entry sym_ctype_pair =
@@ -116,8 +136,13 @@ let generate_c_local_ownership_entry sym_ctype_pair =
 let generate_c_local_ownership_entry_bs_and_ss (sym, ctype) =
   let entry_fcall_stat = generate_c_local_ownership_entry (sym, ctype) in
   let addr_cn_binding, addr_cn_decl = generate_c_local_cn_addr_var sym in
-  ([ addr_cn_binding ], [ entry_fcall_stat; addr_cn_decl ])
-
+  match RC.get_runtime() with
+    | RC.C -> ([ addr_cn_binding ], [ entry_fcall_stat; addr_cn_decl ])
+    (*
+      @note saljuk: clearing this for now since we don't need cn pointer generation in c
+      when using a Lua runtime.
+    *)
+    | RC.Lua -> ([], [ entry_fcall_stat ])
 
 (* int x = 0, y = 5;
 
@@ -195,7 +220,7 @@ let generate_c_local_ownership_exit (local_sym, local_ctype) =
       (mk_expr
          A.(
            AilEcall
-             ( mk_expr (AilEident c_remove_ownership_fn_sym),
+             ( mk_expr (AilEident ( gen_c_remove_ownership_fn_sym() )),
                List.map mk_expr [ arg1; arg2 ] ))))
 
 
@@ -291,7 +316,7 @@ let rec get_c_control_flow_ownership_injs_aux
         let offset = String.length (Sym.pp_string label_sym) + 1 in
         let loc_after_label = get_start_loc ~offset loc in
         [ { loc = loc_after_label;
-            bs_and_ss = ([], List.map generate_c_local_ownership_entry in_scope_vars);
+            bs_and_ss = ([], List.map generate_c_local_ownership_entry in_scope_vars, []);
             injection_kind = NonReturnInj
           }
         ]
@@ -318,7 +343,7 @@ let rec get_c_control_flow_ownership_injs_aux
      | Some Desug_continue ->
        let loc_before_continue = get_start_loc loc in
        [ { loc = loc_before_continue;
-           bs_and_ss = ([], List.map generate_c_local_ownership_exit continue_vars);
+           bs_and_ss = ([], List.map generate_c_local_ownership_exit continue_vars, []);
            injection_kind = NonReturnInj
          }
        ]
@@ -327,26 +352,26 @@ let rec get_c_control_flow_ownership_injs_aux
        (* Unmap addresses of all in-scope variables *)
        let loc_before_goto = get_start_loc loc in
        [ { loc = loc_before_goto;
-           bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars);
+           bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars, []);
            injection_kind = NonReturnInj
          }
        ])
   | AilSreturnVoid ->
     [ { loc;
-        bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars);
+        bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars, []);
         injection_kind = ReturnInj ReturnVoid
       }
     ]
   | AilSreturn e ->
     [ { loc;
-        bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars);
+        bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars, []);
         injection_kind = ReturnInj (ReturnExpr e)
       }
     ]
   | AilSbreak ->
     let loc_before_break = get_start_loc loc in
     [ { loc = loc_before_break;
-        bs_and_ss = ([], List.map generate_c_local_ownership_exit break_vars);
+        bs_and_ss = ([], List.map generate_c_local_ownership_exit break_vars, []);
         injection_kind = NonReturnInj
       }
     ]
@@ -570,7 +595,7 @@ let get_c_block_entry_exit_injs stat
   let injs = get_c_block_entry_exit_injs_aux [] stat in
   let standard_injs =
     List.map
-      (fun (loc, bs, ss) -> { loc; bs_and_ss = (bs, ss); injection_kind = NonReturnInj })
+      (fun (loc, bs, ss) -> { loc; bs_and_ss = (bs, ss, []); injection_kind = NonReturnInj })
       injs.standard_injs
   in
   (standard_injs, injs.gcc_stat_as_expr_injs)
@@ -604,8 +629,8 @@ let get_c_block_local_ownership_checking_injs statement =
           (Cerb_location.location_to_string loc)
           (Cerb_location.location_to_string inj.loc)
       then (
-        let bs, ss = inj.bs_and_ss in
-        (bs, ss, inj.injection_kind) :: combine_injs_over_location loc injs')
+        let bs, ss, ls = inj.bs_and_ss in
+        (bs, ss, ls, inj.injection_kind) :: combine_injs_over_location loc injs')
       else
         combine_injs_over_location loc injs'
   in
@@ -620,10 +645,10 @@ let get_c_block_local_ownership_checking_injs statement =
     List.map
       (fun l ->
          let injs' = combine_injs_over_location l injs in
-         let bs_list, ss_list, inj_kind_list = Utils.list_split_three injs' in
+         let bs_list, ss_list, ls_list, inj_kind_list = Utils.list_split_four injs' in
          let inj_kind = get_return_inj_kind inj_kind_list in
          { loc = l;
-           bs_and_ss = (List.concat bs_list, List.concat ss_list);
+           bs_and_ss = (List.concat bs_list, List.concat ss_list, List.concat ls_list);
            injection_kind = inj_kind
          })
       locs
