@@ -261,8 +261,6 @@ let generate_c_specs_from_cn_internal
       | RC.Lua ->
         let open Lua.Pp_lua in
 
-        let func_name, _ = func_c_sig in
-
         let gen_wrapper_dec_and_def_strs (wrapper_functions : CnL.wrapper_functions) =
           let defs, decls = generate_fun_def_and_decl_docs wrapper_functions in
           (doc_to_pretty_string decls, doc_to_pretty_string defs)
@@ -271,30 +269,18 @@ let generate_c_specs_from_cn_internal
         let alt_pre_str = 
           let _, _, cn_stmts = ail_executable_spec.pre in
           let lua_stmts, wrapper_stmts = cn_stmts in
-
           (
             [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
-            [ pp_stmt (
-                LuaS.FunctionDef(
-                  CnL.generate_lua_precondition_fn_name func_name, [], lua_stmts
-                )
-              ) 
-            ]
+            List.map pp_stmt lua_stmts;
           )
         in
         
         let alt_post_str = 
           let _, _, cn_stmts = ail_executable_spec.post in
           let lua_stmts, wrapper_stmts = cn_stmts in
-
           (
             [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
-            [ pp_stmt (
-                LuaS.FunctionDef(
-                  CnL.generate_lua_postcondition_fn_name func_name, [], lua_stmts
-                )
-              ) 
-            ]
+            List.map pp_stmt lua_stmts;
           )
         in
 
@@ -322,16 +308,15 @@ let generate_c_specs_from_cn_internal
         let in_dec, in_def = List.split in_decs_and_defs in
         let post_dec, post_def = List.split post_decs_and_defs in
 
-        let combined_defs_and_decs = 
+        let combined_decs_and_defs = 
           (
             pre_dec @ in_dec @ post_dec,
             pre_def @ in_def @ post_def
           )
         in
-
         let combined_l = l_pre @ l_in @ l_post in
 
-        ( combined_defs_and_decs, combined_l)
+        ( combined_decs_and_defs, combined_l)
   in
 
   ({ pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; helpers; alt_file })
