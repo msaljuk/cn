@@ -687,20 +687,46 @@ let main
               c_function_defs;
               "\n";
               c_predicate_defs;
-              c_lemma_defs
+              c_lemma_defs;
             ]
           in
 
           (cn_header_decls, cn_defs_list)
 
       | RC.Lua ->
-          (List.concat
-          [ 
-            [ "#include <cn-executable/cerb_types.h>\n"; ];
-            [ c_tag_defs ];
-            [ cn_ghost_enum ];
-            cn_ghost_call_site_glob
-          ], [])
+          let helper_decs, helper_defs = executable_spec.helpers in
+
+          let headers = 
+            List.concat
+            [ 
+              [ "#include <cn-executable/cerb_types.h>\n"; ];
+              [ c_tag_defs ];
+              [ cn_ghost_enum ];
+              cn_ghost_call_site_glob;
+            ]
+            @
+            (if List.is_empty helper_decs then 
+              ([]) 
+            else List.concat (
+              [
+                [ "/* HELPER FUNCTIONS DECLARATIONS */\n" ];
+                helper_decs;
+              ]
+            ))
+          in
+
+          let defs =
+            (if List.is_empty helper_defs then 
+              ([]) 
+            else List.concat (
+              [
+                [ "/* HELPER FUNCTIONS DEFINITIONS */\n" ];
+                helper_defs;
+              ]
+            ))
+          in
+            
+          (headers, defs)
   in
 
   let cn_header_decls_list, cn_defs_list = 

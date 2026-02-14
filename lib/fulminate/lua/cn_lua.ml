@@ -4,7 +4,9 @@ module LuaS = Lua_syntax
 module PP = Pp_lua
 open Utils
 
-type lua_cn_exec = (LuaS.stmt list) * (CF.GenTypes.genTypeCategory A.statement_ list)
+type lua_statements = (LuaS.stmt list)
+type ail_bindings_and_statements = (A.bindings * CF.GenTypes.genTypeCategory A.statement_ list)
+type lua_cn_exec = (lua_statements * ail_bindings_and_statements)
 
 let get_expr_str expr = PP.pp_expr expr
 
@@ -15,14 +17,24 @@ let cn_asserts_table_sym = LuaS.Symbol( "cn.asserts" )
 let cn_error_stack_push_sym = LuaS.Symbol( "cn.error_stack.push" )
 let cn_error_stack_pop_sym  = LuaS.Symbol( "cn.error_stack.pop" )
 
-let get_empty_lua_cn_exec : lua_cn_exec =
-  ([], [])
+let get_empty_lua_stmts : (LuaS.stmt list)
+  = ([])
 
-let concat exec_list =
+let get_empty_ail_bindings_and_stmts : (A.bindings * CF.GenTypes.genTypeCategory A.statement_ list)
+  = ([], [])
+
+let get_empty_lua_cn_exec : lua_cn_exec =
+  (get_empty_lua_stmts, get_empty_ail_bindings_and_stmts)
+
+let concat (exec_list : lua_cn_exec list) =
   let lua_stmts_list, wrapper_stmts_list = List.split exec_list in
-  let lua_stmts = List.concat lua_stmts_list in
-  let wrapper_stmts = List.concat wrapper_stmts_list in
-  (lua_stmts, wrapper_stmts)
+  let merged_lua_stmts = List.concat lua_stmts_list in
+
+  let bs_list, ss_list = List.split wrapper_stmts_list in
+  let bs, ss = (List.concat bs_list, List.concat ss_list) in
+  let merged_wrapper_statements = (bs, ss) in
+
+  (merged_lua_stmts, merged_wrapper_statements)
 
 let generate_lua_filename basefile 
   = (Filename.remove_extension basefile) ^ ".lua"
