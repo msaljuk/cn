@@ -46,7 +46,25 @@ let generate_lua_runtime_core_req
         LuaS.Call( "require", [ LuaS.String("lua_cn_runtime_core") ] )
       ))
 
-let generate_lua_cn_assert func_name ail_expr error_msg
+let generate_lua_fn_prefix (c_fn_name : Sym.t)
+  = (Pp_lua.pp_expr cn_sym) ^ (".") ^ (Sym.pp_string c_fn_name) ^ (".")
+
+let generate_lua_fn_wrapper_prefix (c_fn_name : Sym.t)
+  = "lua_cn_" ^ (Sym.pp_string c_fn_name) ^ "_"
+
+let generate_lua_precondition_fn_name (c_fn_name : Sym.t)
+  = (generate_lua_fn_prefix c_fn_name) ^ ("precondition")
+
+let generate_lua_postcondition_fn_name (c_fn_name : Sym.t)
+  = (generate_lua_fn_prefix c_fn_name) ^ ("postcondition")
+
+let generate_lua_precondition_fn_wrapper_name (c_fn_name : Sym.t)
+  = (generate_lua_fn_wrapper_prefix c_fn_name) ^ ("precondition")
+
+let generate_lua_postcondition_fn_wrapper_name (c_fn_name : Sym.t)
+  = (generate_lua_fn_wrapper_prefix c_fn_name) ^ ("postcondition")
+
+let generate_lua_cn_assert fn_name ail_expr error_msg
   = 
   (* 
   @note saljuk: right now, only providing an implementation for assert(false) asserts.
@@ -77,13 +95,13 @@ let generate_lua_cn_assert func_name ail_expr error_msg
     let assert_stmt = 
       LuaS.FunctionCall(
         get_expr_str cn_assert_sym, 
-        [ LuaS.Bool(false); LuaS.Field(cn_spec_mode_sym, LuaS.Symbol("STATEMENT")) ]) in
+        [ LuaS.Bool(false); LuaS.Table(cn_spec_mode_sym, LuaS.Symbol("STATEMENT")) ]) in
 
     let body_stmts = [ error_push_stmt; assert_stmt; error_pop_stmt ] in
 
-    let func_name_table = LuaS.Field( cn_asserts_table_sym, LuaS.Symbol(func_name) ) in
+    let fn_name_table = LuaS.Table( cn_asserts_table_sym, LuaS.Symbol(fn_name) ) in
 
-    let func_stmt = LuaS.FunctionDef( get_expr_str func_name_table, [], body_stmts ) in
+    let func_stmt = LuaS.FunctionDef( get_expr_str fn_name_table, [], body_stmts ) in
 
     ( func_stmt )
   ) else ( LuaS.Empty )

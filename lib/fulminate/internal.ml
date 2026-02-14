@@ -250,8 +250,6 @@ let generate_c_specs_from_cn_internal
 
         let func_name, _ = func_c_sig in
 
-        let pre_post_prefix = "cn." ^ (Sym.pp_string func_name) ^ "." in
-
         let gen_wrapper_dec_and_def_strs wrapper_stmts =
           let bs, ss = wrapper_stmts in
           ([], generate_ail_stat_strs (bs, ss, []))
@@ -263,7 +261,12 @@ let generate_c_specs_from_cn_internal
 
           (
             gen_wrapper_dec_and_def_strs wrapper_stmts, 
-            [ pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "precondition", [], lua_stmts)) ]
+            [ pp_stmt (
+                LuaS.FunctionDef(
+                  CnL.generate_lua_precondition_fn_name func_name, [], lua_stmts
+                )
+              ) 
+            ]
           )
         in
         
@@ -273,7 +276,12 @@ let generate_c_specs_from_cn_internal
 
           (
             gen_wrapper_dec_and_def_strs wrapper_stmts, 
-            [ pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "postcondition", [], lua_stmts)) ]
+            [ pp_stmt (
+                LuaS.FunctionDef(
+                  CnL.generate_lua_postcondition_fn_name func_name, [], lua_stmts
+                )
+              ) 
+            ]
           )
         in
 
