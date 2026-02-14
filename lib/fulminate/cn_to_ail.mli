@@ -53,7 +53,7 @@ val wrap_with_convert_from_cn_bool
   GenTypes.genTypeCategory AilSyntax.expression
 
 type ail_bindings_and_statements =
-  AilSyntax.bindings * GenTypes.genTypeCategory AilSyntax.statement_ list * CnL.cn_stmts
+  AilSyntax.bindings * GenTypes.genTypeCategory AilSyntax.statement_ list * CnL.lua_cn_exec
 
 type loop_info =
   { cond : Locations.t * ail_bindings_and_statements;
@@ -170,7 +170,7 @@ val cn_to_ail_expr_toplevel
   IndexTerms.t ->
   AilSyntax.bindings
   * GenTypes.genTypeCategory AilSyntax.statement_ list
-  * CnL.cn_stmts
+  * CnL.lua_cn_exec
   * GenTypes.genTypeCategory AilSyntax.expression
 
 val cn_to_ail_logical_constraint
@@ -181,7 +181,7 @@ val cn_to_ail_logical_constraint
   LogicalConstraints.t ->
   AilSyntax.bindings
   * GenTypes.genTypeCategory AilSyntax.statement_ list
-  * CnL.cn_stmts
+  * CnL.lua_cn_exec
   * GenTypes.genTypeCategory AilSyntax.expression
 
 val cn_to_ail_struct
@@ -267,7 +267,7 @@ val cn_to_ail_assume_pre
   * GenTypes.genTypeCategory AilSyntax.sigma_function_definition
 
 val gen_ghost_call_site_global_decl
-  : AilSyntax.bindings * GenTypes.genTypeCategory AilSyntax.statement_ list * CnL.cn_stmts
+  : AilSyntax.bindings * GenTypes.genTypeCategory AilSyntax.statement_ list * CnL.lua_cn_exec
 
 val cn_to_ail_ghost_enum
   :  unit BaseTypes.t_gen list list ->
@@ -280,4 +280,4 @@ val cn_to_ail_cnprog_ghost_args
   (Sym.t * Ctype.ctype) list ->
   spec_mode option ->
   IndexTerms.t Cnprog.t list ->
-  AilSyntax.bindings * GenTypes.genTypeCategory AilSyntax.statement_ list * CnL.cn_stmts
+  AilSyntax.bindings * GenTypes.genTypeCategory AilSyntax.statement_ list * CnL.lua_cn_exec

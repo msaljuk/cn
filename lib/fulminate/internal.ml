@@ -251,18 +251,21 @@ let generate_c_specs_from_cn_internal
         let pre_post_prefix = "cn." ^ (Sym.pp_string func_name) ^ "." in
 
         let alt_pre_str = 
-          let _, _, lua_stmts = ail_executable_spec.pre in
+          let _, _, cn_stmts = ail_executable_spec.pre in
+          let lua_stmts, _ = cn_stmts in
           (pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "precondition", [], lua_stmts)))
         in
         
         let alt_post_str = 
-          let _, _, lua_stmts = ail_executable_spec.post in
+          let _, _, cn_stmts = ail_executable_spec.post in
+          let lua_stmts, _ = cn_stmts in
           (pp_stmt (LuaS.FunctionDef(pre_post_prefix ^ "postcondition", [], lua_stmts)))
         in
 
         let alt_in_stmt = 
           let _, ail_bindings_and_statements_list = List.split ail_executable_spec.in_stmt in
-          let _, _, lua_stmts = list_split_three ail_bindings_and_statements_list in
+          let _, _, cn_stmts = list_split_three ail_bindings_and_statements_list in
+          let lua_stmts, _ = List.split cn_stmts in
           let lua_stmts_strings = List.map pp_stmt (List.concat lua_stmts) in
           ( lua_stmts_strings )
         in
