@@ -744,7 +744,7 @@ let dest_with_unit_check
             @TODO saljuk: here, we'd also need to generate an ail statement for the wrapper call from C.
             And then also create that wrapper later on 
           *)
-          ([], [], ( [ lua_assert_stmt ], ([], []))));
+          ([], [], ( [ lua_assert_stmt ], CnL.get_empty_wrapper_functions)));
   | Return ->
     let return_stmt = if is_unit then A.(AilSreturnVoid) else A.(AilSreturn e) in
     (b, s @ [ return_stmt ], l)
@@ -4405,7 +4405,6 @@ let rec cn_to_ail_lat_2
           let b1, s1, l1 =
             cn_to_ail_resource filename name dts globals preds None spec_mode_opt loc ret
           in
-          List.iter (fun x -> Pp.debug 0 (lazy (CF.Pp_ail.pp_statement (mk_stmt x)))) s1;
           let ail_executable_spec =
             cn_to_ail_lat_2
               without_ownership_checking
@@ -4419,9 +4418,9 @@ let rec cn_to_ail_lat_2
               lat
           in
           let merged_ls = 
-            [ [ upd_l ], CnL.get_empty_ail_bindings_and_stmts ] 
+            [ [ upd_l ], CnL.get_empty_wrapper_functions ] 
             @ [ l1 ] 
-            @ [ [ pop_l ], CnL.get_empty_ail_bindings_and_stmts ] in
+            @ [ [ pop_l ], CnL.get_empty_wrapper_functions ] in
           prepend_to_precondition ail_executable_spec (b1, s1, CnL.concat ( merged_ls ))
     );
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->
@@ -4756,15 +4755,15 @@ let cn_to_ail_pre_post
 
             append_to_postcondition precond_ail_exec_spec ([], [ bump_alloc_end_stat_ ], CnL.get_empty_lua_cn_exec)
         | RC.Lua ->
-            let func_name, func_params = func_c_sig in
+            let c_func_name, c_func_params = func_c_sig in
 
             let gen_lua_function_frames () : (('a A.statement_ * CnL.lua_cn_exec) * ('a A.statement_ * CnL.lua_cn_exec)) = 
               let func_params_expr
                 =
-                  if (List.is_empty (func_params)) then (
+                  if (List.is_empty (c_func_params)) then (
                     ([])
                   ) else (
-                    let func_param_syms, _ = List.split func_params in
+                    let func_param_syms, _ = List.split c_func_params in
                     
                     (
                       List.map (fun sym ->
@@ -4774,20 +4773,28 @@ let cn_to_ail_pre_post
                   )
               in
 
-              let push_fn_call =
+              let push_fn_lua_name = CnL.generate_lua_push_frame_fn_name c_func_name in
+              let push_fn_lua = [] in
+
+              let push_fn_wrapper_name = CnL.generate_c_push_frame_fn_wrapper_name c_func_name in
+
+              let push_fn_wrapper_call =
                 A.(AilEcall (
                   mk_expr (AilEident (
-                    Sym.fresh ("lua_cn_frame_push_function_" ^ Sym.pp_string func_name))), 
+                    Sym.fresh (push_fn_wrapper_name))), 
                     func_params_expr))
               in
 
-              let pop_fn_call = 
-                A.(AilEcall (mk_expr (AilEident (Sym.fresh "lua_cn_frame_pop_function")), []))
+              let push_fn_wrapper_def 
+                = CnL.generate_c_fn_wrapper_def 
+                  push_fn_lua_name
+                  push_fn_wrapper_name 
+                  c_func_params
               in
 
               (
-                (A.AilSexpr (mk_expr push_fn_call), CnL.get_empty_lua_cn_exec), 
-                (A.AilSexpr (mk_expr pop_fn_call), CnL.get_empty_lua_cn_exec)
+                (A.AilSexpr (mk_expr push_fn_wrapper_call), (push_fn_lua, [ push_fn_wrapper_def ])), 
+                (CnL.generate_c_pop_frame_fn_wrapper_call, CnL.get_empty_lua_cn_exec)
               )
             in
 
@@ -4795,13 +4802,13 @@ let cn_to_ail_pre_post
               let precond_fn_wrapper_call =
                 A.(AilEcall (
                   mk_expr (AilEident (
-                    Sym.fresh (CnL.generate_c_precondition_fn_wrapper_name func_name))), 
+                    Sym.fresh (CnL.generate_c_precondition_fn_wrapper_name c_func_name))), 
                     []))
               in
               let postcond_fn_wrapper_call =
                 A.(AilEcall (
                   mk_expr (AilEident (
-                    Sym.fresh (CnL.generate_c_postcondition_fn_wrapper_name func_name))), 
+                    Sym.fresh (CnL.generate_c_postcondition_fn_wrapper_name c_func_name))), 
                     []))
               in
 

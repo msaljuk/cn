@@ -160,6 +160,19 @@ let generate_fn_call_ghost_args_injs
           ])
        (Extract.ghost_args_and_their_call_locs prog5))
 
+let generate_fun_def_and_decl_docs funs =
+  let one_def_prog (decl, def) =
+    { A.empty_sigma with declarations = [ decl ]; function_definitions = [ def ] }
+  in
+  let one_decl_prog (decl, _) = { A.empty_sigma with declarations = [ decl ] } in
+  let pp_it x =
+    !^"static "
+    ^^ CF.Pp_ail.(with_executable_spec (pp_program ~show_include:true) (None, x))
+  in
+  let pp_many f xs = List.fold_left (fun d x -> pp_it (f x) ^^ d) empty xs in
+  let defs_doc = pp_many one_def_prog funs in
+  let decls_doc = pp_many one_decl_prog funs in
+  (defs_doc, decls_doc)
 
 type cn_spec_inj_info =
   { pre_str : string list;
@@ -250,9 +263,9 @@ let generate_c_specs_from_cn_internal
 
         let func_name, _ = func_c_sig in
 
-        let gen_wrapper_dec_and_def_strs wrapper_stmts =
-          let bs, ss = wrapper_stmts in
-          ([], generate_ail_stat_strs (bs, ss, []))
+        let gen_wrapper_dec_and_def_strs (wrapper_functions : CnL.wrapper_functions) =
+          let defs, decls = generate_fun_def_and_decl_docs wrapper_functions in
+          (doc_to_pretty_string decls, doc_to_pretty_string defs)
         in
 
         let alt_pre_str = 
@@ -260,7 +273,7 @@ let generate_c_specs_from_cn_internal
           let lua_stmts, wrapper_stmts = cn_stmts in
 
           (
-            gen_wrapper_dec_and_def_strs wrapper_stmts, 
+            [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
             [ pp_stmt (
                 LuaS.FunctionDef(
                   CnL.generate_lua_precondition_fn_name func_name, [], lua_stmts
@@ -275,7 +288,7 @@ let generate_c_specs_from_cn_internal
           let lua_stmts, wrapper_stmts = cn_stmts in
 
           (
-            gen_wrapper_dec_and_def_strs wrapper_stmts, 
+            [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
             [ pp_stmt (
                 LuaS.FunctionDef(
                   CnL.generate_lua_postcondition_fn_name func_name, [], lua_stmts
@@ -292,30 +305,33 @@ let generate_c_specs_from_cn_internal
 
           let lua_strs = List.map pp_stmt (List.concat lua_stmts_list) in
 
-          let wrapper_dec_strs_list, wrapper_def_strs_list =
-            List.split
+          let decs_and_defs =
               (List.map 
               (fun wrapper_stmts -> gen_wrapper_dec_and_def_strs wrapper_stmts)
               wrapper_stmts_list)
           in
-          let wrapper_dec_and_def_strs = 
-            (
-              List.concat wrapper_dec_strs_list, 
-              List.concat wrapper_def_strs_list) 
-          in
 
-          ( wrapper_dec_and_def_strs, lua_strs )
+          (( decs_and_defs ), lua_strs )
         in
 
-        let (w_pre_dec, w_pre_def), l_pre = alt_pre_str in
-        let (w_in_dec, w_in_def), l_in = alt_in_stmt in
-        let (w_post_dec, w_post_def), l_post = alt_post_str in
+        let pre_decs_and_defs, l_pre = alt_pre_str in
+        let in_decs_and_defs, l_in = alt_in_stmt in
+        let post_decs_and_defs, l_post = alt_post_str in
 
-        let w_dec = List.concat [ w_pre_dec; w_in_dec; w_post_dec ] in
-        let w_def = List.concat [ w_pre_def; w_in_def; w_post_def ] in
-        let l = List.concat [ l_pre; l_in; l_post ] in
+        let pre_dec, pre_def = List.split pre_decs_and_defs in
+        let in_dec, in_def = List.split in_decs_and_defs in
+        let post_dec, post_def = List.split post_decs_and_defs in
 
-        ( ( w_dec, w_def ), l)
+        let combined_defs_and_decs = 
+          (
+            pre_dec @ in_dec @ post_dec,
+            pre_def @ in_def @ post_def
+          )
+        in
+
+        let combined_l = l_pre @ l_in @ l_post in
+
+        ( combined_defs_and_decs, combined_l)
   in
 
   ({ pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; helpers; alt_file })
@@ -579,22 +595,6 @@ let generate_c_tag_decl_strs c_structs =
 let generate_cn_versions_of_structs c_structs =
   let ail_structs = List.concat (List.map Cn_to_ail.cn_to_ail_struct c_structs) in
   "\n/* CN VERSIONS OF C STRUCTS */\n\n" ^ generate_str_from_ail_structs ail_structs
-
-
-let generate_fun_def_and_decl_docs funs =
-  let one_def_prog (decl, def) =
-    { A.empty_sigma with declarations = [ decl ]; function_definitions = [ def ] }
-  in
-  let one_decl_prog (decl, _) = { A.empty_sigma with declarations = [ decl ] } in
-  let pp_it x =
-    !^"static "
-    ^^ CF.Pp_ail.(with_executable_spec (pp_program ~show_include:true) (None, x))
-  in
-  let pp_many f xs = List.fold_left (fun d x -> pp_it (f x) ^^ d) empty xs in
-  let defs_doc = pp_many one_def_prog funs in
-  let decls_doc = pp_many one_decl_prog funs in
-  (defs_doc, decls_doc)
-
 
 let generate_c_functions
       filename
