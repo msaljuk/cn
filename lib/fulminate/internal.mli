@@ -6,7 +6,8 @@ type executable_spec =
     returns :
       (Cerb_location.t
       * (GenTypes.genTypeCategory AilSyntax.expression option * string list))
-        list
+        list;
+    alt_file : string list
   }
 
 val generate_c_assume_pres_internal

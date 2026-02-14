@@ -1,5 +1,6 @@
 module Extract = Extract
 module Cn_to_ail = Cn_to_ail
+module Cn_lua = Lua.Cn_lua
 module Globals = Globals
 module Internal = Internal
 module Ownership = Ownership

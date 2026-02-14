@@ -28,6 +28,8 @@ val generate_sym_with_suffix
 
 val list_split_three : ('a * 'b * 'c) list -> 'a list * 'b list * 'c list
 
+val list_split_four : ('a * 'b * 'c * 'd) list -> 'a list * 'b list * 'c list * 'd list
+
 val ifndef_wrap : string -> string -> string
 
 val generate_include_header : string * bool -> string
