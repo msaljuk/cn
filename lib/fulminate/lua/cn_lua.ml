@@ -4,8 +4,7 @@ module LuaS = Lua_syntax
 module PP = Pp_lua
 open Utils
 
-type cn_stmt  = LuaS.stmt
-type cn_stmts = cn_stmt list
+type lua_cn_exec = (LuaS.stmt list) * (CF.GenTypes.genTypeCategory A.statement_ list)
 
 let get_expr_str expr = PP.pp_expr expr
 
@@ -15,6 +14,15 @@ let cn_assert_sym = LuaS.Symbol( "cn.assert" )
 let cn_asserts_table_sym = LuaS.Symbol( "cn.asserts" )
 let cn_error_stack_push_sym = LuaS.Symbol( "cn.error_stack.push" )
 let cn_error_stack_pop_sym  = LuaS.Symbol( "cn.error_stack.pop" )
+
+let get_empty_lua_cn_exec : lua_cn_exec =
+  ([], [])
+
+let concat exec_list =
+  let lua_stmts_list, wrapper_stmts_list = List.split exec_list in
+  let lua_stmts = List.concat lua_stmts_list in
+  let wrapper_stmts = List.concat wrapper_stmts_list in
+  (lua_stmts, wrapper_stmts)
 
 let generate_lua_filename basefile 
   = (Filename.remove_extension basefile) ^ ".lua"
@@ -67,3 +75,12 @@ let generate_lua_cn_assert func_name ail_expr error_msg
 
     ( func_stmt )
   ) else ( LuaS.Empty )
+
+let generate_lua_cn_error_stack_push (msg: string)
+  = (LuaS.FunctionCall(
+      get_expr_str cn_error_stack_push_sym,
+      [ LuaS.String(msg) ]))
+let generate_lua_cn_error_stack_pop 
+  = (LuaS.FunctionCall(
+      get_expr_str cn_error_stack_pop_sym,
+      []))
