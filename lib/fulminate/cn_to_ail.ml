@@ -4773,24 +4773,21 @@ let cn_to_ail_pre_post
                   )
               in
 
-              let push_fn_lua_name = CnL.generate_lua_push_frame_fn_name c_func_name in
-              let push_fn_lua = [] in
-
               let push_fn_wrapper_name = CnL.generate_c_push_frame_fn_wrapper_name c_func_name in
-
+              let push_fn_lua_name = CnL.generate_lua_push_frame_fn_name c_func_name in
               let push_fn_wrapper_call =
                 A.(AilEcall (
                   mk_expr (AilEident (
                     Sym.fresh (push_fn_wrapper_name))), 
                     func_params_expr))
               in
-
               let push_fn_wrapper_def 
                 = CnL.generate_c_fn_wrapper_def 
                   push_fn_lua_name
                   push_fn_wrapper_name 
                   c_func_params
               in
+              let push_fn_lua = [] in
 
               (
                 (A.AilSexpr (mk_expr push_fn_wrapper_call), (push_fn_lua, [ push_fn_wrapper_def ])), 
@@ -4799,23 +4796,57 @@ let cn_to_ail_pre_post
             in
 
             let gen_lua_pre_post_wrappers () : (('a A.statement_ * CnL.lua_cn_exec) * ('a A.statement_ * CnL.lua_cn_exec)) = 
+              let open Lua.Lua_syntax in
+              
+              (* Precondition *)
+              let precond_fn_wrapper_name = CnL.generate_c_precondition_fn_wrapper_name c_func_name in
+              let precond_fn_lua_name = CnL.generate_lua_precondition_fn_name c_func_name in
               let precond_fn_wrapper_call =
                 A.(AilEcall (
                   mk_expr (AilEident (
-                    Sym.fresh (CnL.generate_c_precondition_fn_wrapper_name c_func_name))), 
+                    Sym.fresh precond_fn_wrapper_name)), 
                     []))
               in
+              let precond_fn_wrapper_def
+                = CnL.generate_c_fn_wrapper_def 
+                  precond_fn_lua_name
+                  precond_fn_wrapper_name 
+                  []
+              in
+              let _, _, lua_cn_exec_pre = ail_executable_spec.pre in
+              let lua_stmts_pre, _ = lua_cn_exec_pre in
+              let precond_fn_lua = 
+                FunctionDef(
+                  CnL.generate_lua_precondition_fn_name c_func_name, [], lua_stmts_pre
+                )
+              in
+
+              (* Postcondition *)
+              let postcond_fn_wrapper_name = CnL.generate_c_postcondition_fn_wrapper_name c_func_name in
+              let postcond_fn_lua_name = CnL.generate_lua_postcondition_fn_name c_func_name in
               let postcond_fn_wrapper_call =
                 A.(AilEcall (
                   mk_expr (AilEident (
-                    Sym.fresh (CnL.generate_c_postcondition_fn_wrapper_name c_func_name))), 
+                    Sym.fresh postcond_fn_wrapper_name)), 
                     []))
               in
+              let postcond_fn_wrapper_def
+                = CnL.generate_c_fn_wrapper_def 
+                  postcond_fn_lua_name
+                  postcond_fn_wrapper_name 
+                  []
+              in
+              let _, _, lua_cn_exec_post = ail_executable_spec.post in
+              let lua_stmts_post, _ = lua_cn_exec_post in
+              let postcond_fn_lua = 
+                FunctionDef(
+                  CnL.generate_lua_postcondition_fn_name c_func_name, [], lua_stmts_post
+                )
+              in
 
-              (* consider moving precondition Lua generation here *)
               (
-                (A.AilSexpr (mk_expr precond_fn_wrapper_call), CnL.get_empty_lua_cn_exec), 
-                (A.AilSexpr (mk_expr postcond_fn_wrapper_call), CnL.get_empty_lua_cn_exec)
+                (A.AilSexpr (mk_expr precond_fn_wrapper_call), ( [ precond_fn_lua ], [ precond_fn_wrapper_def ])), 
+                (A.AilSexpr (mk_expr postcond_fn_wrapper_call), ( [ postcond_fn_lua ], [ postcond_fn_wrapper_def ]))
               )
             in
 
@@ -4825,16 +4856,29 @@ let cn_to_ail_pre_post
             let push_ss, push_ls = lua_frame_function_push in
             let pop_ss, pop_ls = lua_frame_function_pop in
 
-            let lua_precond_wrapper_function_call, lua_postcond_wrapper_function_call
+            let lua_precond, lua_postcond
               = gen_lua_pre_post_wrappers()
             in
-            let precond_ss, precond_ls = lua_precond_wrapper_function_call in
-            let postcond_ss, postcond_ls = lua_postcond_wrapper_function_call in
+            let precond_ss, precond_ls = lua_precond in
+            let postcond_ss, postcond_ls = lua_postcond in
+
+            (* 
+             * Start with a new exec spec that nulls out pre and posts statements 
+             * since we've wrapped them inside a function call statement now
+             *)
+            let new_ail_executable_spec = 
+                { 
+                  pre = empty_ail_executable_spec.pre; 
+                  post = empty_ail_executable_spec.post; 
+                  in_stmt = ail_executable_spec.in_stmt; 
+                  loops = ail_executable_spec.loops;
+                }
+            in
 
             let precond_ail_exec_spec = 
               prepend_to_precondition
-                ail_executable_spec
-                ([ ], [ push_ss; precond_ss ], CnL.concat [ push_ls; precond_ls ] )
+                new_ail_executable_spec
+                ([ ], [ push_ss; precond_ss ], CnL.concat [ precond_ls; push_ls ] )
             in
 
             append_to_postcondition 
