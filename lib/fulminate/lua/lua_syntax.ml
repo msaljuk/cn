@@ -1,5 +1,6 @@
 type ident = string
 
+(* Lua Expressions *)
 type expr =
   | Nil
   | Bool of bool
@@ -10,6 +11,7 @@ type expr =
   | Field of expr * expr
   | Call of ident * expr list
  
+(* Lua Statements *)
 type stmt =
   | Assign of ident * expr                         (* x = 10 *)
   | LocalAssign of ident * expr                    (* local x = 10 *)

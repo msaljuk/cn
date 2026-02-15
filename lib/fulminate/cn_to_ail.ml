@@ -667,7 +667,7 @@ let cn_to_ail_const const basetype =
 
 
 type ail_bindings_and_statements =
-  A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.cn_stmts
+  A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.lua_cn_exec
 
 type loop_info =
   { cond : Locations.t * ail_bindings_and_statements;
@@ -684,7 +684,8 @@ type ail_executable_spec =
   }
 
 let empty_ail_executable_spec =
-  { pre = ([], [], []); post = ([], [], []); in_stmt = []; loops = [] }
+  let empty_lua_cn_exec = CnL.get_empty_lua_cn_exec in
+  { pre = ([], [], empty_lua_cn_exec); post = ([], [], empty_lua_cn_exec); in_stmt = []; loops = [] }
 
 (* GADT for destination passing - keeps track of the final 'destination' of a translated CN expression *)
 type 'a dest =
@@ -694,7 +695,7 @@ type 'a dest =
   | PassBack :
       (A.bindings
       * CF.GenTypes.genTypeCategory A.statement_ list
-      * CnL.cn_stmts
+      * CnL.lua_cn_exec
       * CF.GenTypes.genTypeCategory A.expression)
         dest
 
@@ -705,7 +706,7 @@ let dest_with_unit_check
     spec_mode option ->
     A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
-    * CnL.cn_stmts
+    * CnL.lua_cn_exec
     * CF.GenTypes.genTypeCategory A.expression
     * bool ->
     a
@@ -743,7 +744,7 @@ let dest_with_unit_check
             @TODO saljuk: here, we'd also need to generate an ail statement for the wrapper call from C.
             And then also create that wrapper later on 
           *)
-          ([], [], [ lua_assert_stmt ]));
+          ([], [], ( [ lua_assert_stmt ], CnL.get_empty_wrapper_functions)));
   | Return ->
     let return_stmt = if is_unit then A.(AilSreturnVoid) else A.(AilSreturn e) in
     (b, s @ [ return_stmt ], l)
@@ -758,7 +759,7 @@ let dest
     spec_mode option ->
     A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
-    * CnL.cn_stmts
+    * CnL.lua_cn_exec
     * CF.GenTypes.genTypeCategory A.expression ->
     a
   =
@@ -766,23 +767,23 @@ let dest
 
 
 let prefix
-  : type a. a dest -> A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.cn_stmts -> a -> a
+  : type a. a dest -> A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.lua_cn_exec -> a -> a
   =
   fun d (b1, s1, l1) u ->
   match (d, u) with
-  | Assert _, (b2, s2, l2) -> (b1 @ b2, s1 @ s2, l1 @ l2)
-  | Return, (b2, s2, l2) -> (b1 @ b2, s1 @ s2, l1 @ l2)
-  | AssignVar _, (b2, s2, l2) -> (b1 @ b2, s1 @ s2, l1 @ l2)
-  | PassBack, (b2, s2, l2, e) -> (b1 @ b2, s1 @ s2, l1 @ l2, e)
+  | Assert _, (b2, s2, l2) -> (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ])
+  | Return, (b2, s2, l2) -> (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ])
+  | AssignVar _, (b2, s2, l2) -> (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ])
+  | PassBack, (b2, s2, l2, e) -> (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], e)
 
 
 let empty_for_dest : type a. a dest -> a =
   fun d ->
   match d with
-  | Assert _ -> ([], [], [])
-  | Return -> ([], [], [])
-  | AssignVar _ -> ([], [], [])
-  | PassBack -> ([], [], [], mk_expr empty_ail_expr)
+  | Assert _ -> ([], [], CnL.get_empty_lua_cn_exec)
+  | Return -> ([], [], CnL.get_empty_lua_cn_exec)
+  | AssignVar _ -> ([], [], CnL.get_empty_lua_cn_exec)
+  | PassBack -> ([], [], CnL.get_empty_lua_cn_exec, mk_expr empty_ail_expr)
 
 let generate_get_or_put_ownership_function ~without_ownership_checking ctype
   : A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition
@@ -923,7 +924,7 @@ let rec cn_to_ail_expr_aux
   match term_ with
   | Const const ->
     let ail_expr, is_unit = cn_to_ail_const const basetype in
-    dest_with_unit_check d spec_mode_opt ([], [], [], mk_expr ail_expr, is_unit)
+    dest_with_unit_check d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_expr, is_unit)
   | Sym sym ->
     let sym =
       if String.equal (Sym.pp_string sym) "return" then
@@ -957,7 +958,7 @@ let rec cn_to_ail_expr_aux
       else
         ail_expr_
     in
-    dest d spec_mode_opt ([], [], [], mk_expr ail_expr_)
+    dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
   | Binop (bop, t1, t2) ->
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
@@ -995,7 +996,7 @@ let rec cn_to_ail_expr_aux
       | EQ -> get_equality_fn_call (IT.get_bt t1) e1 e2
       | _ -> default_ail_binop
     in
-    dest d spec_mode_opt (b1 @ b2, s1 @ s2, l1 @ l2, mk_expr ail_expr_)
+    dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr ail_expr_)
   | Unop (unop, t) ->
     let b, s, l, e =
       cn_to_ail_expr_aux
@@ -1019,12 +1020,12 @@ let rec cn_to_ail_expr_aux
   | SizeOf sct ->
     let ail_expr_ = A.(AilEsizeof (C.no_qualifiers, Sctypes.to_ctype sct)) in
     let ail_call_ = wrap_with_convert_to ~sct ail_expr_ basetype in
-    dest d spec_mode_opt ([], [], [], mk_expr ail_call_)
+    dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_call_)
   | OffsetOf (tag, member) ->
     let ail_struct_type = mk_ctype (Struct tag) in
     let ail_expr_ = A.(AilEoffsetof (ail_struct_type, member)) in
     let ail_call_ = wrap_with_convert_to ail_expr_ basetype in
-    dest d spec_mode_opt ([], [], [], mk_expr ail_call_)
+    dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_call_)
   | ITE (t1, t2, t3) ->
     let result_sym = Sym.fresh_anon () in
     let result_ident = A.(AilEident result_sym) in
@@ -1175,7 +1176,7 @@ let rec cn_to_ail_expr_aux
     dest
       d
       spec_mode_opt
-      (List.concat bs @ b, List.concat ss @ s @ assign_stats, List.concat l, mk_expr res_ident)
+      (List.concat bs @ b, List.concat ss @ s @ assign_stats, CnL.concat l, mk_expr res_ident)
   | RecordMember (t, m) ->
     (* Currently assuming records only exist *)
     let b, s, l, e =
@@ -1268,7 +1269,7 @@ let rec cn_to_ail_expr_aux
        dest
          d
          spec_mode_opt
-         (b1 @ b2 @ [ res_binding ], s1 @ s2 @ (res_decl :: member_assignments), l1 @ l2, res_ident)
+         (b1 @ b2 @ [ res_binding ], s1 @ s2 @ (res_decl :: member_assignments), CnL.concat [ l1; l2 ], res_ident)
      | UnionDef _ -> failwith (__LOC__ ^ ": Can't apply StructUpdate to a C union"))
     (* Allocation *)
   | Record ms ->
@@ -1303,7 +1304,7 @@ let rec cn_to_ail_expr_aux
     dest
       d
       spec_mode_opt
-      (List.concat bs @ b, List.concat ss @ s @ assign_stats, List.concat l, mk_expr res_ident)
+      (List.concat bs @ b, List.concat ss @ s @ assign_stats, CnL.concat l, mk_expr res_ident)
   | RecordUpdate ((_t1, _m), _t2) -> failwith (__LOC__ ^ ": TODO RecordUpdate")
   (* Allocation *)
   | Constructor (sym, ms) ->
@@ -1403,7 +1404,7 @@ let rec cn_to_ail_expr_aux
       spec_mode_opt
       ( List.concat bs @ [ res_binding ],
         [ ail_decl; tag_assign ] @ List.concat ss @ constr_allocation_stat @ assign_stats,
-        List.concat l,
+        CnL.concat l,
         mk_expr res_ident)
   | MemberShift (it, tag, member) ->
     let membershift_macro_sym = Sym.fresh "cn_member_shift" in
@@ -1457,7 +1458,7 @@ let rec cn_to_ail_expr_aux
         AilEcall
           (mk_expr (AilEident (Sym.fresh "cn_array_shift")), [ e1; sizeof_expr; e2 ]))
     in
-    dest d spec_mode_opt (b1 @ b2, s1 @ s2, l1 @ l2, mk_expr ail_expr_)
+    dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr ail_expr_)
   | CopyAllocId _ -> failwith (__LOC__ ^ ": TODO CopyAllocId")
   | HasAllocId _ -> failwith (__LOC__ ^ ": TODO HasAllocId")
   | Nil _bt -> failwith (__LOC__ ^ ": TODO Nil")
@@ -1479,7 +1480,7 @@ let rec cn_to_ail_expr_aux
     dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
   | Tail _xs -> failwith (__LOC__ ^ ": TODO Tail")
   | Representable (_ct, _t) -> failwith (__LOC__ ^ ": TODO Representable")
-  | Good (_ct, _t) -> dest d spec_mode_opt ([], [], [], cn_bool_true_expr)
+  | Good (_ct, _t) -> dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, cn_bool_true_expr)
   | Aligned _t_and_align -> failwith (__LOC__ ^ ": TODO Aligned")
   | WrapI (_ct, t) ->
     cn_to_ail_expr_aux filename const_prop pred_name dts globals spec_mode_opt t d
@@ -1543,7 +1544,7 @@ let rec cn_to_ail_expr_aux
       spec_mode_opt
       ( b1 @ b2 @ b3 @ [ new_map_binding ],
         s1 @ s2 @ s3 @ [ new_map_decl ],
-        l1 @ l2 @ l3,
+        CnL.concat [ l1; l2; l3 ],
         mk_expr map_set_fcall)
   | MapGet (m, key) ->
     (* Only works when index is a cn_integer *)
@@ -1590,7 +1591,7 @@ let rec cn_to_ail_expr_aux
     let _, val_bt = BT.map_bt (IT.get_bt m) in
     let ctype = bt_to_ail_ctype val_bt in
     let cast_expr_ = A.(AilEcast (C.no_qualifiers, ctype, mk_expr map_get_fcall)) in
-    dest d spec_mode_opt (b1 @ b2, s1 @ s2, l1 @ l2, mk_expr cast_expr_)
+    dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr cast_expr_)
   | MapDef ((_sym, _bt), _t) -> failwith (__LOC__ ^ ": TODO MapDef")
   | Apply (sym, ts) ->
     let bs_ss_ls_es =
@@ -1610,7 +1611,7 @@ let rec cn_to_ail_expr_aux
     let bs, ss, ls, es = list_split_four bs_ss_ls_es in
     let f = mk_expr A.(AilEident sym) in
     let ail_expr_ = A.AilEcall (f, es) in
-    dest d spec_mode_opt (List.concat bs, List.concat ss, List.concat ls, mk_expr ail_expr_)
+    dest d spec_mode_opt (List.concat bs, List.concat ss, CnL.concat ls, mk_expr ail_expr_)
   | Let ((var, t1), body) ->
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
@@ -1667,7 +1668,7 @@ let rec cn_to_ail_expr_aux
       IT.t list ->
       (BT.t IT.pattern list * IT.t) list ->
       Sym.t option ->
-      A.bindings * _ A.statement_ list * CnL.cn_stmts
+      A.bindings * _ A.statement_ list * CnL.lua_cn_exec
       =
       fun count vars cases res_sym_opt ->
       match vars with
@@ -1862,7 +1863,7 @@ let rec cn_to_ail_expr_aux
         let ail_const_expr_ =
           A.AilEconst (ConstantInteger (IConstant (Z.of_int 0, Decimal, None)))
         in
-        (wrap_with_convert_to ail_const_expr_ BT.Alloc_id, [], [], [])
+        (wrap_with_convert_to ail_const_expr_ BT.Alloc_id, [], [], CnL.get_empty_lua_cn_exec)
       | _ ->
         let b, s, l, e =
           cn_to_ail_expr_aux
@@ -1916,7 +1917,7 @@ let cn_to_ail_expr_toplevel
       (it : IT.t)
   : A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
-    * CnL.cn_stmts
+    * CnL.lua_cn_exec
     * CF.GenTypes.genTypeCategory A.expression
   =
   cn_to_ail_expr_aux filename None pred_sym_opt dts globals spec_mode_opt it PassBack
@@ -3079,14 +3080,14 @@ let cn_to_ail_resource
               ))
         in
         let binding = create_binding sym (bt_to_ail_ctype ~pred_sym:(Some pname) bt) in
-        (mk_expr fcall, binding :: List.concat bs, List.concat ss, List.concat ls)
+        (mk_expr fcall, binding :: List.concat bs, List.concat ss, CnL.concat ls)
     in
     let s_decl =
       match rm_ctype ctype with
       | C.Void -> A.(AilSexpr rhs)
       | _ -> A.(AilSdeclaration [ (sym, Some rhs) ])
     in
-    (b @ bs, s @ ss @ [ s_decl ], l @ ls)
+    (b @ bs, s @ ss @ [ s_decl ], CnL.concat [ l; ls ])
   | Request.Q q ->
     (*
        Input is expr of the form:
@@ -3186,7 +3187,7 @@ let cn_to_ail_resource
                 (mk_expr (AilEident ptr_add_sym) :: es)
                 @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ] ))
         in
-        (mk_expr fcall, List.concat bs, List.concat ss, List.concat ls)
+        (mk_expr fcall, List.concat bs, List.concat ss, CnL.concat ls)
     in
     let typedef_name = get_typedef_string (bt_to_ail_ctype i_bt) in
     let incr_func_name =
@@ -3224,7 +3225,7 @@ let cn_to_ail_resource
         let ail_block =
           A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
         in
-        ([], [ ail_block ], [])
+        ([], [ ail_block ], CnL.get_empty_lua_cn_exec )
       | _ ->
         (* TODO: Change to mostly use index terms rather than Ail directly - avoids duplication between these functions and cn_to_ail *)
         let cn_map_type =
@@ -3280,9 +3281,9 @@ let cn_to_ail_resource
         let ail_block =
           A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
         in
-        ([ sym_binding ], [ sym_decl; ail_block ], [])
+        ([ sym_binding ], [ sym_decl; ail_block ], CnL.get_empty_lua_cn_exec )
     in
-    (b1 @ b2 @ b3 @ bs' @ bs, s1 @ s2 @ s3 @ ss @ ss', l1 @ l2 @ l3 @ ls @ ls')
+    (b1 @ b2 @ b3 @ bs' @ bs, s1 @ s2 @ s3 @ ss @ ss', CnL.concat [l1; l2; l3; ls; ls'])
 
 
 let cn_to_ail_logical_constraint_aux
@@ -3305,7 +3306,7 @@ let cn_to_ail_logical_constraint_aux
       | _ -> failwith "Incorrect form of forall logical constraint term"
     in
     (match IT.get_term t with
-     | Good _ -> dest d spec_mode_opt ([], [], [], cn_bool_true_expr)
+     | Good _ -> dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, cn_bool_true_expr)
      | _ ->
        (* Assume cond_it is of a particular form *)
        (*
@@ -3358,7 +3359,7 @@ let cn_to_ail_logical_constraint
       (lc : LogicalConstraints.t)
   : A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
-    * CnL.cn_stmts
+    * CnL.lua_cn_exec
     * CF.GenTypes.genTypeCategory A.expression
   =
   cn_to_ail_logical_constraint_aux filename dts globals spec_mode_opt PassBack lc
@@ -3566,7 +3567,7 @@ let rec cn_to_ail_lat filename dts pred_sym_opt globals preds spec_mode_opt = fu
     let b2, s2, l2 =
       cn_to_ail_lat filename dts pred_sym_opt globals preds spec_mode_opt lat
     in
-    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, l1 @ l2)
+    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, CnL.concat [l1; l2])
   | LAT.Resource ((name, (ret, _bt)), (loc, _str_opt), lat) ->
     let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
     let pop_s = generate_cn_pop_msg_info in
@@ -3585,7 +3586,7 @@ let rec cn_to_ail_lat filename dts pred_sym_opt globals preds spec_mode_opt = fu
     let b2, s2, l2 =
       cn_to_ail_lat filename dts pred_sym_opt globals preds spec_mode_opt lat
     in
-    (b1 @ b2, upd_s @ s1 @ pop_s @ s2, l1 @ l2)
+    (b1 @ b2, upd_s @ s1 @ pop_s @ s2, CnL.concat [l1; l2])
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->
     let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
     let ss =
@@ -3601,7 +3602,7 @@ let rec cn_to_ail_lat filename dts pred_sym_opt globals preds spec_mode_opt = fu
     let b2, s2, l2 =
       cn_to_ail_lat filename dts pred_sym_opt globals preds spec_mode_opt lat
     in
-    (b1 @ b2, ss @ s2, l1 @ l2)
+    (b1 @ b2, ss @ s2, CnL.concat [l1; l2])
   | LAT.I it ->
     let bs, ss, ls =
       cn_to_ail_expr_with_pred_name
@@ -3627,7 +3628,7 @@ let cn_to_ail_predicate
   let ret_type = bt_to_ail_ctype ~pred_sym:(Some pred_sym) (snd rp_def.oarg) in
   let rec clause_translate (clauses : Definition.Clause.t list) =
     match clauses with
-    | [] -> ([], [], [])
+    | [] -> ([], [], CnL.get_empty_lua_cn_exec)
     | c :: cs ->
       let bs, ss, ls =
         cn_to_ail_lat filename dts (Some pred_sym) globals preds None c.packing_ft
@@ -3635,7 +3636,7 @@ let cn_to_ail_predicate
       (match c.guard with
        | IT (Const (Bool true), _, _) ->
          let bs'', ss'', ls'' = clause_translate cs in
-         (bs @ bs'', ss @ ss'', ls @ ls'')
+         (bs @ bs'', ss @ ss'', CnL.concat [ls; ls''])
        | _ ->
          let bs', ss', ls', e =
            cn_to_ail_expr_with_pred_name
@@ -3658,11 +3659,11 @@ let cn_to_ail_predicate
                  mk_stmt (AilSblock (bs, List.map mk_stmt ss)),
                  mk_stmt (AilSblock (bs'', List.map mk_stmt ss'')) ))
          in
-         (bs', ss' @ [ ail_if_stat ], ls' @ ls'')
+         (bs', ss' @ [ ail_if_stat ], CnL.concat [ls'; ls''])
       );
   in
   let bs, ss, _ =
-    match rp_def.clauses with Some clauses -> clause_translate clauses | None -> ([], [], [])
+    match rp_def.clauses with Some clauses -> clause_translate clauses | None -> ([], [], CnL.get_empty_lua_cn_exec)
   in
   let pred_body = List.map mk_stmt ss in
   let ail_record_opt = generate_record_opt pred_sym (snd rp_def.oarg) in
@@ -3726,7 +3727,8 @@ let cn_to_ail_predicates preds filename dts globals cn_preds
 
 
 (* TODO: Add destination passing? *)
-let rec cn_to_ail_post_aux filename dts globals preds spec_mode_opt = function
+let rec cn_to_ail_post_aux filename dts globals preds spec_mode_opt = 
+  function
   | LRT.Define ((name, it), (_loc, _), t) ->
     let new_name = generate_sym_with_suffix ~suffix:"_cn" name in
     let new_lrt =
@@ -3738,7 +3740,7 @@ let rec cn_to_ail_post_aux filename dts globals preds spec_mode_opt = function
       cn_to_ail_expr filename dts globals spec_mode_opt it (AssignVar new_name)
     in
     let b2, s2, l2 = cn_to_ail_post_aux filename dts globals preds spec_mode_opt new_lrt in
-    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, l1 @ l2)
+    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, CnL.concat [l1; l2])
   | LRT.Resource ((name, (re, bt)), (loc, _str_opt), t) ->
     let new_name = generate_sym_with_suffix ~suffix:"_cn" name in
     let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
@@ -3748,7 +3750,7 @@ let rec cn_to_ail_post_aux filename dts globals preds spec_mode_opt = function
     in
     let new_lrt = LogicalReturnTypes.subst (ESE.sym_subst (name, bt, new_name)) t in
     let b2, s2, l2 = cn_to_ail_post_aux filename dts globals preds spec_mode_opt new_lrt in
-    (b1 @ b2, upd_s @ s1 @ pop_s @ s2, l1 @ l2)
+    (b1 @ b2, upd_s @ s1 @ pop_s @ s2, CnL.concat [l1; l2])
   | LRT.Constraint (lc, (loc, _str_opt), t) ->
     let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
     let ss =
@@ -3762,8 +3764,8 @@ let rec cn_to_ail_post_aux filename dts globals preds spec_mode_opt = function
       | None -> s
     in
     let b2, s2, l2 = cn_to_ail_post_aux filename dts globals preds spec_mode_opt t in
-    (b1 @ b2, ss @ s2, l1 @ l2)
-  | LRT.I -> ([], [], [])
+    (b1 @ b2, ss @ s2, CnL.concat [l1; l2])
+  | LRT.I -> ([], [], CnL.get_empty_lua_cn_exec)
 
 
 let cn_to_ail_post
@@ -3844,9 +3846,9 @@ let rec cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mod
       cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mode_opt prog
     in
     if no_op then
-      (([], [], []), true)
+      (([], [], CnL.get_empty_lua_cn_exec), true)
     else
-      ((b1 @ (binding :: b2), s @ (ail_stat_ :: ss), l1 @ l2), false)
+      ((b1 @ (binding :: b2), s @ (ail_stat_ :: ss), CnL.concat [l1; l2]), false)
   | Pure (loc, stmt) ->
     let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
     let pop_s = generate_cn_pop_msg_info in
@@ -3909,7 +3911,7 @@ let rec cn_to_ail_cnprog_ghost_arg filename dts globals spec_mode_opt i = functi
           [ (name, Some (mk_expr (wrap_with_convert_to cn_ptr_deref_fcall bt))) ])
     in
     let b2, ss, ls = cn_to_ail_cnprog_ghost_arg filename dts globals spec_mode_opt i prog in
-    (b1 @ (binding :: b2), s @ (ail_stat_ :: ss), l @ ls)
+    (b1 @ (binding :: b2), s @ (ail_stat_ :: ss), CnL.concat [l; ls])
   | Pure (loc, ghost_it) ->
     let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
     let pop_s = generate_cn_pop_msg_info in
@@ -3958,7 +3960,7 @@ let cleared_enum_member_id loc = Id.make loc "CLEARED"
 
 let gen_ghost_call_site_global_decl =
   let ghost_call_site_binding = create_binding ghost_call_site_sym ghost_enum_type in
-  ([ ghost_call_site_binding ], [ A.(AilSdeclaration [ (ghost_call_site_sym, None) ]) ], [])
+  ([ ghost_call_site_binding ], [ A.(AilSdeclaration [ (ghost_call_site_sym, None) ]) ], CnL.get_empty_lua_cn_exec)
 
 let cn_to_ail_ghost_enum spec_bts ghost_argss =
   (* cf. cn_to_ail_datatype *)
@@ -4017,7 +4019,7 @@ let cn_to_ail_cnprog_ghost_args filename dts globals spec_mode_opt ghost_args =
           mk_stmt
           ([ ghost_call_site_decl ] @ List.concat ss @ [ dummy_expr_as_stat ]) )
   in
-  ([], [ A.AilSexpr (mk_expr ail_gcc_stmt) ], List.concat ls)
+  ([], [ A.AilSexpr (mk_expr ail_gcc_stmt) ], CnL.concat ls)
 
 
 let cn_to_ail_statements
@@ -4037,7 +4039,7 @@ let cn_to_ail_statements
       cn_progs
   in
   let bs, ss, ls = list_split_three bs_ss_ls in
-  (loc, (List.concat bs, upd_s @ List.concat ss @ pop_s, List.concat ls))
+  (loc, (List.concat bs, upd_s @ List.concat ss @ pop_s, CnL.concat ls))
 
 
 let rec cn_to_ail_lat_internal_loop
@@ -4065,7 +4067,7 @@ let rec cn_to_ail_lat_internal_loop
         spec_mode_opt
         lat
     in
-    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, l1 @ l2)
+    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, CnL.concat [l1; l2])
   | LAT.Resource ((name, (ret, _bt)), (loc, _str_opt), lat) ->
     let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
     let pop_s = generate_cn_pop_msg_info in
@@ -4092,7 +4094,7 @@ let rec cn_to_ail_lat_internal_loop
         spec_mode_opt
         lat
     in
-    (b1 @ b2, upd_s @ s1 @ pop_s @ s2, l1 @ l2)
+    (b1 @ b2, upd_s @ s1 @ pop_s @ s2, CnL.concat [l1; l2])
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->
     let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
     let ss =
@@ -4116,7 +4118,7 @@ let rec cn_to_ail_lat_internal_loop
         spec_mode_opt
         lat
     in
-    (b1 @ b2, ss @ s2, l1 @ l2)
+    (b1 @ b2, ss @ s2, CnL.concat [l1; l2])
   | LAT.I ss ->
     let ail_statements =
       List.map
@@ -4132,7 +4134,7 @@ let rec cn_to_ail_lat_internal_loop
     in
     let _, bs_and_ss = List.split ail_statements in
     let bs, ss, ls = list_split_three bs_and_ss in
-    (List.concat bs, List.concat ss, List.concat ls)
+    (List.concat bs, List.concat ss, CnL.concat ls)
 
 
 let rec cn_to_ail_loop_inv_aux
@@ -4169,7 +4171,7 @@ let rec cn_to_ail_loop_inv_aux
     { cond = (cond_loc, (cond_bs, cond_ss, cond_lua));
       loop_loc;
       loop_entry = loop_info.loop_entry;
-      loop_exit = ([], [], [])
+      loop_exit = ([], [], CnL.get_empty_lua_cn_exec)
     }
   | AT.Ghost _ ->
     failwith "TODO Fulminate: Ghost arguments for loops not yet supported at runtime"
@@ -4219,8 +4221,8 @@ let rec cn_to_ail_loop_inv_aux
     let decls, modified_stats = modify_decls_for_loop [] [] ss in
     { cond = (cond_loc, (bs, modified_stats, ls));
       loop_loc;
-      loop_entry = (bs, decls, []);
-      loop_exit = ([], [], [])
+      loop_entry = (bs, decls, CnL.get_empty_lua_cn_exec);
+      loop_exit = ([], [], CnL.get_empty_lua_cn_exec)
     }
 
 
@@ -4320,7 +4322,7 @@ let cn_to_ail_loop_inv
           ( (bump_alloc_binding :: loop_ownership_state.binding) @ loop_bs,
             bump_alloc_decl :: loop_ownership_state.decl :: loop_ss ,
             loop_lua);
-        loop_exit = ([], [ bump_alloc_end_stat_ ], [])
+        loop_exit = ([], [ bump_alloc_end_stat_ ], CnL.get_empty_lua_cn_exec)
       })
   else
     (* Produce no runtime loop invariant statements if the user has not written any spec for this loop*)
@@ -4329,12 +4331,12 @@ let cn_to_ail_loop_inv
 
 let prepend_to_precondition ail_executable_spec (b1, s1, l1) =
   let b2, s2, l2 = ail_executable_spec.pre in
-  { ail_executable_spec with pre = (b1 @ b2, s1 @ s2, l1 @ l2) }
+  { ail_executable_spec with pre = (b1 @ b2, s1 @ s2, CnL.concat [l1; l2]) }
 
 
 let append_to_postcondition ail_executable_spec (b2, s2, l2) =
   let b1, s1, l1 = ail_executable_spec.post in
-  { ail_executable_spec with post = (b1 @ b2, s1 @ s2, l1 @ l2) }
+  { ail_executable_spec with post = (b1 @ b2, s1 @ s2, CnL.concat [l1; l2]) }
 
 
 let rec cn_to_ail_lat_2
@@ -4373,27 +4375,54 @@ let rec cn_to_ail_lat_2
     in
     prepend_to_precondition ail_executable_spec (binding :: b1, decl :: s1, l1)
   | LAT.Resource ((name, (ret, bt)), (loc, _str_opt), lat) ->
-    let spec_mode_opt = Some Pre in
-    let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
-    let pop_s = generate_cn_pop_msg_info in
-    let new_name = generate_sym_with_suffix ~suffix:"_cn" name in
-    let b1, s1, l1 =
-      cn_to_ail_resource filename new_name dts globals preds None spec_mode_opt loc ret
-    in
-    let new_lat = ESE.fn_largs_and_body_subst (ESE.sym_subst (name, bt, new_name)) lat in
-    let ail_executable_spec =
-      cn_to_ail_lat_2
-        without_ownership_checking
-        with_loop_leak_checks
-        without_lemma_checks
-        filename
-        dts
-        globals
-        preds
-        c_return_type
-        new_lat
-    in
-    prepend_to_precondition ail_executable_spec (b1, upd_s @ s1 @ pop_s, l1)
+    (match RC.get_runtime() with
+      | RC.C ->
+        let spec_mode_opt = Some Pre in
+        let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
+        let pop_s = generate_cn_pop_msg_info in
+        let new_name = generate_sym_with_suffix ~suffix:"_cn" name in
+        let b1, s1, l1 =
+          cn_to_ail_resource filename new_name dts globals preds None spec_mode_opt loc ret
+        in
+        let new_lat = ESE.fn_largs_and_body_subst (ESE.sym_subst (name, bt, new_name)) lat in
+        let ail_executable_spec =
+          cn_to_ail_lat_2
+            without_ownership_checking
+            with_loop_leak_checks
+            without_lemma_checks
+            filename
+            dts
+            globals
+            preds
+            c_return_type
+            new_lat
+        in
+        prepend_to_precondition ail_executable_spec (b1, upd_s @ s1 @ pop_s, l1)
+      | RC.Lua -> 
+          let spec_mode_opt = Some Pre in
+          let upd_l = CnL.generate_lua_cn_error_stack_push (gather_error_message_from_loc loc) in
+          let pop_l = CnL.generate_lua_cn_error_stack_pop in
+          let b1, s1, l1 =
+            cn_to_ail_resource filename name dts globals preds None spec_mode_opt loc ret
+          in
+          let ail_executable_spec =
+            cn_to_ail_lat_2
+              without_ownership_checking
+              with_loop_leak_checks
+              without_lemma_checks
+              filename
+              dts
+              globals
+              preds
+              c_return_type
+              lat
+          in
+          let merged_ls = 
+            [ [ upd_l ], CnL.get_empty_wrapper_functions ] 
+            @ [ l1 ] 
+            @ [ [ pop_l ], CnL.get_empty_wrapper_functions ] in
+          prepend_to_precondition ail_executable_spec (b1, s1, CnL.concat ( merged_ls ))
+    );
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->
     let spec_mode_opt = Some Pre in
     let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
@@ -4485,7 +4514,7 @@ let rec cn_to_ail_lat_2
         loop
     in
     let ail_loop_invariants = List.filter_map Fun.id ail_loop_invariants in
-    let post_bs, post_ss, _ = cn_to_ail_post filename dts globals preds post in
+    let post_bs, post_ss, post_ls = cn_to_ail_post filename dts globals preds post in
     let ownership_stats_ =
       if without_ownership_checking then
         []
@@ -4501,8 +4530,8 @@ let rec cn_to_ail_lat_2
           (return_cn_binding @ post_bs, return_cn_decl @ post_ss @ ownership_stats_))
     in
 
-    { pre = ([], [], []);
-      post = ([], [ block ], []);
+    { pre = ([], [], CnL.get_empty_lua_cn_exec);
+      post = ([], [ block ], post_ls);
       in_stmt = ail_statements;
       loops = ail_loop_invariants
     }
@@ -4544,7 +4573,7 @@ let rec cn_to_ail_pre_post_aux
         ghost_array_size_opt
         subst_at
     in
-    (ghost_bts, prepend_to_precondition ail_executable_spec ([ binding ], [ decl ], []))
+    (ghost_bts, prepend_to_precondition ail_executable_spec ([ binding ], [ decl ], CnL.get_empty_lua_cn_exec))
   | AT.Ghost ((sym, bt), _info, at) ->
     (match ghost_array_size_opt with
      | None ->
@@ -4603,7 +4632,7 @@ let rec cn_to_ail_pre_post_aux
            subst_at
        in
        ( bt :: ghost_bts,
-         prepend_to_precondition ail_executable_spec ([ binding ], [ decl ], []) ))
+         prepend_to_precondition ail_executable_spec ([ binding ], [ decl ], CnL.get_empty_lua_cn_exec) ))
   | AT.L lat ->
     let ail_executable_spec =
       cn_to_ail_lat_2
@@ -4631,7 +4660,7 @@ let rec cn_to_ail_pre_post_aux
     let ail_executable_spec =
       prepend_to_precondition
         ail_executable_spec
-        ([ clear_ghost_call_site_binding ], [ clear_ghost_call_site_decl ], [])
+        ([ clear_ghost_call_site_binding ], [ clear_ghost_call_site_decl ], CnL.get_empty_lua_cn_exec)
     in
     ([], ail_executable_spec)
 
@@ -4644,6 +4673,7 @@ let cn_to_ail_pre_post
       dts
       preds
       globals
+      (func_c_sig : (Sym.t * ((C.union_tag * C.ctype) list)))
       c_return_type
       ghost_array_size_opt
   = function
@@ -4692,11 +4722,11 @@ let cn_to_ail_pre_post
           A.(AilSdeclaration [ (ghost_spec_sym, Some (mk_expr ghost_spec_rhs)) ])
         in
         let ail_executable_spec =
-          prepend_to_precondition ail_executable_spec ([], [ ghost_type_checking_stat ], [])
+          prepend_to_precondition ail_executable_spec ([], [ ghost_type_checking_stat ], CnL.get_empty_lua_cn_exec)
         in
         prepend_to_precondition
           ail_executable_spec
-          ([ ghost_spec_binding ], [ ghost_spec_decl ], [])
+          ([ ghost_spec_binding ], [ ghost_spec_decl ], CnL.get_empty_lua_cn_exec)
     in
 
     let ownership_stats_ =
@@ -4720,32 +4750,145 @@ let cn_to_ail_pre_post
             let precond_ail_exec_spec =
               prepend_to_precondition
                 ail_executable_spec
-                ([ bump_alloc_binding ], bump_alloc_start_stat_ :: ownership_stats_, [])
+                ([ bump_alloc_binding ], bump_alloc_start_stat_ :: ownership_stats_, CnL.get_empty_lua_cn_exec)
             in
 
-            append_to_postcondition precond_ail_exec_spec ([], [ bump_alloc_end_stat_ ], [])
+            append_to_postcondition precond_ail_exec_spec ([], [ bump_alloc_end_stat_ ], CnL.get_empty_lua_cn_exec)
         | RC.Lua ->
-            let gen_lua_function_frames () = 
-              let push_fn_call =
-                A.(AilEcall (mk_expr (AilEident (Sym.fresh "lua_cn_frame_push_function")), []))
+            let c_func_name, c_func_params = func_c_sig in
+
+            let gen_lua_function_frames () : (('a A.statement_ * CnL.lua_cn_exec) * ('a A.statement_ * CnL.lua_cn_exec)) = 
+              let func_params_expr
+                =
+                  if (List.is_empty (c_func_params)) then (
+                    ([])
+                  ) else (
+                    let func_param_syms, _ = List.split c_func_params in
+                    
+                    (
+                      List.map (fun sym ->
+                        mk_expr (A.AilEunary (Address, mk_expr (A.AilEident sym)) )
+                      ) func_param_syms
+                    )
+                  )
               in
-              let pop_fn_call = 
-                A.(AilEcall (mk_expr (AilEident (Sym.fresh "lua_cn_frame_pop_function")), []))
+
+              let push_fn_wrapper_name = CnL.generate_c_push_frame_fn_wrapper_name c_func_name in
+              let push_fn_lua_name = CnL.generate_lua_push_frame_fn_name c_func_name in
+              let push_fn_wrapper_call =
+                A.(AilEcall (
+                  mk_expr (AilEident (
+                    Sym.fresh (push_fn_wrapper_name))), 
+                    func_params_expr))
               in
-              (A.AilSexpr (mk_expr push_fn_call), A.AilSexpr (mk_expr pop_fn_call))
+              let wrapper_args = CnL.convert_c_args_to_wrapper_args c_func_params in
+              let push_fn_wrapper_def 
+                = CnL.generate_c_fn_wrapper_def 
+                  push_fn_lua_name
+                  push_fn_wrapper_name 
+                  wrapper_args
+              in
+              let push_fn_lua 
+                = CnL.generate_lua_push_frame_fn
+                  push_fn_lua_name
+                  wrapper_args
+              in
+
+              (
+                (A.AilSexpr (mk_expr push_fn_wrapper_call), ( [ push_fn_lua ], [ push_fn_wrapper_def ])), 
+                (CnL.generate_c_pop_frame_fn_wrapper_call, CnL.get_empty_lua_cn_exec)
+              )
+            in
+
+            let gen_lua_pre_post_wrappers () : (('a A.statement_ * CnL.lua_cn_exec) * ('a A.statement_ * CnL.lua_cn_exec)) = 
+              let open Lua.Lua_syntax in
+              
+              (* Precondition *)
+              let precond_fn_wrapper_name = CnL.generate_c_precondition_fn_wrapper_name c_func_name in
+              let precond_fn_lua_name = CnL.generate_lua_precondition_fn_name c_func_name in
+              let precond_fn_wrapper_call =
+                A.(AilEcall (
+                  mk_expr (AilEident (
+                    Sym.fresh precond_fn_wrapper_name)), 
+                    []))
+              in
+              let precond_fn_wrapper_def
+                = CnL.generate_c_fn_wrapper_def 
+                  precond_fn_lua_name
+                  precond_fn_wrapper_name 
+                  []
+              in
+              let _, _, lua_cn_exec_pre = ail_executable_spec.pre in
+              let lua_stmts_pre, _ = lua_cn_exec_pre in
+              let precond_fn_lua = 
+                FunctionDef(
+                  CnL.generate_lua_precondition_fn_name c_func_name, [], lua_stmts_pre
+                )
+              in
+
+              (* Postcondition *)
+              let postcond_fn_wrapper_name = CnL.generate_c_postcondition_fn_wrapper_name c_func_name in
+              let postcond_fn_lua_name = CnL.generate_lua_postcondition_fn_name c_func_name in
+              let postcond_fn_wrapper_call =
+                A.(AilEcall (
+                  mk_expr (AilEident (
+                    Sym.fresh postcond_fn_wrapper_name)), 
+                    []))
+              in
+              let postcond_fn_wrapper_def
+                = CnL.generate_c_fn_wrapper_def 
+                  postcond_fn_lua_name
+                  postcond_fn_wrapper_name 
+                  []
+              in
+              let _, _, lua_cn_exec_post = ail_executable_spec.post in
+              let lua_stmts_post, _ = lua_cn_exec_post in
+              let postcond_fn_lua = 
+                FunctionDef(
+                  CnL.generate_lua_postcondition_fn_name c_func_name, [], lua_stmts_post
+                )
+              in
+
+              (
+                (A.AilSexpr (mk_expr precond_fn_wrapper_call), ( [ precond_fn_lua ], [ precond_fn_wrapper_def ])), 
+                (A.AilSexpr (mk_expr postcond_fn_wrapper_call), ( [ postcond_fn_lua ], [ postcond_fn_wrapper_def ]))
+              )
             in
 
             let lua_frame_function_push, lua_frame_function_pop 
               = gen_lua_function_frames()
             in
+            let push_ss, push_ls = lua_frame_function_push in
+            let pop_ss, pop_ls = lua_frame_function_pop in
+
+            let lua_precond, lua_postcond
+              = gen_lua_pre_post_wrappers()
+            in
+            let precond_ss, precond_ls = lua_precond in
+            let postcond_ss, postcond_ls = lua_postcond in
+
+            (* 
+             * Start with a new exec spec that nulls out pre and posts statements 
+             * since we've wrapped them inside a function call statement now
+             *)
+            let new_ail_executable_spec = 
+                { 
+                  pre = empty_ail_executable_spec.pre; 
+                  post = empty_ail_executable_spec.post; 
+                  in_stmt = ail_executable_spec.in_stmt; 
+                  loops = ail_executable_spec.loops;
+                }
+            in
 
             let precond_ail_exec_spec = 
               prepend_to_precondition
-                ail_executable_spec
-                ([ ], [ lua_frame_function_push; ], [ ] )
+                new_ail_executable_spec
+                ([ ], [ push_ss; precond_ss ], CnL.concat [ precond_ls; push_ls ] )
             in
-            
-            append_to_postcondition precond_ail_exec_spec ([], [ lua_frame_function_pop; ], [])
+
+            append_to_postcondition 
+              precond_ail_exec_spec 
+              ([ ], [ postcond_ss; pop_ss; ], CnL.concat [ postcond_ls; pop_ls ])
     in
 
     ( final_ail_executable_spec )
@@ -4775,6 +4918,7 @@ let cn_to_ail_lemma filename dts preds globals (sym, (loc, lemmat)) =
       dts
       preds
       globals
+      (sym, [])
       ret_type
       None
       (Some transformed_lemmat)
@@ -5014,7 +5158,7 @@ let cn_to_ail_assume_resource
         ( mk_expr fcall,
           binding :: List.concat bs,
           List.concat ss @ error_msg_update_stats_,
-          List.concat ls,
+          CnL.concat ls,
           None )
     in
     let s_decl =
@@ -5022,7 +5166,7 @@ let cn_to_ail_assume_resource
       | C.Void -> A.(AilSexpr rhs)
       | _ -> A.(AilSdeclaration [ (sym, Some rhs) ])
     in
-    (b @ bs, s @ ss @ [ s_decl ], l @ ls)
+    (b @ bs, s @ ss @ [ s_decl ], CnL.concat [l; ls])
   | Request.Q q ->
     (*
        Input is expr of the form:
@@ -5120,7 +5264,7 @@ let cn_to_ail_assume_resource
               ( mk_expr (AilEident (Sym.fresh ("assume_" ^ Sym.pp_string pname))),
                 mk_expr (AilEident ptr_add_sym) :: es ))
         in
-        (mk_expr fcall, List.concat bs, List.concat ss @ error_msg_update_stats_, List.concat ls, None)
+        (mk_expr fcall, List.concat bs, List.concat ss @ error_msg_update_stats_, CnL.concat ls, None)
     in
     let typedef_name = get_typedef_string (bt_to_ail_ctype i_bt) in
     let incr_func_name =
@@ -5158,7 +5302,7 @@ let cn_to_ail_assume_resource
         let ail_block =
           A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
         in
-        ([], [ ail_block ], [])
+        ([], [ ail_block ], CnL.get_empty_lua_cn_exec)
       | _ ->
         (* TODO: Change to mostly use index terms rather than Ail directly - avoids duplication between these functions and cn_to_ail *)
         let cn_map_type =
@@ -5214,9 +5358,9 @@ let cn_to_ail_assume_resource
         let ail_block =
           A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
         in
-        ([ sym_binding ], [ sym_decl; ail_block ], [])
+        ([ sym_binding ], [ sym_decl; ail_block ], CnL.get_empty_lua_cn_exec)
     in
-    (b1 @ b2 @ b3 @ bs' @ bs, s1 @ s2 @ s3 @ ss @ ss', l1 @ l2 @ l3 @ ls @ ls')
+    (b1 @ b2 @ b3 @ bs' @ bs, s1 @ s2 @ s3 @ ss @ ss', CnL.concat [l1; l2; l3; ls; ls'])
 
 
 let rec cn_to_ail_assume_lat filename dts pred_sym_opt globals preds spec_mode_opt
@@ -5238,7 +5382,7 @@ let rec cn_to_ail_assume_lat filename dts pred_sym_opt globals preds spec_mode_o
     let b2, s2, l2 =
       cn_to_ail_assume_lat filename dts pred_sym_opt globals preds spec_mode_opt lat
     in
-    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, l1 @ l2)
+    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, CnL.concat [l1; l2])
   | LAT.Resource ((name, (ret, _bt)), (loc, _str_opt), lat) ->
     let b1, s1, l1 =
       cn_to_ail_assume_resource filename name dts globals preds loc spec_mode_opt ret
@@ -5246,7 +5390,7 @@ let rec cn_to_ail_assume_lat filename dts pred_sym_opt globals preds spec_mode_o
     let b2, s2, l2 =
       cn_to_ail_assume_lat filename dts pred_sym_opt globals preds spec_mode_opt lat
     in
-    (b1 @ b2, s1 @ s2, l1 @ l2)
+    (b1 @ b2, s1 @ s2, CnL.concat [l1; l2])
   | LAT.Constraint (_lc, (_loc, _str_opt), lat) ->
     let b2, s2, l2 =
       cn_to_ail_assume_lat filename dts pred_sym_opt globals preds spec_mode_opt lat
@@ -5254,7 +5398,7 @@ let rec cn_to_ail_assume_lat filename dts pred_sym_opt globals preds spec_mode_o
     (b2, s2, l2)
   | LAT.I it ->
     if BT.equal (IT.get_bt it) BT.Unit then
-      ([], [ A.AilSreturnVoid ], [])
+      ([], [ A.AilSreturnVoid ], CnL.get_empty_lua_cn_exec)
     else (
       let bs, ss, ls =
         cn_to_ail_expr_with_pred_name
@@ -5280,7 +5424,7 @@ let cn_to_ail_assume_predicate
   let ret_type = bt_to_ail_ctype ~pred_sym:(Some pred_sym) (snd rp_def.oarg) in
   let rec clause_translate (clauses : Definition.Clause.t list) =
     match clauses with
-    | [] -> ([], [], [])
+    | [] -> ([], [], CnL.get_empty_lua_cn_exec)
     | c :: cs ->
       let bs, ss, ls =
         cn_to_ail_assume_lat
@@ -5295,7 +5439,7 @@ let cn_to_ail_assume_predicate
       (match c.guard with
        | IT (Const (Bool true), _, _) ->
          let bs'', ss'', ls'' = clause_translate cs in
-         (bs @ bs'', ss @ ss'', ls @ ls'')
+         (bs @ bs'', ss @ ss'', CnL.concat [ ls; ls'' ])
        | _ ->
          let bs', ss', ls', e =
            cn_to_ail_expr_with_pred_name
@@ -5321,7 +5465,7 @@ let cn_to_ail_assume_predicate
          (bs', ss' @ [ ail_if_stat ], ls'))
   in
   let bs, ss, _ =
-    match rp_def.clauses with Some clauses -> clause_translate clauses | None -> ([], [], [])
+    match rp_def.clauses with Some clauses -> clause_translate clauses | None -> ([], [], CnL.get_empty_lua_cn_exec)
   in
   let pred_body = List.map mk_stmt ss in
   let params =
@@ -5380,7 +5524,7 @@ let rec cn_to_ail_assume_lat_2 filename dts pred_sym_opt globals preds spec_mode
     let b2, s2, l2 =
       cn_to_ail_assume_lat_2 filename dts pred_sym_opt globals preds spec_mode_opt lat
     in
-    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, l1 @ l2)
+    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, CnL.concat [l1; l2])
   | LAT.Resource ((name, (ret, _bt)), (loc, _str_opt), lat) ->
     let b1, s1, l1 =
       cn_to_ail_assume_resource filename name dts globals preds loc spec_mode_opt ret
@@ -5388,13 +5532,13 @@ let rec cn_to_ail_assume_lat_2 filename dts pred_sym_opt globals preds spec_mode
     let b2, s2, l2 =
       cn_to_ail_assume_lat_2 filename dts pred_sym_opt globals preds spec_mode_opt lat
     in
-    (b1 @ b2, s1 @ s2, l1 @ l2)
+    (b1 @ b2, s1 @ s2, CnL.concat [l1; l2])
   | LAT.Constraint (_lc, (_loc, _str_opt), lat) ->
     let b2, s2, l2 =
       cn_to_ail_assume_lat_2 filename dts pred_sym_opt globals preds spec_mode_opt lat
     in
     (b2, s2, l2)
-  | LAT.I _ -> ([], [ A.AilSreturnVoid ], [])
+  | LAT.I _ -> ([], [ A.AilSreturnVoid ], CnL.get_empty_lua_cn_exec)
 
 
 let cn_to_ail_assume_pre filename dts sym args globals preds lat

@@ -14,6 +14,7 @@ type executable_spec =
     returns :
       (Cerb_location.t * (CF.GenTypes.genTypeCategory A.expression option * string list))
         list;
+    helpers : (string list * string list);
     alt_file : string list
   }
 
@@ -159,17 +160,42 @@ let generate_fn_call_ghost_args_injs
           ])
        (Extract.ghost_args_and_their_call_locs prog5))
 
+let generate_fun_def_and_decl_docs funs =
+  let one_def_prog (decl, def) =
+    { A.empty_sigma with declarations = [ decl ]; function_definitions = [ def ] }
+  in
+  let one_decl_prog (decl, _) = { A.empty_sigma with declarations = [ decl ] } in
+  let pp_it x =
+    !^"static "
+    ^^ CF.Pp_ail.(with_executable_spec (pp_program ~show_include:true) (None, x))
+  in
+  let pp_many f xs = List.fold_left (fun d x -> pp_it (f x) ^^ d) empty xs in
+  let defs_doc = pp_many one_def_prog funs in
+  let decls_doc = pp_many one_decl_prog funs in
+  (defs_doc, decls_doc)
 
 type cn_spec_inj_info =
   { pre_str : string list;
     post_str : string list;
     in_stmt_and_loop_inv_injs : (Cerb_location.t * string list) list;
+    helpers : string list * string list;
     alt_file : string list
   }
 
 let empty_cn_spec_inj_info : cn_spec_inj_info =
-  { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = []; alt_file = [] }
+  { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = []; helpers = ([], []); alt_file = [] }
 
+let generate_func_c_sig sym (sigm : _ CF.AilSyntax.sigma) : (Sym.t * ((Sym.t * CF.Ctype.ctype) list)) = 
+  match
+    ( List.assoc_opt Sym.equal sym sigm.function_definitions,
+      List.assoc_opt Sym.equal sym sigm.declarations )
+  with
+  | ( Some (_, _, _, param_syms, _fn_body),
+      Some (_, _, Decl_function (_, _, param_types, _, _, _)) ) ->
+    let param_types = List.map (fun (_, ctype, _) -> ctype) param_types in
+    let func_params = List.combine param_syms param_types in
+    (sym, func_params)
+  | _, _ -> (sym, [])
 
 let generate_c_specs_from_cn_internal
       without_ownership_checking
@@ -191,6 +217,7 @@ let generate_c_specs_from_cn_internal
     | _ -> failwith (__LOC__ ^ ": C function to be instrumented not found in Ail AST")
   in
   let globals = Cn_to_ail.extract_global_variables cabs_tunit prog5 in
+  let func_c_sig = generate_func_c_sig instrumentation.fn sigm in
   let ghost_array_size = Extract.max_num_of_ghost_args prog5 in
   let ail_executable_spec =
     Cn_to_ail.cn_to_ail_pre_post
@@ -201,6 +228,7 @@ let generate_c_specs_from_cn_internal
       dts
       preds
       globals
+      func_c_sig
       c_return_type
       (Some ghost_array_size)
       instrumentation.internal
@@ -227,34 +255,71 @@ let generate_c_specs_from_cn_internal
     generate_c_loop_invariants without_loop_invariants ail_executable_spec
   in
 
-  let alt_file : string list =
+  let helpers, alt_file =
     match RC.get_runtime() with
-      | RC.C ->  []
+      | RC.C ->  (([], []), [])
       | RC.Lua ->
         let open Lua.Pp_lua in
 
-        let alt_pre_str = [] in
-        let alt_post_str = [] in
-        let alt_in_stmt = 
-          let _, ail_bindings_and_statements = List.split ail_executable_spec.in_stmt in
-          let _, _, lua_stmts_list = list_split_three ail_bindings_and_statements in
-          let lua_stmts = List.concat lua_stmts_list in
-          (List.map pp_stmt lua_stmts);
+        let gen_wrapper_dec_and_def_strs (wrapper_functions : CnL.wrapper_functions) =
+          let defs, decls = generate_fun_def_and_decl_docs wrapper_functions in
+          (doc_to_pretty_string decls, doc_to_pretty_string defs)
         in
 
-        ( alt_pre_str @ alt_in_stmt @ alt_post_str )
+        let alt_pre_str = 
+          let _, _, cn_stmts = ail_executable_spec.pre in
+          let lua_stmts, wrapper_stmts = cn_stmts in
+          (
+            [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
+            List.map pp_stmt lua_stmts;
+          )
+        in
+        
+        let alt_post_str = 
+          let _, _, cn_stmts = ail_executable_spec.post in
+          let lua_stmts, wrapper_stmts = cn_stmts in
+          (
+            [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
+            List.map pp_stmt lua_stmts;
+          )
+        in
+
+        let alt_in_stmt = 
+          let _, ail_bindings_and_statements_list = List.split ail_executable_spec.in_stmt in
+          let _, _, cn_stmts = list_split_three ail_bindings_and_statements_list in
+          let lua_stmts_list, wrapper_stmts_list = List.split cn_stmts in
+
+          let lua_strs = List.map pp_stmt (List.concat lua_stmts_list) in
+
+          let decs_and_defs =
+              (List.map 
+              (fun wrapper_stmts -> gen_wrapper_dec_and_def_strs wrapper_stmts)
+              wrapper_stmts_list)
+          in
+
+          (( decs_and_defs ), lua_strs )
+        in
+
+        let pre_decs_and_defs, l_pre = alt_pre_str in
+        let in_decs_and_defs, l_in = alt_in_stmt in
+        let post_decs_and_defs, l_post = alt_post_str in
+
+        let pre_dec, pre_def = List.split pre_decs_and_defs in
+        let in_dec, in_def = List.split in_decs_and_defs in
+        let post_dec, post_def = List.split post_decs_and_defs in
+
+        let combined_decs_and_defs = 
+          (
+            pre_dec @ in_dec @ post_dec,
+            pre_def @ in_def @ post_def
+          )
+        in
+        let combined_l = l_pre @ l_in @ l_post in
+
+        ( combined_decs_and_defs, combined_l)
   in
 
-  let c_specs = (match RC.get_runtime() with
-    | RC.C -> { pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; alt_file = [] }
-    (* 
-      @note saljuk: nulling out everything but the alt file for now since we're not generating the wrappers as yet 
-      (and I don't want to add the noise of the C runtime pre/post/in stmts in the generated code)
-    *)
-    | RC.Lua -> { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = []; alt_file = alt_file }
-  ) in
-
-  (c_specs)
+  ({ pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; helpers; alt_file })
 
 let generate_c_specs_internal
       without_ownership_checking
@@ -272,6 +337,7 @@ let generate_c_specs_internal
   let stack_local_var_inj_info : stack_local_var_inj_info =
     generate_stack_local_var_inj_strs instrumentation.fn sigm
   in
+
   let cn_spec_inj_info =
     if contains_user_spec then
       generate_c_specs_from_cn_internal
@@ -308,6 +374,7 @@ let generate_c_specs_internal
     cn_spec_inj_info.in_stmt_and_loop_inv_injs
     @ stack_local_var_inj_info.block_ownership_stmts,
     stack_local_var_inj_info.return_ownership_stmts,
+    cn_spec_inj_info.helpers,
     cn_spec_inj_info.alt_file )
 
 
@@ -377,10 +444,14 @@ let generate_c_specs
       prog5
   in
   let specs = List.map generate_c_spec instrumentation_list in
-  let pre_post, in_stmt, returns, alt_file = Utils.list_split_four specs in
+  let pre_post, in_stmt, returns, helpers, alt_file = Utils.list_split_five specs in
+
+  let helper_decs_list, helper_defs_lis = List.split helpers in
+
   { pre_post = List.concat pre_post;
     in_stmt = List.concat in_stmt;
     returns = List.concat returns;
+    helpers = (List.concat helper_decs_list, List.concat helper_defs_lis);
     alt_file = List.concat alt_file
   }
 
@@ -509,22 +580,6 @@ let generate_c_tag_decl_strs c_structs =
 let generate_cn_versions_of_structs c_structs =
   let ail_structs = List.concat (List.map Cn_to_ail.cn_to_ail_struct c_structs) in
   "\n/* CN VERSIONS OF C STRUCTS */\n\n" ^ generate_str_from_ail_structs ail_structs
-
-
-let generate_fun_def_and_decl_docs funs =
-  let one_def_prog (decl, def) =
-    { A.empty_sigma with declarations = [ decl ]; function_definitions = [ def ] }
-  in
-  let one_decl_prog (decl, _) = { A.empty_sigma with declarations = [ decl ] } in
-  let pp_it x =
-    !^"static "
-    ^^ CF.Pp_ail.(with_executable_spec (pp_program ~show_include:true) (None, x))
-  in
-  let pp_many f xs = List.fold_left (fun d x -> pp_it (f x) ^^ d) empty xs in
-  let defs_doc = pp_many one_def_prog funs in
-  let decls_doc = pp_many one_decl_prog funs in
-  (defs_doc, decls_doc)
-
 
 let generate_c_functions
       filename
