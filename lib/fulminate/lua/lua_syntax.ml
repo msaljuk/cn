@@ -7,7 +7,7 @@ type expr =
   | Number_Float of float
   | String of string
   | Symbol of ident
-  | Table of expr * expr
+  | Field of expr * expr
   | Call of ident * expr list
  
 type stmt =

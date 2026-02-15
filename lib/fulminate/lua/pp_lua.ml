@@ -12,7 +12,7 @@ let rec pp_expr = function
   | LuaS.Number_Float f -> string_of_float f
   | LuaS.String s -> "\"" ^ s ^ "\""
   | LuaS.Symbol id -> id
-  | LuaS.Table (k, v) ->
+  | LuaS.Field (k, v) ->
       Printf.sprintf "%s.%s" (pp_expr k) (pp_expr v)
   | LuaS.Call (fn, args) ->
       let args_str = String.concat ", " (List.map pp_expr args) in

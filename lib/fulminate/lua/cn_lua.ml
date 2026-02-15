@@ -57,11 +57,11 @@ let generate_lua_cn_assert func_name ail_expr error_msg
     let assert_stmt = 
       LuaS.FunctionCall(
         get_expr_str cn_assert_sym, 
-        [ LuaS.Bool(false); LuaS.Table(cn_spec_mode_sym, LuaS.Symbol("STATEMENT")) ]) in
+        [ LuaS.Bool(false); LuaS.Field(cn_spec_mode_sym, LuaS.Symbol("STATEMENT")) ]) in
 
     let body_stmts = [ error_push_stmt; assert_stmt; error_pop_stmt ] in
 
-    let func_name_table = LuaS.Table( cn_asserts_table_sym, LuaS.Symbol(func_name) ) in
+    let func_name_table = LuaS.Field( cn_asserts_table_sym, LuaS.Symbol(func_name) ) in
 
     let func_stmt = LuaS.FunctionDef( get_expr_str func_name_table, [], body_stmts ) in
 
