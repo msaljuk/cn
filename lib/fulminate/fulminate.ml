@@ -847,9 +847,14 @@ let main
   (* Create any alt files needed *)
   (match RC.get_runtime() with
     | RC.Lua ->
+        let open Lua.Pp_lua in
+
         let lua_filename = 
           get_filename_with_prefix output_dir (CnL.generate_lua_filename basefile) in
         let lua_oc = Stdlib.open_out lua_filename in
+
+        output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
+
         output_to_oc
           lua_oc
           executable_spec.alt_file;
