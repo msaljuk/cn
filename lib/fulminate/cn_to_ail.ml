@@ -117,26 +117,31 @@ let create_sym_from_id id = Sym.fresh (Id.get_string id)
 
 let ail_null = A.(AilEconst (ConstantInteger (IConstant (Z.zero, Decimal, None))))
 
+let gather_error_message_from_loc cn_source_loc = 
+  let loc_str = Cerb_location.location_to_string cn_source_loc in
+  let _, loc_str_2 = Cerb_location.head_pos_of_location cn_source_loc in
+  let loc_str_escaped = Str.global_replace (Str.regexp_string "\"") "\'" loc_str in
+  let loc_str_2_escaped =
+    Str.global_replace (Str.regexp_string "\n") "\\n" loc_str_2
+  in
+  let loc_str_2_escaped =
+    Str.global_replace (Str.regexp_string "\"") "\'" loc_str_2_escaped
+  in
+
+  ( loc_str_2_escaped ^ loc_str_escaped )
+
 let generate_error_msg_info_update_stats ?(cn_source_loc_opt = None) () =
   let cn_source_loc_arg =
     match cn_source_loc_opt with
     | Some loc ->
-      let loc_str = Cerb_location.location_to_string loc in
-      let _, loc_str_2 = Cerb_location.head_pos_of_location loc in
-      let loc_str_escaped = Str.global_replace (Str.regexp_string "\"") "\'" loc_str in
-      let loc_str_2_escaped =
-        Str.global_replace (Str.regexp_string "\n") "\\n" loc_str_2
-      in
-      let loc_str_2_escaped =
-        Str.global_replace (Str.regexp_string "\"") "\'" loc_str_2_escaped
-      in
-      let cn_source_loc_str =
+      let cn_source_loc_str = gather_error_message_from_loc loc in 
+      let cn_source_loc_expr =
         mk_expr
           A.(
             AilEstr
-              (None, [ (Cerb_location.unknown, [ loc_str_2_escaped ^ loc_str_escaped ]) ]))
+              (None, [ (Cerb_location.unknown, [ cn_source_loc_str ]) ]))
       in
-      cn_source_loc_str
+      cn_source_loc_expr
     | None -> mk_expr ail_null
   in
 
@@ -708,20 +713,37 @@ let dest_with_unit_check
   fun d spec_mode_opt (b, s, l, e, is_unit) ->
   match d with
   | Assert loc ->
-    let assert_stmt_maybe =
-      generate_cn_assert (*~cn_source_loc_opt:(Some loc)*) e spec_mode_opt
-    in
-    let additional_ss =
-      match assert_stmt_maybe with
-      | Some assert_stmt ->
-        let upd_s =
-          generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
-        in
-        let pop_s = generate_cn_pop_msg_info in
-        upd_s @ (assert_stmt :: pop_s)
-      | None -> []
-    in
-    (b, s @ additional_ss, l)
+      (match RC.get_runtime() with
+        | RC.C -> 
+          let assert_stmt_maybe =
+            generate_cn_assert (*~cn_source_loc_opt:(Some loc)*) e spec_mode_opt
+          in
+          let additional_ss =
+            match assert_stmt_maybe with
+            | Some assert_stmt ->
+              let upd_s =
+                generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
+              in
+              let pop_s = generate_cn_pop_msg_info in
+              upd_s @ (assert_stmt :: pop_s)
+            | None -> []
+          in
+          (b, s @ additional_ss, l)
+        | RC.Lua -> 
+          (*
+            @note saljuk: Don't have func name here yet (will have to plumb down). For
+            now, just hardcoding 
+          *)
+          let func_name = "Random" ^ string_of_int(Random.int 100) in
+
+          let error_msg_str = gather_error_message_from_loc loc in
+          let lua_assert_stmt = CnL.generate_lua_cn_assert func_name e error_msg_str in
+
+          (*
+            @TODO saljuk: here, we'd also need to generate an ail statement for the wrapper call from C.
+            And then also create that wrapper later on 
+          *)
+          ([], [], [ lua_assert_stmt ]));
   | Return ->
     let return_stmt = if is_unit then A.(AilSreturnVoid) else A.(AilSreturn e) in
     (b, s @ [ return_stmt ], l)
@@ -4478,6 +4500,7 @@ let rec cn_to_ail_lat_2
         AilSblock
           (return_cn_binding @ post_bs, return_cn_decl @ post_ss @ ownership_stats_))
     in
+
     { pre = ([], [], []);
       post = ([], [ block ], []);
       in_stmt = ail_statements;
@@ -4718,12 +4741,7 @@ let cn_to_ail_pre_post
 
             let precond_ail_exec_spec = 
               prepend_to_precondition
-                (*
-                @note saljuk: making this empty for now and not using it. Eventually, this logic
-                will be replaced with lua wrapper calls instead of the current inline pre/post/assert
-                checks but I need more context on AIL before that happens
-                *)
-                empty_ail_executable_spec
+                ail_executable_spec
                 ([ ], [ lua_frame_function_push; ], [ ] )
             in
             

@@ -205,6 +205,7 @@ let generate_c_specs_from_cn_internal
       (Some ghost_array_size)
       instrumentation.internal
   in
+
   let pre_str = generate_ail_stat_strs ail_executable_spec.pre in
   let post_str = generate_ail_stat_strs ail_executable_spec.post in
   (* Needed for extracting correct location for CN statement injection *)
@@ -225,8 +226,35 @@ let generate_c_specs_from_cn_internal
   let loop_invariant_injs =
     generate_c_loop_invariants without_loop_invariants ail_executable_spec
   in
-  { pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; alt_file = [] }
 
+  let alt_file : string list =
+    match RC.get_runtime() with
+      | RC.C ->  []
+      | RC.Lua ->
+        let open Lua.Pp_lua in
+
+        let alt_pre_str = [] in
+        let alt_post_str = [] in
+        let alt_in_stmt = 
+          let _, ail_bindings_and_statements = List.split ail_executable_spec.in_stmt in
+          let _, _, lua_stmts_list = list_split_three ail_bindings_and_statements in
+          let lua_stmts = List.concat lua_stmts_list in
+          (List.map pp_stmt lua_stmts);
+        in
+
+        ( alt_pre_str @ alt_in_stmt @ alt_post_str )
+  in
+
+  let c_specs = (match RC.get_runtime() with
+    | RC.C -> { pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; alt_file = [] }
+    (* 
+      @note saljuk: nulling out everything but the alt file for now since we're not generating the wrappers as yet 
+      (and I don't want to add the noise of the C runtime pre/post/in stmts in the generated code)
+    *)
+    | RC.Lua -> { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = []; alt_file = alt_file }
+  ) in
+
+  (c_specs)
 
 let generate_c_specs_internal
       without_ownership_checking
