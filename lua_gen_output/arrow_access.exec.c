@@ -1,5 +1,6 @@
 #include <lua_wrappers.h>
 #include <cn-executable/utils.h>
+
 #include <cn-executable/cerb_types.h>
 
 /* ORIGINAL C STRUCTS AND UNIONS */
@@ -14,6 +15,18 @@ enum CN_GHOST_ENUM {
   EMPTY
 };
 enum CN_GHOST_ENUM ghost_call_site;
+lua_State* L;
+/* HELPER FUNCTION DECLARATIONS */
+static void lua_cn_arrow_access_1_push_frame();
+static void lua_cn_arrow_access_1_precondition();
+static void lua_cn_arrow_access_1_postcondition();
+static void lua_cn_arrow_access_2_push_frame(struct s**);
+static void lua_cn_arrow_access_2_precondition();
+static void lua_cn_arrow_access_2_postcondition();
+static void lua_cn_arrow_access_3_dummy_example_by_saljuk_push_frame(struct s**, signed int*, signed int**);
+static void lua_cn_arrow_access_3_dummy_example_by_saljuk_precondition();
+static void lua_cn_arrow_access_3_dummy_example_by_saljuk_postcondition();
+
 # 1 "./tests/cn/arrow_access.c"
 # 1 "<built-in>" 1
 # 1 "<built-in>" 3
@@ -48,8 +61,8 @@ struct s;
 void arrow_access_1()
 {
   /* EXECUTABLE CN PRECONDITION */
-  lua_cn_frame_push_function_arrow_access_1();
-  ghost_call_site = CLEARED;
+  lua_cn_arrow_access_1_push_frame();
+  lua_cn_arrow_access_1_precondition();
   
   struct s origin = { .x = 0, .y = 0 };
 lua_cn_ghost_add((&origin), sizeof(struct s), lua_cn_get_stack_depth());
@@ -120,10 +133,7 @@ lua_cn_ghost_remove((&q), sizeof(struct s*));
 /* EXECUTABLE CN POSTCONDITION */
 __cn_epilogue:
 
-{
-  ghost_stack_depth_decr();
-  cn_postcondition_leak_check();
-}
+  lua_cn_arrow_access_1_postcondition();
 
   lua_cn_frame_pop_function();
 }
@@ -140,15 +150,8 @@ ensures
 @*/
 {
   /* EXECUTABLE CN PRECONDITION */
-  lua_cn_frame_push_function_arrow_access_2((&origin));
-  cn_pointer* origin_cn = convert_to_cn_pointer(origin);
-  ghost_call_site = CLEARED;
-  update_cn_error_message_info("  take Or = RW<struct s>(origin);\n       ^./tests/cn/arrow_access.c:22:8:");
-  struct s_cn* Or_cn = owned_struct_s(origin_cn, PRE, 0);
-  cn_pop_msg_info();
-  update_cn_error_message_info("  origin->y == 0i32;\n  ^~~~~~~~~~~~~~~~~~ ./tests/cn/arrow_access.c:23:3-21");
-  cn_assert(cn_bits_i32_equality(Or_cn->y, convert_to_cn_bits_i32(0LL)), PRE);
-  cn_pop_msg_info();
+  lua_cn_arrow_access_2_push_frame((&origin));
+  lua_cn_arrow_access_2_precondition();
   
 	/* C OWNERSHIP */
 
@@ -165,20 +168,129 @@ __cn_epilogue:
 
   lua_cn_ghost_remove((&origin), sizeof(struct s*));
 
-{
-  update_cn_error_message_info("  take Or_ = RW<struct s>(origin);\n       ^./tests/cn/arrow_access.c:25:8:");
-  struct s_cn* Or__cn = owned_struct_s(origin_cn, POST, 0);
-  cn_pop_msg_info();
-  update_cn_error_message_info("  origin->y == 7i32;\n  ^~~~~~~~~~~~~~~~~~ ./tests/cn/arrow_access.c:26:3-21");
-  cn_assert(cn_bits_i32_equality(Or__cn->y, convert_to_cn_bits_i32(7LL)), POST);
-  cn_pop_msg_info();
-  update_cn_error_message_info("  (*origin).y == 7i32;\n  ^~~~~~~~~~~~~~~~~~~~ ./tests/cn/arrow_access.c:27:3-23");
-  cn_assert(cn_bits_i32_equality(Or__cn->y, convert_to_cn_bits_i32(7LL)), POST);
-  cn_pop_msg_info();
-  ghost_stack_depth_decr();
-  cn_postcondition_leak_check();
-}
+  lua_cn_arrow_access_2_postcondition();
 
   lua_cn_frame_pop_function();
+}
+
+/* Same as arrow_access_2 but with added parameters to test frame push */
+void arrow_access_3_dummy_example_by_saljuk (struct s *origin, int x, int* y)
+/*@
+requires
+  take Or = RW<struct s>(origin);
+  origin->y == 0i32;
+ensures
+  take Or_ = RW<struct s>(origin);
+  origin->y == 7i32;
+  (*origin).y == 7i32;
+@*/
+{
+  /* EXECUTABLE CN PRECONDITION */
+  lua_cn_arrow_access_3_dummy_example_by_saljuk_push_frame((&origin), (&x), (&y));
+  lua_cn_arrow_access_3_dummy_example_by_saljuk_precondition();
+  
+	/* C OWNERSHIP */
+
+  lua_cn_ghost_add((&origin), sizeof(struct s*), lua_cn_get_stack_depth());
+  lua_cn_ghost_add((&x), sizeof(signed int), lua_cn_get_stack_depth());
+  lua_cn_ghost_add((&y), sizeof(signed int*), lua_cn_get_stack_depth());
+  
+  CN_STORE(CN_LOAD(origin)->y, 7);
+
+/* EXECUTABLE CN POSTCONDITION */
+__cn_epilogue:
+
+  
+	/* C OWNERSHIP */
+
+
+  lua_cn_ghost_remove((&origin), sizeof(struct s*));
+
+  lua_cn_ghost_remove((&x), sizeof(signed int));
+
+  lua_cn_ghost_remove((&y), sizeof(signed int*));
+
+  lua_cn_arrow_access_3_dummy_example_by_saljuk_postcondition();
+
+  lua_cn_frame_pop_function();
+}
+
+
+/* HELPER FUNCTION DEFINITIONS */
+static void lua_cn_arrow_access_1_push_frame()
+{
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "arrow_access_1");
+  lua_getfield(L, -1, "push_frame");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_arrow_access_1_precondition()
+{
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "arrow_access_1");
+  lua_getfield(L, -1, "precondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_arrow_access_1_postcondition()
+{
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "arrow_access_1");
+  lua_getfield(L, -1, "postcondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_arrow_access_2_push_frame(struct s** origin_addr)
+{
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "arrow_access_2");
+  lua_getfield(L, -1, "push_frame");
+  lua_pushinteger(L, lua_convert_ptr_to_int(origin_addr));
+  lua_pcall(L, 1, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_arrow_access_2_precondition()
+{
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "arrow_access_2");
+  lua_getfield(L, -1, "precondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_arrow_access_2_postcondition()
+{
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "arrow_access_2");
+  lua_getfield(L, -1, "postcondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_arrow_access_3_dummy_example_by_saljuk_push_frame(struct s** origin_addr, signed int* x_addr, signed int** y_addr)
+{
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "arrow_access_3_dummy_example_by_saljuk");
+  lua_getfield(L, -1, "push_frame");
+  lua_pushinteger(L, lua_convert_ptr_to_int(origin_addr));
+  lua_pushinteger(L, lua_convert_ptr_to_int(x_addr));
+  lua_pushinteger(L, lua_convert_ptr_to_int(y_addr));
+  lua_pcall(L, 3, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_arrow_access_3_dummy_example_by_saljuk_precondition()
+{
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "arrow_access_3_dummy_example_by_saljuk");
+  lua_getfield(L, -1, "precondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_arrow_access_3_dummy_example_by_saljuk_postcondition()
+{
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "arrow_access_3_dummy_example_by_saljuk");
+  lua_getfield(L, -1, "postcondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
 }
 
