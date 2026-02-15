@@ -4781,16 +4781,21 @@ let cn_to_ail_pre_post
                     Sym.fresh (push_fn_wrapper_name))), 
                     func_params_expr))
               in
+              let wrapper_args = CnL.convert_c_args_to_wrapper_args c_func_params in
               let push_fn_wrapper_def 
                 = CnL.generate_c_fn_wrapper_def 
                   push_fn_lua_name
                   push_fn_wrapper_name 
-                  c_func_params
+                  wrapper_args
               in
-              let push_fn_lua = [] in
+              let push_fn_lua 
+                = CnL.generate_lua_push_frame_fn
+                  push_fn_lua_name
+                  wrapper_args
+              in
 
               (
-                (A.AilSexpr (mk_expr push_fn_wrapper_call), (push_fn_lua, [ push_fn_wrapper_def ])), 
+                (A.AilSexpr (mk_expr push_fn_wrapper_call), ( [ push_fn_lua ], [ push_fn_wrapper_def ])), 
                 (CnL.generate_c_pop_frame_fn_wrapper_call, CnL.get_empty_lua_cn_exec)
               )
             in
