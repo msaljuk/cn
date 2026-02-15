@@ -22,9 +22,17 @@ Similar to List.concat.
 Takes a list of lua_cn_execs and returns one exec 
 with the concatenated results of the input execs.
 *)
-val concat :
-    lua_cn_exec list ->
+val concat 
+    : lua_cn_exec list ->
     lua_cn_exec
+
+(*
+Utility used to convert an instrumented c function's args
+to the arguments of the wrapper that will push them into Lua
+*)
+val convert_c_args_to_wrapper_args 
+    : (CF.Ctype.union_tag * CF.Ctype.ctype) list ->
+    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list
 
 (* ---------------------------------- *)
 (*             Generators             *)
@@ -65,7 +73,7 @@ Takes in
 val generate_c_fn_wrapper_def 
     : string -> 
     string ->
-    (CF.Ctype.union_tag * CF.Ctype.ctype) list ->
+    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
     wrapper_function
 
 (* 
@@ -98,6 +106,16 @@ val generate_lua_push_frame_fn_name : Sym.t -> string
 Utility used to generate the require for the Lua core runtime.
 *)
 val generate_lua_runtime_core_req : LuaS.stmt
+
+(*
+Utility used to generate a Lua function that pushes a bunch of 
+C arguments onto the Lua CN frame at the start of the frame. Takes
+in the name of the function and the args to push. 
+*)
+val generate_lua_push_frame_fn 
+    : string ->
+    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
+    LuaS.stmt 
 
 (* 
 Utility used to generate an error stack push statement in Lua,
