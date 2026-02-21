@@ -613,6 +613,7 @@ let main
     generate_ownership_functions without_ownership_checking !Cn_to_ail.ownership_ctypes
   in
   let ordered_ail_tag_defs = order_ail_tag_definitions sigm.tag_definitions in
+  let struct_getter_decs, struct_getter_defs = generate_struct_getters ordered_ail_tag_defs in
   let c_tag_defs = generate_c_tag_def_strs ordered_ail_tag_defs in
   let cn_converted_struct_defs = generate_cn_versions_of_structs ordered_ail_tag_defs in
   let record_fun_defs, record_fun_decls = Records.generate_c_record_funs sigm in
@@ -713,6 +714,7 @@ let main
               [
                 [ "/* HELPER FUNCTION DECLARATIONS */\n" ];
                 helper_decs;
+                struct_getter_decs;
               ]
             ))
           in
@@ -724,6 +726,7 @@ let main
               [
                 [ "/* HELPER FUNCTION DEFINITIONS */\n" ];
                 helper_defs;
+                struct_getter_defs;
               ]
             ))
           in
