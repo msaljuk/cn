@@ -76,6 +76,19 @@ val generate_c_fn_wrapper_def
     (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
     wrapper_function
 
+(*
+Utility used to generate a function to peek at any custom C structs. Called from
+Lua to get back a Lua table that is 'essentially' a mirrored version of the C struct,
+with 2 main differences:
+1. Every member is replaced by a pointer to that member (so a member 'x' becomes 'x_addr')
+2. A size entry is appended to the very end of the table and represents the total size of the
+struct in C (i.e. a sizeof)
+*)
+val generate_c_fn_peek_struct
+    : (A.ail_identifier *
+        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
+    wrapper_function
+
 (* 
 Utility used to generate the filename of the Lua file (with .Lua extension)
 based on the given C filename.

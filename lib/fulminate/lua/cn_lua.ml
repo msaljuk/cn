@@ -21,6 +21,8 @@ let cn_frames_push_fn_sym = LuaS.Symbol( "cn.frames.push_function" )
 let cn_frames_set_local_sym = LuaS.Symbol( "cn.frames.set_local" )
 let c_sym = LuaS.Symbol( "c" )
 let c_sym_addr_suffix = "_addr"
+let get_type_prefix = "get_"
+let peek_type_prefix = "peek_"
 
 let get_empty_lua_stmts : (LuaS.stmt list)
   = ([])
@@ -200,6 +202,126 @@ let generate_c_fn_wrapper_def
 
   (decl, def)
 
+
+let generate_c_fn_peek_struct 
+  (struct_data : (A.ail_identifier *
+        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)))
+  : wrapper_function
+  =
+  let struct_name, struct_members = struct_data in
+
+  let loc = Cerb_location.unknown in
+  let attrs = CF.Annot.no_attributes in
+  let id = Sym.fresh (peek_type_prefix ^ (Sym.pp_string struct_name)) in
+  
+  let call name args = mk_expr (AilEcall (mk_expr (AilEident (Sym.fresh name)), args)) in
+  let var_sym s = mk_expr (AilEident s) in
+  let int_const i = mk_expr (A.AilEconst (ConstantInteger (IConstant (Z.of_int i, Decimal, None)))) in
+  
+  let sym_L = Sym.fresh "L" in
+  let sym_ptr = Sym.fresh "ptr" in
+  let sym_val = Sym.fresh "val" in
+  
+  let ty_int64 = CF.Ctype.(Ctype ([], Basic (Integer (Signed Intptr_t)))) in
+  let ty_struct_s = CF.Ctype.(Ctype ([], Struct struct_name)) in
+  let ty_struct_s_ptr = CF.Ctype.(Ctype ([], Pointer (CF.Ctype.no_qualifiers, ty_struct_s))) in
+
+  let decl_ptr = mk_stmt (A.AilSdeclaration [
+    (sym_ptr, Some (mk_expr (AilEcall (mk_expr (AilEident (Sym.fresh "luaL_checkinteger")), [var_sym sym_L; int_const 1]))))
+  ]) in
+
+  let cast_expr = mk_expr (AilEcast (CF.Ctype.no_qualifiers, ty_struct_s_ptr, var_sym sym_ptr)) in
+  let decl_val = mk_stmt (A.AilSdeclaration [
+    (sym_val, Some cast_expr)
+  ]) in
+
+  let generate_lua_table_for_struct 
+    (struct_members : Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)
+  =
+    let push_int_expr_to_table ((key, value) : string * CF.GenTypes.genTypeCategory A.expression) =
+      let key_expr = mk_expr (AilEstr(None, [(Locations.other __LOC__, [key])])) in
+      let lua_expr = var_sym sym_L in
+      [
+        mk_stmt (A.AilSexpr (call "lua_pushstring" [ lua_expr; key_expr ]));
+        mk_stmt (A.AilSexpr (call "lua_pushinteger" [ lua_expr; value ]));
+        mk_stmt (A.AilSexpr (call "lua_settable" [ lua_expr; int_const (-3)]))
+      ]
+    in
+
+    let generate_table_entry_for_member (member_name, _member_type) =
+      let member_expr = mk_expr (AilEmemberofptr (var_sym sym_val, member_name)) in
+      let addr_expr = mk_expr (AilEunary (Address, member_expr)) in
+      let final_expr = mk_expr (
+        AilEcall (
+          mk_expr (AilEident (Sym.fresh "lua_convert_ptr_to_int")), 
+          [addr_expr])
+      ) in
+      let table_key = 
+        (CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier member_name)  ^ c_sym_addr_suffix)
+      in
+      push_int_expr_to_table (table_key, final_expr)
+    in
+
+    let generate_struct_size_entry = 
+      let table_key = "size" in
+      let size_expr = mk_expr (AilEsizeof (CF.Ctype.no_qualifiers, ty_struct_s)) in
+      push_int_expr_to_table (table_key, size_expr)
+    in
+
+    let _, _, tag_defs = struct_members in
+    let member_names_and_types = 
+      match tag_defs with
+      | CF.Ctype.StructDef(tag_data_list, _) ->
+          List.map (fun (id, (_, _, _, ctype)) -> (id, ctype)) tag_data_list
+      | _ -> []
+    in
+
+    let new_table_stmt = mk_stmt (AilSexpr (call "lua_newtable" [ mk_expr (AilEident (sym_L)) ])) in
+
+    (
+      [ new_table_stmt ]
+      @ (List.concat (List.map generate_table_entry_for_member member_names_and_types)
+      @ generate_struct_size_entry)
+    )
+  in
+
+  let ret_stmt = mk_stmt (AilSreturn (int_const (1))) in
+
+  let lua_table_push = generate_lua_table_for_struct struct_members in
+
+  let lua_state_bs, lua_state_ss = generate_c_get_lua_state in
+
+  let body_stmts = 
+    [ mk_stmt lua_state_ss ]
+    @ [ decl_ptr; decl_val; ]
+    @ lua_table_push
+    @ [ ret_stmt ]
+  in
+
+  let block_bindings = [
+    lua_state_bs;
+    mk_binding sym_ptr ty_int64;
+    mk_binding sym_val ty_struct_s_ptr;
+  ] in
+
+  let final_body = mk_stmt (A.AilSblock (block_bindings, body_stmts)) in
+
+  let decl =
+    ( id,
+      ( loc,
+        attrs,
+        A.(
+          Decl_function
+            ( false, ( CF.Ctype.no_qualifiers, CF.Ctype.signed_int), [], false, false, false )) ) 
+    )
+  in
+
+  let def = 
+    (id, (loc, 0, attrs, [], (final_body))) 
+  in
+
+  (decl, def)
+
 let generate_lua_filename basefile 
   = (Filename.remove_extension basefile) ^ ".lua"
 
@@ -228,6 +350,8 @@ let generate_lua_push_frame_fn
   : LuaS.stmt
   = 
 
+  (*@saljuk NOTE: Consider hoisting this out if we need to reuse this logic for pre/post/inline
+  stmt parameter reading (most likely)*)
   let get_arg_expr
     (arg : (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)))
     = 
@@ -236,20 +360,35 @@ let generate_lua_push_frame_fn
     let c_symbol, (_, (c_addr_type : CF.Ctype.ctype), _) = arg in
     let c_type = get_ctype_without_ptr c_addr_type in
 
-    (*@saljuk $TODO: Handle more types, especially structs *)
-    (match (rm_ctype c_type) with
-      | CF.Ctype.Basic (x) ->
+    let type_str = 
+      let get_type type_str = get_type_prefix ^ type_str in
+      let peek_type type_str = peek_type_prefix ^ type_str in
+
+      (match (rm_ctype c_type) with
+        | CF.Ctype.Basic (x) ->
           (match (x) with 
-            | CF.Ctype.Integer (_) ->
-                LuaS.Call(
-                  Pp_lua.pp_expr (LuaS.Field(get_fn_prefix, LuaS.Symbol("get_integer"))),
-                  [ c_sym_to_lua_sym c_symbol ] )
-            | _ -> LuaS.Nil);
-      | CF.Ctype.Pointer (_, _) -> 
-          LuaS.Call(
-            Pp_lua.pp_expr (LuaS.Field(get_fn_prefix, LuaS.Symbol("get_pointer"))),
-            [ c_sym_to_lua_sym c_symbol ] )
-      | _ -> LuaS.Nil)
+            | CF.Ctype.Integer (i_type) -> 
+              (match i_type with
+                | CF.Ctype.Bool -> get_type "bool";
+                | CF.Ctype.Char -> get_type "char";
+                (*@saljuk TODO: Revisit this in the future. *)
+                | CF.Ctype.Signed (_) | CF.Ctype.Unsigned (_) -> get_type "integer";
+                | CF.Ctype.Size_t -> get_type "size_t";
+                | _ -> (""));
+            | CF.Ctype.Floating (f_type) ->
+              match f_type with
+                | CF.Ctype.RealFloating (rf_type) ->
+                  match rf_type with
+                    | CF.Ctype.Float -> get_type "float";
+                    | CF.Ctype.Double | CF.Ctype.LongDouble -> get_type "double");
+        | CF.Ctype.Pointer (_, _) -> get_type "pointer";
+        | CF.Ctype.Struct (s_sym) -> peek_type (Sym.pp_string s_sym);
+        | _ -> "")
+    in
+
+    LuaS.Call(
+      Pp_lua.pp_expr (LuaS.Field(get_fn_prefix, LuaS.Symbol(type_str))),
+      [ c_sym_to_lua_sym c_symbol ] )
   in
 
   let get_args 
