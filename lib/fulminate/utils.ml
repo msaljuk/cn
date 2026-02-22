@@ -93,6 +93,12 @@ let rec list_split_four = function
     let ws, xs, ys, zs = list_split_four rest in
     (w :: ws, x :: xs, y :: ys, z :: zs)
 
+let rec list_split_five = function
+  | [] -> ([], [], [], [], [])
+  | (v, w, x, y, z) :: rest ->
+    let vs, ws, xs, ys, zs = list_split_five rest in
+    (v :: vs, w :: ws, x :: xs, y :: ys, z :: zs)
+
 type[@warning "-34" (* unused-type-declaration *)] cn_dependencies = CF.Symbol.sym list
 
 type[@warning "-34-69" (* unused-type-declaration, unused-record-field *)] cn_dependency_graph =

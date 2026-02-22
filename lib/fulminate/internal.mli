@@ -7,6 +7,7 @@ type executable_spec =
       (Cerb_location.t
       * (GenTypes.genTypeCategory AilSyntax.expression option * string list))
         list;
+    helpers : string list * string list;
     alt_file : string list
   }
 
