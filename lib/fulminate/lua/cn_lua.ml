@@ -72,6 +72,30 @@ let generate_c_pop_frame_fn_wrapper_call
     mk_expr (A.(AilEcall (
       mk_expr (AilEident (Sym.fresh "lua_cn_frame_pop_function")), []))))))
 
+let mk_binding sym ty
+  : A.ail_identifier 
+    * ((Cerb_location.t * A.storageDuration * bool) 
+    * CF.Ctype.alignment option 
+    * CF.Ctype.qualifiers 
+    * CF.Ctype.ctype) = 
+  (sym, ((Cerb_location.unknown, A.Automatic, false), None, CF.Ctype.no_qualifiers, ty))
+
+let generate_c_get_lua_state
+  =
+  let sym_L = Sym.fresh "L" in
+
+  let ty_lua_state = CF.Ctype.(Ctype ([], Struct (Sym.fresh "lua_State"))) in
+  let ty_lua_state_ptr = CF.Ctype.(Ctype ([], Pointer (CF.Ctype.no_qualifiers, ty_lua_state))) in
+
+  let binding = mk_binding sym_L ty_lua_state_ptr in
+  let decl_stmt = 
+      A.AilSdeclaration [
+        (sym_L, Some (mk_expr (AilEcall (mk_expr (AilEident (Sym.fresh "lua_get_state")), []))))
+      ]
+  in
+
+  (binding, decl_stmt)
+
 let generate_c_fn_wrapper_def 
   (lua_fn_name : string)
   (wrapper_fn_name : string)
@@ -140,11 +164,14 @@ let generate_c_fn_wrapper_def
       ];
   in
 
+  let lua_state_bs, lua_state_ss = generate_c_get_lua_state in
+
   let (body : CF.GenTypes.genTypeCategory A.statement list) = 
       List.map 
       mk_stmt
       (
-        [ call "lua_rawgeti" [var "L"; var "LUA_REGISTRYINDEX"; mk_expr (AilEcall (var "lua_cn_get_runtime_ref", [])) ]]
+        [ lua_state_ss ]
+        @ [ call "lua_rawgeti" [var "L"; var "LUA_REGISTRYINDEX"; mk_expr (AilEcall (var "lua_cn_get_runtime_ref", [])) ]]
         @ (List.map generate_getfield lua_fn_field_names)
         @ (List.map generate_arg_push arg_names)
         (*@saljuk TODO: Make this safer by checking the results of p_call and handling them *)
@@ -168,7 +195,7 @@ let generate_c_fn_wrapper_def
   in
 
   let def = 
-    (id, (loc, 0, attrs, arg_names, (mk_stmt (A.AilSblock ([], body))))) 
+    (id, (loc, 0, attrs, arg_names, (mk_stmt (A.AilSblock ([ lua_state_bs; ], body))))) 
   in
 
   (decl, def)

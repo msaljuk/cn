@@ -703,8 +703,6 @@ let main
               [ c_tag_defs ];
               [ cn_ghost_enum ];
               cn_ghost_call_site_glob;
-              (*@saljuk HACK: Make this not be a global printed like this *)
-              [ "lua_State* L;\n" ]
             ]
             @
             (if List.is_empty helper_decs then 

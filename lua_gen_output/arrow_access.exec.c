@@ -15,7 +15,6 @@ enum CN_GHOST_ENUM {
   EMPTY
 };
 enum CN_GHOST_ENUM ghost_call_site;
-lua_State* L;
 /* HELPER FUNCTION DECLARATIONS */
 static void lua_cn_arrow_access_1_push_frame();
 static void lua_cn_arrow_access_1_precondition();
@@ -219,6 +218,7 @@ __cn_epilogue:
 /* HELPER FUNCTION DEFINITIONS */
 static void lua_cn_arrow_access_1_push_frame()
 {
+  struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "arrow_access_1");
   lua_getfield(L, -1, "push_frame");
@@ -227,6 +227,7 @@ static void lua_cn_arrow_access_1_push_frame()
 }
 static void lua_cn_arrow_access_1_precondition()
 {
+  struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "arrow_access_1");
   lua_getfield(L, -1, "precondition");
@@ -235,6 +236,7 @@ static void lua_cn_arrow_access_1_precondition()
 }
 static void lua_cn_arrow_access_1_postcondition()
 {
+  struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "arrow_access_1");
   lua_getfield(L, -1, "postcondition");
@@ -243,6 +245,7 @@ static void lua_cn_arrow_access_1_postcondition()
 }
 static void lua_cn_arrow_access_2_push_frame(struct s** origin_addr)
 {
+  struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "arrow_access_2");
   lua_getfield(L, -1, "push_frame");
@@ -252,6 +255,7 @@ static void lua_cn_arrow_access_2_push_frame(struct s** origin_addr)
 }
 static void lua_cn_arrow_access_2_precondition()
 {
+  struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "arrow_access_2");
   lua_getfield(L, -1, "precondition");
@@ -260,6 +264,7 @@ static void lua_cn_arrow_access_2_precondition()
 }
 static void lua_cn_arrow_access_2_postcondition()
 {
+  struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "arrow_access_2");
   lua_getfield(L, -1, "postcondition");
@@ -268,6 +273,7 @@ static void lua_cn_arrow_access_2_postcondition()
 }
 static void lua_cn_arrow_access_3_dummy_example_by_saljuk_push_frame(struct s** origin_addr, signed int* x_addr, signed int** y_addr)
 {
+  struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "arrow_access_3_dummy_example_by_saljuk");
   lua_getfield(L, -1, "push_frame");
@@ -279,6 +285,7 @@ static void lua_cn_arrow_access_3_dummy_example_by_saljuk_push_frame(struct s** 
 }
 static void lua_cn_arrow_access_3_dummy_example_by_saljuk_precondition()
 {
+  struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "arrow_access_3_dummy_example_by_saljuk");
   lua_getfield(L, -1, "precondition");
@@ -287,6 +294,7 @@ static void lua_cn_arrow_access_3_dummy_example_by_saljuk_precondition()
 }
 static void lua_cn_arrow_access_3_dummy_example_by_saljuk_postcondition()
 {
+  struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "arrow_access_3_dummy_example_by_saljuk");
   lua_getfield(L, -1, "postcondition");
