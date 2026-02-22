@@ -1,5 +1,6 @@
 #include <lua_wrappers.h>
 #include <cn-executable/utils.h>
+
 #include <cn-executable/cerb_types.h>
 
 /* ORIGINAL C STRUCTS AND UNIONS */
@@ -14,6 +15,15 @@ enum CN_GHOST_ENUM {
   EMPTY
 };
 enum CN_GHOST_ENUM ghost_call_site;
+/* HELPER FUNCTION DECLARATIONS */
+static void lua_cn_IntList_append_push_frame(struct int_list**, struct int_list**, struct int_list*);
+static void lua_cn_IntList_append_precondition();
+static void lua_cn_IntList_append_postcondition();
+static void lua_cn_main_push_frame();
+static void lua_cn_main_precondition();
+static void lua_cn_main_postcondition();
+static signed int peek_int_list();
+
 # 1 "./tests/cn/append.c"
 # 1 "<built-in>" 1
 # 1 "<built-in>" 3
@@ -47,7 +57,7 @@ struct int_list;
 
 
 
-struct int_list* IntList_append(struct int_list* xs, struct int_list* ys)
+struct int_list* IntList_append(struct int_list* xs, struct int_list* ys, struct int_list actual_struct_param)
 /*@ requires take L1 = IntList(xs);
              take L2 = IntList(ys);
     ensures take L3 = IntList(return);
@@ -55,24 +65,40 @@ struct int_list* IntList_append(struct int_list* xs, struct int_list* ys)
 {
   /* EXECUTABLE CN PRECONDITION */
   struct int_list* __cn_ret;
-  lua_cn_frame_push_function();
+  lua_cn_IntList_append_push_frame((&xs), (&ys), (&actual_struct_param));
+  lua_cn_IntList_append_precondition();
   
 	/* C OWNERSHIP */
 
   lua_cn_ghost_add((&xs), sizeof(struct int_list*), lua_cn_get_stack_depth());
   lua_cn_ghost_add((&ys), sizeof(struct int_list*), lua_cn_get_stack_depth());
+  lua_cn_ghost_add((&actual_struct_param), sizeof(struct int_list), lua_cn_get_stack_depth());
   
   if (CN_LOAD(xs) == 0) {
-    /*@ unfold append(L1, L2); @*/
+    update_cn_error_message_info("    /*@ unfold append(L1, L2); @*/\n       ^~~~~~~~~~~~~~~~~~~~~~~~~ ./tests/cn/append.c:41:8-33");
+
+update_cn_error_message_info("    /*@ unfold append(L1, L2); @*/\n        ^~~~~~~~~~~~~~~~~~~~~~ ./tests/cn/append.c:41:9-31");
+
+cn_pop_msg_info();
+
+cn_pop_msg_info();
+
     { __cn_ret = CN_LOAD(ys); goto __cn_epilogue; }
   } else {
-    /*@ unfold append(L1, L2); @*/
+    update_cn_error_message_info("    /*@ unfold append(L1, L2); @*/\n       ^~~~~~~~~~~~~~~~~~~~~~~~~ ./tests/cn/append.c:44:8-33");
+
+update_cn_error_message_info("    /*@ unfold append(L1, L2); @*/\n        ^~~~~~~~~~~~~~~~~~~~~~ ./tests/cn/append.c:44:9-31");
+
+cn_pop_msg_info();
+
+cn_pop_msg_info();
+
     struct int_list *new_tail = (
 ({
   ghost_call_site = EMPTY;
   0;
 })
-, IntList_append(CN_LOAD(CN_LOAD(xs)->tail), CN_LOAD(ys)));
+, IntList_append(CN_LOAD(CN_LOAD(xs)->tail), CN_LOAD(ys), CN_LOAD(actual_struct_param)));
 lua_cn_ghost_add((&new_tail), sizeof(struct int_list*), lua_cn_get_stack_depth());
 
     CN_STORE(CN_LOAD(xs)->tail, CN_LOAD(new_tail));
@@ -93,6 +119,10 @@ __cn_epilogue:
   lua_cn_ghost_remove((&xs), sizeof(struct int_list*));
 
   lua_cn_ghost_remove((&ys), sizeof(struct int_list*));
+
+  lua_cn_ghost_remove((&actual_struct_param), sizeof(struct int_list));
+
+  lua_cn_IntList_append_postcondition();
 
   lua_cn_frame_pop_function();
 
@@ -123,7 +153,7 @@ lua_cn_ghost_add((&i2), sizeof(struct int_list), lua_cn_get_stack_depth());
   ghost_call_site = EMPTY;
   0;
 })
-, IntList_append(&i1, &i2));
+, IntList_append(&i1, &i2, CN_LOAD(i3)));
 lua_cn_ghost_add((&il3), sizeof(struct int_list*), lua_cn_get_stack_depth());
 
 
@@ -147,5 +177,82 @@ __cn_epilogue:
 
 return __cn_ret;
 
+}
+
+
+/* HELPER FUNCTION DEFINITIONS */
+static void lua_cn_IntList_append_push_frame(struct int_list** xs_addr, struct int_list** ys_addr, struct int_list* actual_struct_param_addr)
+{
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "IntList_append");
+  lua_getfield(L, -1, "push_frame");
+  lua_pushinteger(L, lua_convert_ptr_to_int(xs_addr));
+  lua_pushinteger(L, lua_convert_ptr_to_int(ys_addr));
+  lua_pushinteger(L, lua_convert_ptr_to_int(actual_struct_param_addr));
+  lua_pcall(L, 3, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_IntList_append_precondition()
+{
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "IntList_append");
+  lua_getfield(L, -1, "precondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_IntList_append_postcondition()
+{
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "IntList_append");
+  lua_getfield(L, -1, "postcondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_main_push_frame()
+{
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "main");
+  lua_getfield(L, -1, "push_frame");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_main_precondition()
+{
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "main");
+  lua_getfield(L, -1, "precondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_main_postcondition()
+{
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "main");
+  lua_getfield(L, -1, "postcondition");
+  lua_pcall(L, 0, 0, 0);
+  lua_pop(L, 1);
+}
+static signed int peek_int_list()
+{
+  struct lua_State* L = lua_get_state();
+  intptr_t ptr = luaL_checkinteger(L, 1);
+  struct int_list* val = (struct int_list*) ptr;
+  lua_newtable(L);
+  lua_pushstring(L, "head_addr");
+  lua_pushinteger(L, lua_convert_ptr_to_int((&val->head)));
+  lua_settable(L, -3);
+  lua_pushstring(L, "tail_addr");
+  lua_pushinteger(L, lua_convert_ptr_to_int((&val->tail)));
+  lua_settable(L, -3);
+  lua_pushstring(L, "size");
+  lua_pushinteger(L, sizeof(struct int_list));
+  lua_settable(L, -3);
+  return 1;
 }
 
