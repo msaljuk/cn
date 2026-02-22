@@ -7,6 +7,7 @@ module Records = Fulminate.Records
 module BT = BaseTypes
 module IT = IndexTerms
 module LC = LogicalConstraints
+module CnL = Fulminate.Cn_lua
 
 module Make (AD : Domain.T) = struct
   module Stage6 = Stage6.Make (AD)
@@ -57,7 +58,7 @@ module Make (AD : Domain.T) = struct
       match it_bt with
       | BT.Unit ->
         (* For unit types, return NULL directly *)
-        ([], [], [], mk_expr (AilEconst ConstantNull))
+        ([], [], CnL.get_empty_lua_cn_exec, mk_expr (AilEconst ConstantNull))
       | _ ->
         CtA.cn_to_ail_expr_toplevel filename sigma.cn_datatypes [] (Some name) None it
     in

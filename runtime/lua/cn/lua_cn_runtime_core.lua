@@ -140,4 +140,19 @@ function cn.ghost_state.postcondition_leak_check()
     cn.c.postcondition_leak_check();
 end
 
+--[[
+@Saljuk TODO: Get rid of this. This makes it easy for us
+to generate Lua functions within nested tables since we don't have 
+to generate the intermediate tables. But it's gross, and makes it
+so that typos no longer lead to errors but create new tables. Come
+up with a more elegant solution (possibly involving analyzing all the
+generated functions and generating the nested table structure from them)
+]]--
+local mt = {}
+mt.__index = function(t, k)
+    t[k] = setmetatable({}, mt)
+    return t[k]
+end
+setmetatable(cn, mt)
+
 return cn

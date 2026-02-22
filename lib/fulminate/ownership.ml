@@ -6,7 +6,7 @@ module RC = Runtime_config
 module CnL = Lua.Cn_lua
 
 type ail_bindings_and_statements =
-  A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.cn_stmts
+  A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.lua_cn_exec
 
 (* Differentiate between whether return statement carries an expression or not *)
 type return_kind =
@@ -330,7 +330,7 @@ let rec get_c_control_flow_ownership_injs_aux
         let offset = String.length (Sym.pp_string label_sym) + 1 in
         let loc_after_label = get_start_loc ~offset loc in
         [ { loc = loc_after_label;
-            bs_and_ss = ([], List.map generate_c_local_ownership_entry in_scope_vars, []);
+            bs_and_ss = ([], List.map generate_c_local_ownership_entry in_scope_vars, CnL.get_empty_lua_cn_exec);
             injection_kind = NonReturnInj
           }
         ]
@@ -357,7 +357,7 @@ let rec get_c_control_flow_ownership_injs_aux
      | Some Desug_continue ->
        let loc_before_continue = get_start_loc loc in
        [ { loc = loc_before_continue;
-           bs_and_ss = ([], List.map generate_c_local_ownership_exit continue_vars, []);
+           bs_and_ss = ([], List.map generate_c_local_ownership_exit continue_vars, CnL.get_empty_lua_cn_exec);
            injection_kind = NonReturnInj
          }
        ]
@@ -366,26 +366,26 @@ let rec get_c_control_flow_ownership_injs_aux
        (* Unmap addresses of all in-scope variables *)
        let loc_before_goto = get_start_loc loc in
        [ { loc = loc_before_goto;
-           bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars, []);
+           bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars, CnL.get_empty_lua_cn_exec);
            injection_kind = NonReturnInj
          }
        ])
   | AilSreturnVoid ->
     [ { loc;
-        bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars, []);
+        bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars, CnL.get_empty_lua_cn_exec);
         injection_kind = ReturnInj ReturnVoid
       }
     ]
   | AilSreturn e ->
     [ { loc;
-        bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars, []);
+        bs_and_ss = ([], List.map generate_c_local_ownership_exit in_scope_vars, CnL.get_empty_lua_cn_exec);
         injection_kind = ReturnInj (ReturnExpr e)
       }
     ]
   | AilSbreak ->
     let loc_before_break = get_start_loc loc in
     [ { loc = loc_before_break;
-        bs_and_ss = ([], List.map generate_c_local_ownership_exit break_vars, []);
+        bs_and_ss = ([], List.map generate_c_local_ownership_exit break_vars, CnL.get_empty_lua_cn_exec);
         injection_kind = NonReturnInj
       }
     ]
@@ -609,7 +609,7 @@ let get_c_block_entry_exit_injs stat
   let injs = get_c_block_entry_exit_injs_aux [] stat in
   let standard_injs =
     List.map
-      (fun (loc, bs, ss) -> { loc; bs_and_ss = (bs, ss, []); injection_kind = NonReturnInj })
+      (fun (loc, bs, ss) -> { loc; bs_and_ss = (bs, ss, CnL.get_empty_lua_cn_exec); injection_kind = NonReturnInj })
       injs.standard_injs
   in
   (standard_injs, injs.gcc_stat_as_expr_injs)
@@ -662,7 +662,7 @@ let get_c_block_local_ownership_checking_injs statement =
          let bs_list, ss_list, ls_list, inj_kind_list = Utils.list_split_four injs' in
          let inj_kind = get_return_inj_kind inj_kind_list in
          { loc = l;
-           bs_and_ss = (List.concat bs_list, List.concat ss_list, List.concat ls_list);
+           bs_and_ss = (List.concat bs_list, List.concat ss_list, CnL.concat ls_list);
            injection_kind = inj_kind
          })
       locs
