@@ -942,7 +942,7 @@ let generate_tag_definition_injs (tag_defs : CF.AilSyntax.sigma_tag_definition l
   in
   all_tag_def_injs
 
-let generate_struct_getters (ail_struct_data)
+let generate_struct_peeks (ail_struct_data)
   : (string list * string list)
   =
   match RC.get_runtime() with
