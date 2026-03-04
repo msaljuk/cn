@@ -742,11 +742,14 @@ let dest_with_unit_check
         | RC.Lua -> 
           let push_err_stmt = CnL.generate_lua_cn_error_stack_push (gather_error_message_from_loc loc) in
           let pop_err_stmt = CnL.generate_lua_cn_error_stack_pop in
+          let l1, expr = CnL.pop_expr_from_exec l in
 
-          let l' = CnL.push_stmt_to_exec (l, push_err_stmt) in
-          (* add the actual assert here *) 
-          let l'' = CnL.push_stmt_to_exec (l', pop_err_stmt) in
-          ([], [], l'')
+          let open Lua.Pp_lua in
+          print_endline (pp_expr expr);
+
+          let l2 = CnL.push_stmt_to_exec (l1, push_err_stmt) in
+          let l3 = CnL.push_stmt_to_exec (l2, pop_err_stmt) in
+          ([], [], l3)
       );
   | Return ->
     (match RC.get_runtime() with
@@ -1000,21 +1003,35 @@ let rec cn_to_ail_expr_aux
         t2
         PassBack
     in
-    let annot = cn_to_ail_binop (IT.get_bt t1) (IT.get_bt t2) bop in
-    let str =
-      match annot with
-      | Some str -> str
-      | None -> failwith (__LOC__ ^ ": No CN binop function found")
-    in
-    let default_ail_binop =
-      A.(AilEcall (mk_expr (AilEident (Sym.fresh str)), [ e1; e2 ]))
-    in
-    let ail_expr_ =
-      match bop with
-      | EQ -> get_equality_fn_call (IT.get_bt t1) e1 e2
-      | _ -> default_ail_binop
-    in
-    dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr ail_expr_)
+
+    (match RC.get_runtime() with
+      | RC.C ->
+        let annot = cn_to_ail_binop (IT.get_bt t1) (IT.get_bt t2) bop in
+        let str =
+          match annot with
+          | Some str -> str
+          | None -> failwith (__LOC__ ^ ": No CN binop function found")
+        in
+        let default_ail_binop =
+          A.(AilEcall (mk_expr (AilEident (Sym.fresh str)), [ e1; e2 ]))
+        in
+        let ail_expr_ =
+          match bop with
+          | EQ -> get_equality_fn_call (IT.get_bt t1) e1 e2
+          | _ -> default_ail_binop
+        in
+        dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr ail_expr_)
+      | RC.Lua ->
+        let l1', lua_cn_expr_1 = CnL.pop_expr_from_exec l1 in
+        let l2', lua_cn_expr_2 = CnL.pop_expr_from_exec l2 in
+
+        let l3 = CnL.concat [ l1'; l2' ] in
+        let l4 = CnL.push_expr_to_exec (
+          l3, 
+          CnL.cn_to_lua_binop (lua_cn_expr_1, lua_cn_expr_2, bop)) in
+
+        dest d spec_mode_opt (b1 @ b2, s1 @ s2, l4, mk_expr ail_null)
+    );
   | Unop (unop, t) ->
     let b, s, l, e =
       cn_to_ail_expr_aux

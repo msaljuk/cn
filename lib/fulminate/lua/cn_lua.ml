@@ -616,3 +616,12 @@ let cn_to_lua_sym (c_sym : CF.Ctype.union_tag)
   : (LuaS.expr)
 =
   LuaS.Symbol(Sym.pp_string c_sym)
+
+let cn_to_lua_binop (expr_a, expr_b, binop)
+  : (LuaS.expr)
+=
+  let lua_expr =
+    match binop with
+    | IT.EQ | _ -> LuaS.Call("cn.assert", [ expr_a; expr_b ])
+  in
+  (lua_expr)

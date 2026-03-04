@@ -190,3 +190,7 @@ val cn_to_lua_const
 val cn_to_lua_sym
     : CF.Ctype.union_tag ->
     (LuaS.expr)
+
+val cn_to_lua_binop
+    : (LuaS.expr * LuaS.expr * IT.binop) ->
+    LuaS.expr
