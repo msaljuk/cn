@@ -1,18 +1,25 @@
 module CF = Cerb_frontend
 module A = CF.AilSyntax
 module LuaS = Lua_syntax
+module BT = BaseTypes
+module IT = IndexTerms
 
 (* ---------------------------------- *)
 (* CN-Lua Types and related utilities *)
 (* ---------------------------------- *)
 
-type lua_statements = (LuaS.stmt list)
+type lua_expr = (LuaS.expr)
+type lua_stmt = (LuaS.stmt)
+type lua_expressions = (lua_expr list)
+type lua_statements = (lua_stmt list)
 type wrapper_function = (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition)
 type wrapper_functions = (wrapper_function list)
-(* Corresponds to a list of Lua statements and the wrapper C functions that call into them *)
-type lua_cn_exec = (lua_statements * wrapper_functions)
+type lua_cn_exec = (lua_statements * wrapper_functions * lua_expr)
 
-val get_empty_lua_stmts : LuaS.stmt list
+val get_empty_lua_expr : lua_expr
+val get_empty_lua_stmt : lua_stmt
+val get_empty_lua_exprs : lua_expressions
+val get_empty_lua_stmts : lua_statements
 val get_empty_wrapper_functions : wrapper_functions
 val get_empty_lua_cn_exec : lua_cn_exec
 
@@ -33,6 +40,12 @@ to the arguments of the wrapper that will push them into Lua
 val convert_c_args_to_wrapper_args 
     : (CF.Ctype.union_tag * CF.Ctype.ctype) list ->
     (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list
+
+val push_expr_to_exec : (lua_cn_exec * lua_expr) -> lua_cn_exec
+val pop_expr_from_exec : (lua_cn_exec) -> (lua_cn_exec * lua_expr)
+val push_stmt_to_exec : (lua_cn_exec * lua_stmt) -> lua_cn_exec
+
+val debug_print_stmts : lua_statements -> unit
 
 (* ---------------------------------- *)
 (*             Generators             *)
@@ -155,3 +168,25 @@ val generate_lua_cn_assert
     string ->
     LuaS.stmt
 
+val generate_lua_cn_return
+    : lua_expr -> bool ->
+    LuaS.stmt
+
+(* ---------------------------------- *)
+(*          Cn-to-Lua Terms           *)
+(* ---------------------------------- *)
+
+(* 
+Corollary to cn_to_ail_const.
+
+Returns a lua statement corresponding to the generated constant
+(and a bool flag indicating if it's unit or not).
+*)
+val cn_to_lua_const 
+    : IT.const ->
+    BT.t ->
+    (LuaS.expr * bool)
+
+val cn_to_lua_sym
+    : CF.Ctype.union_tag ->
+    (LuaS.expr)

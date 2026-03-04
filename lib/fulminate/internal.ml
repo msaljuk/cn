@@ -267,7 +267,7 @@ let generate_c_specs_from_cn_internal
 
         let alt_pre_str = 
           let _, _, cn_stmts = ail_executable_spec.pre in
-          let lua_stmts, wrapper_stmts = cn_stmts in
+          let lua_stmts, wrapper_stmts, _ = cn_stmts in
           (
             [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
             List.map pp_stmt lua_stmts;
@@ -276,7 +276,7 @@ let generate_c_specs_from_cn_internal
         
         let alt_post_str = 
           let _, _, cn_stmts = ail_executable_spec.post in
-          let lua_stmts, wrapper_stmts = cn_stmts in
+          let lua_stmts, wrapper_stmts, _ = cn_stmts in
           (
             [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
             List.map pp_stmt lua_stmts;
@@ -286,7 +286,7 @@ let generate_c_specs_from_cn_internal
         let alt_in_stmt = 
           let _, ail_bindings_and_statements_list = List.split ail_executable_spec.in_stmt in
           let _, _, cn_stmts = list_split_three ail_bindings_and_statements_list in
-          let lua_stmts_list, wrapper_stmts_list = List.split cn_stmts in
+          let lua_stmts_list, wrapper_stmts_list, _ = Utils.list_split_three cn_stmts in
 
           let lua_strs = List.map pp_stmt (List.concat lua_stmts_list) in
 

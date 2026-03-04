@@ -2,12 +2,17 @@ module CF = Cerb_frontend
 module A = CF.AilSyntax
 module LuaS = Lua_syntax
 module PP = Pp_lua
+module BT = BaseTypes
+module IT = IndexTerms
 open Utils
 
-type lua_statements = (LuaS.stmt list)
+type lua_expr = (LuaS.expr)
+type lua_stmt = (LuaS.stmt)
+type lua_expressions = (lua_expr list)
+type lua_statements = (lua_stmt list)
 type wrapper_function = (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition)
 type wrapper_functions = (wrapper_function list)
-type lua_cn_exec = (lua_statements * wrapper_functions)
+type lua_cn_exec = (lua_statements * wrapper_functions * lua_expr)
 
 let get_expr_str expr = PP.pp_expr expr
 
@@ -24,20 +29,30 @@ let c_sym_addr_suffix = "_addr"
 let get_type_prefix = "get_"
 let peek_type_prefix = "peek_"
 
-let get_empty_lua_stmts : (LuaS.stmt list)
+let get_empty_lua_expr : (lua_expr)
+  = (LuaS.Nil)
+let get_empty_lua_stmt : (lua_stmt)
+  = (LuaS.Empty)
+let get_empty_lua_exprs : (lua_expressions)
   = ([])
-
+let get_empty_lua_stmts : (lua_statements)
+  = ([])
 let get_empty_wrapper_functions : wrapper_functions
   = ([])
 
 let get_empty_lua_cn_exec : lua_cn_exec =
-  (get_empty_lua_stmts, get_empty_wrapper_functions)
+  (get_empty_lua_stmts, get_empty_wrapper_functions, get_empty_lua_expr)
 
 let concat (exec_list : lua_cn_exec list) =
-  let lua_stmts_list, wrapper_stmts_list = List.split exec_list in
+  let lua_stmts_list, wrapper_stmts_list, lua_exprs = Utils.list_split_three exec_list in
   let merged_lua_stmts = List.concat lua_stmts_list in
   let merged_wrapper_stmts = List.concat wrapper_stmts_list in
-  (merged_lua_stmts, merged_wrapper_stmts)
+  let (lua_expr : LuaS.expr) = 
+    match List.find_opt (function LuaS.Nil -> false | _ -> true) lua_exprs with
+    | Some e -> e
+    | None   -> LuaS.Nil
+  in
+  (merged_lua_stmts, merged_wrapper_stmts, lua_expr)
 
 let convert_c_args_to_wrapper_args (c_args :(CF.Ctype.union_tag * CF.Ctype.ctype) list) 
     : (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list
@@ -49,6 +64,30 @@ let convert_c_args_to_wrapper_args (c_args :(CF.Ctype.union_tag * CF.Ctype.ctype
           (CF.Ctype.no_qualifiers, mk_ctype (CF.Ctype.Pointer (CF.Ctype.no_qualifiers, ctype)), false)
         )
     ) c_args
+
+let push_expr_to_exec ((in_exec, expr) : lua_cn_exec * lua_expr)
+  : lua_cn_exec
+=
+  let stmts, wrappers, _ = in_exec in
+  (stmts, wrappers, expr)
+
+let pop_expr_from_exec (in_exec : lua_cn_exec) 
+  : lua_cn_exec * lua_expr
+=
+  let stmts, wrappers, expr = in_exec in
+  ((stmts, wrappers, get_empty_lua_expr), expr)
+
+let push_stmt_to_exec ((in_exec, stmt) : lua_cn_exec * lua_stmt)
+  : lua_cn_exec
+=
+  let stmts, wrappers, expr = in_exec in
+  (stmts @ [stmt], wrappers, expr)
+
+let debug_print_stmts (stmts : lua_statements)
+=
+  (List.iter
+  (fun (x : lua_stmt) -> (print_endline (PP.pp_stmt x)))
+  stmts)
 
 let c_sym_to_lua_sym (c_sym : CF.Ctype.union_tag)
   : LuaS.expr
@@ -536,3 +575,44 @@ let generate_lua_cn_assert fn_name ail_expr error_msg
 
     ( func_stmt )
   ) else ( LuaS.Empty )
+
+let generate_lua_cn_return (expr : lua_expr) (is_unit : bool)
+  : LuaS.stmt
+=
+  if is_unit then (
+    LuaS.Return(expr)
+  ) else ( LuaS.Return(LuaS.Nil) )
+
+(* ---------------------------------- *)
+(*         Cn-to-Lua Terms            *)
+(* ---------------------------------- *)
+
+let cn_to_lua_const 
+    (constant: IT.const)
+    (_baseType : BT.t)
+    : (LuaS.expr * bool)
+=
+  let lua_expr =
+    match constant with
+    | IT.Z z -> LuaS.Number_Int(z)
+    | MemByte { alloc_id = _; value = i } ->
+      LuaS.Number_Int(i)
+    | Bits ((_sgn, _sz), i) ->
+      LuaS.Number_Int(i)
+    | Q q -> LuaS.Number_Float(q)
+    | Pointer { alloc_id = _; addr = a } ->
+      LuaS.Number_Int(a)
+    | Alloc_id _ -> failwith (__LOC__ ^ ": TODO Alloc_id")
+    | Bool b -> LuaS.Bool(b)
+    | Unit -> LuaS.Nil
+    | Null -> LuaS.Nil
+    | CType_const _ -> failwith (__LOC__ ^ ": TODO CType_const")
+    | Default _bt -> failwith (__LOC__ ^ ": TODO Default_const")
+  in
+  let is_unit = constant == Unit in
+  (lua_expr, is_unit)
+
+let cn_to_lua_sym (c_sym : CF.Ctype.union_tag)
+  : (LuaS.expr)
+=
+  LuaS.Symbol(Sym.pp_string c_sym)
