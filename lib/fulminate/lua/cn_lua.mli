@@ -8,16 +8,24 @@ module IT = IndexTerms
 (* CN-Lua Types and related utilities *)
 (* ---------------------------------- *)
 
-type lua_expr = (LuaS.expr)
-type lua_stmt = (LuaS.stmt)
-type lua_expressions = (lua_expr list)
-type lua_statements = (lua_stmt list)
+type lua_expression = (LuaS.expr)
+type lua_statement = (LuaS.stmt)
+type lua_expressions = (lua_expression list)
+type lua_statements = (lua_statement list)
 type wrapper_function = (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition)
 type wrapper_functions = (wrapper_function list)
-type lua_cn_exec = (lua_statements * wrapper_functions * lua_expr)
+(* 
+Corresponds to a list of Lua statements and the wrapper C functions that call into them.
 
-val get_empty_lua_expr : lua_expr
-val get_empty_lua_stmt : lua_stmt
+The final element in this tuple is the lua expression currently being constructed that, once
+finalized, gets added to the list of lua statements. We're choosing to pack it in this type
+to make it easy to bundle all lua data into one type instead of having to plumb multiple lua-related
+fields in cn_to_ail.
+*)
+type lua_cn_exec = (lua_statements * wrapper_functions * lua_expression)
+
+val get_empty_lua_expr : lua_expression
+val get_empty_lua_stmt : lua_statement
 val get_empty_lua_exprs : lua_expressions
 val get_empty_lua_stmts : lua_statements
 val get_empty_wrapper_functions : wrapper_functions
@@ -41,9 +49,9 @@ val convert_c_args_to_wrapper_args
     : (CF.Ctype.union_tag * CF.Ctype.ctype) list ->
     (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list
 
-val push_expr_to_exec : (lua_cn_exec * lua_expr) -> lua_cn_exec
-val pop_expr_from_exec : (lua_cn_exec) -> (lua_cn_exec * lua_expr)
-val push_stmt_to_exec : (lua_cn_exec * lua_stmt) -> lua_cn_exec
+val push_expr_to_exec : (lua_cn_exec * lua_expression) -> lua_cn_exec
+val pop_expr_from_exec : (lua_cn_exec) -> (lua_cn_exec * lua_expression)
+val push_stmts_to_exec : (lua_cn_exec * lua_statements) -> lua_cn_exec
 
 val debug_print_stmts : lua_statements -> unit
 
@@ -73,6 +81,10 @@ val generate_c_push_frame_fn_wrapper_name : Sym.t -> string
 Utility used to generate a C function call to pop the most recent function frame
 *)
 val generate_c_pop_frame_fn_wrapper_call : CF.GenTypes.genTypeCategory A.statement_
+
+val generate_c_assert_fn_wrapper_name : int -> string
+
+val generate_c_assert_fn_wrapper_call : string -> CF.GenTypes.genTypeCategory A.statement_
 
 (* 
 Utility used to generate the definition of any wrapper C function
@@ -136,6 +148,8 @@ of C arguments onto the Lua CN frame at the start of a frame.
 *)
 val generate_lua_push_frame_fn_name : Sym.t -> string
 
+val generate_lua_assert_fn_name : int -> string
+
 (* 
 Utility used to generate the require for the Lua core runtime.
 *)
@@ -162,14 +176,28 @@ Utility used to generate an error stack pop statement in Lua.
 *)
 val generate_lua_cn_error_stack_pop : LuaS.stmt
 
+(* 
+Utility used to generate a lua cn assert.
+
+Takes in 
+- the assert error message, 
+- the current lua exec containing the assert expression
+- the spec mode tag
+
+Returns:
+- The AIL wrapper function call to this assert 
+(if SPEC_MODE is STATEMENT)
+- The lua exec containing the generated assert 
+(includes any wrapper defs and decls if SPEC_MODE is STATEMENT)
+*)
 val generate_lua_cn_assert 
-    : string -> 
-    CF.GenTypes.genTypeCategory A.expression -> 
-    string ->
-    LuaS.stmt
+    : string ->
+    lua_cn_exec ->
+    CF.Ctype.union_tag ->
+    (CF.GenTypes.genTypeCategory A.statement_ list * lua_cn_exec)
 
 val generate_lua_cn_return
-    : lua_expr -> bool ->
+    : lua_expression -> bool ->
     LuaS.stmt
 
 (* ---------------------------------- *)
@@ -179,18 +207,19 @@ val generate_lua_cn_return
 (* 
 Corollary to cn_to_ail_const.
 
-Returns a lua statement corresponding to the generated constant
-(and a bool flag indicating if it's unit or not).
+Returns:
+- a lua expression corresponding to the generated constant
+- a bool flag indicating if it's unit or not.
 *)
 val cn_to_lua_const 
     : IT.const ->
     BT.t ->
-    (LuaS.expr * bool)
+    (lua_expression * bool)
 
 val cn_to_lua_sym
     : CF.Ctype.union_tag ->
-    (LuaS.expr)
+    (lua_expression)
 
 val cn_to_lua_binop
-    : (LuaS.expr * LuaS.expr * IT.binop) ->
-    LuaS.expr
+    : (lua_expression * lua_expression * IT.binop) ->
+    lua_expression

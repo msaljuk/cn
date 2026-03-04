@@ -609,7 +609,7 @@ let cn_to_ail_default bt =
 
 
 let cn_to_ail_const const basetype 
-  : (CF.GenTypes.genTypeCategory A.expression_ * CnL.lua_expr * bool)
+  : (CF.GenTypes.genTypeCategory A.expression_ * CnL.lua_cn_exec * bool)
 =
   match RC.get_runtime() with
     | RC.C ->
@@ -667,13 +667,20 @@ let cn_to_ail_const const basetype
         | Default bt -> cn_to_ail_default bt
       in
       let is_unit = const == Unit in
-      (*Pp.debug 0 (lazy (CF.Pp_ail.pp_expression (mk_expr ail_const)));*)
-      (ail_const, CnL.get_empty_lua_expr, is_unit)
+      (*
+      @saljuk REMOVE
+      Pp.debug 0 (lazy (CF.Pp_ail.pp_expression (mk_expr ail_const)));
+      *)
+      (ail_const, CnL.get_empty_lua_cn_exec, is_unit)
     | RC.Lua ->
-      let lua_expr, is_unit = CnL.cn_to_lua_const const basetype in
-      (*let open Lua.Pp_lua in
-      print_endline (pp_expr lua_expr);*)
-      (ail_null, lua_expr, is_unit)
+      let lua_expression, is_unit = CnL.cn_to_lua_const const basetype in
+      (*
+      @saljuk REMOVE
+      let open Lua.Pp_lua in
+      print_endline (pp_expr lua_expression);
+      *)
+      let lua_exec = CnL.push_expr_to_exec (CnL.get_empty_lua_cn_exec, lua_expression) in
+      (ail_null, lua_exec, is_unit)
 
 type ail_bindings_and_statements =
   A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.lua_cn_exec
@@ -740,16 +747,13 @@ let dest_with_unit_check
           in
           (b, s @ additional_ss, l)
         | RC.Lua -> 
-          let push_err_stmt = CnL.generate_lua_cn_error_stack_push (gather_error_message_from_loc loc) in
-          let pop_err_stmt = CnL.generate_lua_cn_error_stack_pop in
-          let l1, expr = CnL.pop_expr_from_exec l in
+          let err_msg = gather_error_message_from_loc loc in
+          let spec_mode = sym_of_spec_mode_opt spec_mode_opt in
 
-          let open Lua.Pp_lua in
-          print_endline (pp_expr expr);
-
-          let l2 = CnL.push_stmt_to_exec (l1, push_err_stmt) in
-          let l3 = CnL.push_stmt_to_exec (l2, pop_err_stmt) in
-          ([], [], l3)
+          let c_wrapper_calls, exec_with_assert 
+            = CnL.generate_lua_cn_assert err_msg l spec_mode
+          in
+          ([], c_wrapper_calls, exec_with_assert )
       );
   | Return ->
     (match RC.get_runtime() with
@@ -759,7 +763,7 @@ let dest_with_unit_check
       | RC.Lua ->
         let l', expr = CnL.pop_expr_from_exec l in
         let return_stmt = CnL.generate_lua_cn_return expr is_unit in
-        let l'' = CnL.push_stmt_to_exec (l', return_stmt) in
+        let l'' = CnL.push_stmts_to_exec (l', [ return_stmt ]) in
         (b, s, l''))
   | AssignVar x ->
     let assign_stmt = A.(AilSexpr (mk_expr (AilEassign (mk_expr (AilEident x), e)))) in
@@ -936,9 +940,8 @@ let rec cn_to_ail_expr_aux
     d ->
   match term_ with
   | Const const ->
-    let ail_expr, lua_cn_expr, is_unit = cn_to_ail_const const basetype in
-    let l = CnL.push_expr_to_exec (CnL.get_empty_lua_cn_exec, lua_cn_expr) in
-    dest_with_unit_check d spec_mode_opt ([], [], l, mk_expr ail_expr, is_unit)
+    let ail_expr, lua_cn_exec, is_unit = cn_to_ail_const const basetype in
+    dest_with_unit_check d spec_mode_opt ([], [], lua_cn_exec, mk_expr ail_expr, is_unit)
   | Sym sym ->
     (match RC.get_runtime() with
       | RC.C ->
@@ -952,11 +955,11 @@ let rec cn_to_ail_expr_aux
           match const_prop with
           | Some (sym2, cn_const) ->
             if CF.Symbol.equal_sym sym sym2 then (
-              let ail_const, lua_expr, _ = cn_to_ail_const cn_const basetype in
-              ail_const, lua_expr)
+              let ail_const, lua_cn_exec, _ = cn_to_ail_const cn_const basetype in
+              ail_const, lua_cn_exec)
             else
-              (A.AilEident sym, CnL.get_empty_lua_expr)
-          | None -> (A.AilEident sym, CnL.get_empty_lua_expr)
+              (A.AilEident sym, CnL.get_empty_lua_cn_exec)
+          | None -> (A.AilEident sym, CnL.get_empty_lua_cn_exec)
           (* TODO: Check. Need to do more work if this is only a CN var *)
         in
         let ail_expr_ =
@@ -4074,8 +4077,14 @@ let cn_to_ail_statements
       cn_progs
   in
   let bs, ss, ls = list_split_three bs_ss_ls in
-  (loc, (List.concat bs, upd_s @ List.concat ss @ pop_s, CnL.concat ls))
 
+  match RC.get_runtime() with
+    | RC.C -> (loc, (List.concat bs, upd_s @ List.concat ss @ pop_s, CnL.concat ls))
+    (*
+    @saljuk TODO: For now, not exporting any ail statements and bindings to avoid clutter.
+    Remove this once all inline statements have been ported over to Lua
+    *)
+    | RC.Lua -> (loc, ([], [], CnL.concat ls))
 
 let rec cn_to_ail_lat_internal_loop
           ~without_lemma_checks
@@ -4459,31 +4468,57 @@ let rec cn_to_ail_lat_2
           prepend_to_precondition ail_executable_spec (b1, s1, CnL.concat ( merged_ls ))
     );
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->
-    let spec_mode_opt = Some Pre in
-    let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
-    let ss =
-      match generate_cn_assert e spec_mode_opt with
-      | Some assert_stmt ->
-        let upd_s =
-          generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
+    (match RC.get_runtime() with
+      | RC.C ->
+        let spec_mode_opt = Some Pre in
+        let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
+        let ss =
+          match generate_cn_assert e spec_mode_opt with
+          | Some assert_stmt ->
+            let upd_s =
+              generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
+            in
+            let pop_s = generate_cn_pop_msg_info in
+            upd_s @ s @ (assert_stmt :: pop_s)
+          | None -> s
         in
-        let pop_s = generate_cn_pop_msg_info in
-        upd_s @ s @ (assert_stmt :: pop_s)
-      | None -> s
-    in
-    let ail_executable_spec =
-      cn_to_ail_lat_2
-        without_ownership_checking
-        with_loop_leak_checks
-        without_lemma_checks
-        filename
-        dts
-        globals
-        preds
-        c_return_type
-        lat
-    in
-    prepend_to_precondition ail_executable_spec (b1, ss, l1)
+        let ail_executable_spec =
+          cn_to_ail_lat_2
+            without_ownership_checking
+            with_loop_leak_checks
+            without_lemma_checks
+            filename
+            dts
+            globals
+            preds
+            c_return_type
+            lat
+        in
+        prepend_to_precondition ail_executable_spec (b1, ss, l1)
+      | RC.Lua -> 
+        let spec_mode_opt = Some Pre in
+        let error_message = gather_error_message_from_loc loc in
+
+        let _, _, l, _ = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
+
+        let c_wrapper_calls, exec_with_assert = 
+          CnL.generate_lua_cn_assert error_message l (sym_of_spec_mode_opt spec_mode_opt)
+        in
+
+        let ail_executable_spec =
+          cn_to_ail_lat_2
+            without_ownership_checking
+            with_loop_leak_checks
+            without_lemma_checks
+            filename
+            dts
+            globals
+            preds
+            c_return_type
+            lat
+        in
+        prepend_to_precondition ail_executable_spec ([], c_wrapper_calls, exec_with_assert)
+    );
   (* Postcondition *)
   | LAT.I (post, (stats, loop)) ->
     let rec remove_duplicates locs stats =
@@ -4585,7 +4620,11 @@ let rec cn_to_ail_pre_post_aux
   = function
   | AT.Computational ((sym, bt), _info, at) ->
     let cn_to_ail_computational_at (sym, bt) =
-      let cn_sym = generate_sym_with_suffix ~suffix:"_cn" sym in
+      let cn_sym = 
+        match RC.get_runtime() with 
+          | RC.C -> generate_sym_with_suffix ~suffix:"_cn" sym
+          | RC.Lua -> sym
+      in
       let cn_ctype = bt_to_ail_ctype bt in
       let binding = create_binding cn_sym cn_ctype in
       let rhs = wrap_with_convert_to A.(AilEident sym) bt in
