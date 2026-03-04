@@ -104,25 +104,33 @@ static int c_dump_error_msgs_wrapper() {
     return 0;
 }
 
+static int c_get_bool() {
+    bool* addr = (bool*)luaL_checkinteger(lua_state, 1);
+    lua_pushboolean(lua_state, *addr);
+    return 1;
+}
+
+static int c_get_char() {
+    char* addr = (char*)luaL_checkinteger(lua_state, 1);
+    lua_pushlstring(lua_state, addr, 1);
+    return 1;
+}
+
 static int c_get_integer() {
     int* addr = (int*)luaL_checkinteger(lua_state, 1);
     lua_pushinteger(lua_state, *addr);
     return 1;
 }
 
+static int c_get_float() {
+    float* addr = (float)luaL_checkinteger(lua_state, 1);
+    lua_pushnumber(lua_state, *addr);
+    return 1;
+}
+
 static int c_get_pointer() {
     void** addr = (void**)luaL_checkinteger(lua_state, 1);
     lua_pushinteger(lua_state, lua_convert_ptr_to_int(*addr));
-    return 1;
-}
-
-static int c_get_integer_size() {
-    lua_pushinteger(lua_state, sizeof(int));
-    return 1;
-}
-
-static int c_get_pointer_size() {
-    lua_pushinteger(lua_state, sizeof(void*));
     return 1;
 }
 
@@ -136,6 +144,35 @@ static int c_loop_put_back_ownership() {
     struct loop_ownership* state = (struct loop_ownership*)luaL_checkinteger(lua_state, 1);
     cn_loop_put_back_ownership(state);
     return 0;
+}
+
+void push_cn_c_tables() {
+    lua_rawgeti(lua_state, LUA_REGISTRYINDEX, lua_cn_runtime_ref);
+    lua_getfield(lua_state, -1, "c");
+
+    // Size-of Table
+    {
+        lua_newtable(lua_state);
+
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(bool));
+        lua_setfield(lua_state, -2, "bool");
+
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(char));
+        lua_setfield(lua_state, -2, "char");
+
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(int));
+        lua_setfield(lua_state, -2, "int");
+
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(float));
+        lua_setfield(lua_state, -2, "float");
+
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(void*));
+        lua_setfield(lua_state, -2, "pointer");
+
+        lua_setfield(lua_state, -2, "sizeof");
+    }
+
+    lua_pop(lua_state, 2);
 }
 
 void bind_cn_c_functions() {
@@ -156,10 +193,11 @@ void bind_cn_c_functions() {
     lua_cn_register_c_func("dump_error_msgs", c_dump_error_msgs_wrapper);
 
     // C type reading
+    lua_cn_register_c_func("get_bool", c_get_bool);
+    lua_cn_register_c_func("get_char", c_get_char);
     lua_cn_register_c_func("get_integer", c_get_integer);
+    lua_cn_register_c_func("get_float", c_get_float);
     lua_cn_register_c_func("get_pointer", c_get_pointer);
-    lua_cn_register_c_func("get_integer_size", c_get_integer_size);
-    lua_cn_register_c_func("get_pointer_size", c_get_pointer_size);
 
     // C loop checks
     lua_cn_register_c_func("initialise_loop_ownership_state", c_initialise_loop_ownership_state);
@@ -209,6 +247,7 @@ void lua_cn_load_runtime(
     lua_cn_runtime_ref = luaL_ref(lua_state, LUA_REGISTRYINDEX);
 
     bind_cn_c_functions();
+    push_cn_c_tables();
 }
 
 void lua_cn_unload_runtime()

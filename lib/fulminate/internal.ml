@@ -197,6 +197,10 @@ let generate_func_c_sig sym (sigm : _ CF.AilSyntax.sigma) : (Sym.t * ((Sym.t * C
     (sym, func_params)
   | _, _ -> (sym, [])
 
+let gen_wrapper_dec_and_def_strs (wrapper_functions : CnL.wrapper_functions) =
+  let defs, decls = generate_fun_def_and_decl_docs wrapper_functions in
+  (doc_to_pretty_string decls, doc_to_pretty_string defs)
+
 let generate_c_specs_from_cn_internal
       without_ownership_checking
       without_loop_invariants
@@ -260,11 +264,6 @@ let generate_c_specs_from_cn_internal
       | RC.C ->  (([], []), [])
       | RC.Lua ->
         let open Lua.Pp_lua in
-
-        let gen_wrapper_dec_and_def_strs (wrapper_functions : CnL.wrapper_functions) =
-          let defs, decls = generate_fun_def_and_decl_docs wrapper_functions in
-          (doc_to_pretty_string decls, doc_to_pretty_string defs)
-        in
 
         let alt_pre_str = 
           let _, _, cn_stmts = ail_executable_spec.pre in
@@ -942,3 +941,21 @@ let generate_tag_definition_injs (tag_defs : CF.AilSyntax.sigma_tag_definition l
       !tag_defs'
   in
   all_tag_def_injs
+
+let generate_struct_wrappers (ail_struct_data)
+  : (string list * string list)
+  =
+  match RC.get_runtime() with
+    | RC.Lua ->
+      let struct_size_wrappers
+        = (List.map 
+          (fun x -> CnL.generate_c_fn_struct_size (fst x))
+          ail_struct_data)
+      in
+      let struct_peek_wrappers 
+        = (List.map CnL.generate_c_fn_peek_struct ail_struct_data) 
+      in
+      let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
+      let peek_decs, peek_defs = gen_wrapper_dec_and_def_strs struct_peek_wrappers in
+      ([ size_decs; peek_decs ], [ size_defs; peek_defs ])
+    | _ -> ([], [])

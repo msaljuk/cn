@@ -117,3 +117,8 @@ val generate_fn_call_ghost_args_injs
 val generate_tag_definition_injs
   :  AilSyntax.sigma_tag_definition list ->
   (Cerb_location.t * string list) list
+
+val generate_struct_wrappers
+  : (AilSyntax.ail_identifier *
+        (Cerb_location.t * Annot.attributes * Ctype.tag_definition)) list ->
+  (string list * string list)
