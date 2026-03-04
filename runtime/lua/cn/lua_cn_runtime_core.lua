@@ -50,10 +50,11 @@ local cn = {
         dump_error_msgs = {},
 
         -- c types reading
+        get_bool = {},
+        get_char = {},
         get_integer = {},
+        get_float = {},
         get_pointer = {},
-        get_integer_size = {},
-        get_pointer_size = {},
 
         -- c loop checks
         initialise_loop_ownership_state = {},
