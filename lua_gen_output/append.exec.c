@@ -22,6 +22,7 @@ static void lua_cn_IntList_append_postcondition();
 static void lua_cn_main_push_frame();
 static void lua_cn_main_precondition();
 static void lua_cn_main_postcondition();
+static signed int push_int_list_size();
 static signed int peek_int_list();
 
 # 1 "./tests/cn/append.c"
@@ -238,6 +239,17 @@ static void lua_cn_main_postcondition()
   lua_pcall(L, 0, 0, 0);
   lua_pop(L, 1);
 }
+static signed int push_int_list_size()
+{
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "c");
+  lua_getfield(L, -1, "sizeof");
+  lua_pushinteger(L, sizeof(struct int_list));
+  lua_setfield(L, -2, "int_list");
+  lua_pop(L, 3);
+  return 1;
+}
 static signed int peek_int_list()
 {
   struct lua_State* L = lua_get_state();
@@ -249,9 +261,6 @@ static signed int peek_int_list()
   lua_settable(L, -3);
   lua_pushstring(L, "tail_addr");
   lua_pushinteger(L, lua_convert_ptr_to_int((&val->tail)));
-  lua_settable(L, -3);
-  lua_pushstring(L, "size");
-  lua_pushinteger(L, sizeof(struct int_list));
   lua_settable(L, -3);
   return 1;
 }

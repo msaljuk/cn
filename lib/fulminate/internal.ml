@@ -942,14 +942,20 @@ let generate_tag_definition_injs (tag_defs : CF.AilSyntax.sigma_tag_definition l
   in
   all_tag_def_injs
 
-let generate_struct_peeks (ail_struct_data)
+let generate_struct_wrappers (ail_struct_data)
   : (string list * string list)
   =
   match RC.get_runtime() with
     | RC.Lua ->
-      let struct_reader_wrappers 
+      let struct_size_wrappers
+        = (List.map 
+          (fun x -> CnL.generate_c_fn_struct_size (fst x))
+          ail_struct_data)
+      in
+      let struct_peek_wrappers 
         = (List.map CnL.generate_c_fn_peek_struct ail_struct_data) 
       in
-      let decs, defs = gen_wrapper_dec_and_def_strs struct_reader_wrappers in
-      ([ decs ], [ defs ])
+      let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
+      let peek_decs, peek_defs = gen_wrapper_dec_and_def_strs struct_peek_wrappers in
+      ([ size_decs; peek_decs ], [ size_defs; peek_defs ])
     | _ -> ([], [])

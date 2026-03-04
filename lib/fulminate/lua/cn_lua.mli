@@ -77,6 +77,14 @@ val generate_c_fn_wrapper_def
     wrapper_function
 
 (*
+Utility used to generate a function to push the size of a custom c struct onto the
+sizeof table that exists in CN Lua
+*)
+val generate_c_fn_struct_size
+    : A.ail_identifier ->
+    wrapper_function
+
+(*
 Utility used to generate a function to peek at any custom C structs. Called from
 Lua to get back a Lua table that is 'essentially' a mirrored version of the C struct,
 with 2 main differences:

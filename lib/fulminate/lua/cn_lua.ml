@@ -203,6 +203,66 @@ let generate_c_fn_wrapper_def
   (decl, def)
 
 
+let generate_c_fn_struct_size (struct_name : A.ail_identifier)
+  : wrapper_function
+  =
+  let call name args = mk_expr (AilEcall (mk_expr (AilEident (Sym.fresh name)), args)) in
+  let var_sym s = mk_expr (AilEident s) in
+  let int_const i = mk_expr (A.AilEconst (ConstantInteger (IConstant (Z.of_int i, Decimal, None)))) in
+  let str_expr s = mk_expr (A.AilEstr ( None,[ ( Locations.other __LOC__, [ Sym.pp_string s ]) ])) in
+
+  let loc = Cerb_location.unknown in
+  let attrs = CF.Annot.no_attributes in 
+  let id = Sym.fresh ("push_" ^ (Sym.pp_string struct_name) ^ ("_size")) in
+
+  let sym_L = Sym.fresh "L" in
+  let sym_c = Sym.fresh "c" in
+  let sym_sizeof = Sym.fresh "sizeof" in
+  let sym_lua_registry_idx = Sym.fresh "LUA_REGISTRYINDEX" in
+  let sym_lua_get_cn_ref = Sym.fresh "lua_cn_get_runtime_ref" in
+
+  let ty_struct_s = CF.Ctype.(Ctype ([], Struct struct_name)) in
+
+  let decl =
+    ( id,
+      ( loc,
+        attrs,
+        A.(
+          Decl_function
+            ( false, ( CF.Ctype.no_qualifiers, CF.Ctype.signed_int), [], false, false, false )) ) 
+    )
+  in
+
+  let lua_state_bs, lua_state_ss = generate_c_get_lua_state in
+
+  let body_stmts = 
+    let size_expr = mk_expr (AilEsizeof (CF.Ctype.no_qualifiers, ty_struct_s)) in
+    let lua_cn_ref = call (Sym.pp_string sym_lua_get_cn_ref) [] in
+    let lua_expr = var_sym sym_L in
+    ([
+      mk_stmt lua_state_ss;
+      mk_stmt (A.AilSexpr (call "lua_rawgeti" [ lua_expr ; var_sym sym_lua_registry_idx ; lua_cn_ref ]));
+      mk_stmt (A.AilSexpr (call "lua_getfield" [ lua_expr ; int_const(-1) ; str_expr sym_c ]));
+      mk_stmt (A.AilSexpr (call "lua_getfield" [ lua_expr ; int_const(-1) ; str_expr sym_sizeof ]));
+      mk_stmt (A.AilSexpr (call "lua_pushinteger" [ lua_expr ; size_expr ]));
+      mk_stmt (A.AilSexpr (call "lua_setfield" [ lua_expr ; int_const(-2); str_expr struct_name ]));
+      mk_stmt (A.AilSexpr (call "lua_pop" [ lua_expr ; int_const(3) ]));
+      mk_stmt (AilSreturn (int_const (1)));
+    ])
+  in
+
+  let block_bindings = [
+    lua_state_bs;
+  ] in
+
+  let final_body = mk_stmt (A.AilSblock (block_bindings, body_stmts)) in
+
+  let def = 
+    (id, (loc, 0, attrs, [], ( final_body ))) 
+  in
+
+  (decl, def)
+
 let generate_c_fn_peek_struct 
   (struct_data : (A.ail_identifier *
         (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)))
@@ -262,12 +322,6 @@ let generate_c_fn_peek_struct
       push_int_expr_to_table (table_key, final_expr)
     in
 
-    let generate_struct_size_entry = 
-      let table_key = "size" in
-      let size_expr = mk_expr (AilEsizeof (CF.Ctype.no_qualifiers, ty_struct_s)) in
-      push_int_expr_to_table (table_key, size_expr)
-    in
-
     let _, _, tag_defs = struct_members in
     let member_names_and_types = 
       match tag_defs with
@@ -280,8 +334,7 @@ let generate_c_fn_peek_struct
 
     (
       [ new_table_stmt ]
-      @ (List.concat (List.map generate_table_entry_for_member member_names_and_types)
-      @ generate_struct_size_entry)
+      @ (List.concat (List.map generate_table_entry_for_member member_names_and_types))
     )
   in
 
