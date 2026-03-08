@@ -4,8 +4,8 @@ type ident = string
 type expr =
   | Nil
   | Bool of bool
-  | Number_Int of int
-  | Number_Float of float
+  | Number_Int of Z.t
+  | Number_Float of Q.t
   | String of string
   | Symbol of ident
   | Field of expr * expr
@@ -17,5 +17,5 @@ type stmt =
   | LocalAssign of ident * expr                    (* local x = 10 *)
   | FunctionDef of ident * expr list * stmt list   (* fn x(a, b) \n body \n end *)
   | FunctionCall of ident * expr list              (* assert(false) *)
+  | Return of expr                                 (* return false *)
   | Empty
-

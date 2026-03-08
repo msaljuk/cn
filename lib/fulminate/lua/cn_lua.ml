@@ -2,19 +2,24 @@ module CF = Cerb_frontend
 module A = CF.AilSyntax
 module LuaS = Lua_syntax
 module PP = Pp_lua
+module BT = BaseTypes
+module IT = IndexTerms
 open Utils
 
-type lua_statements = (LuaS.stmt list)
+type lua_expression = (LuaS.expr)
+type lua_statement = (LuaS.stmt)
+type lua_expressions = (lua_expression list)
+type lua_statements = (lua_statement list)
 type wrapper_function = (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition)
 type wrapper_functions = (wrapper_function list)
-type lua_cn_exec = (lua_statements * wrapper_functions)
+type lua_cn_exec = (lua_statements * wrapper_functions * lua_expression)
 
 let get_expr_str expr = PP.pp_expr expr
 
 let cn_sym = LuaS.Symbol( "cn" )
 let cn_spec_mode_sym = LuaS.Symbol( "cn.spec_mode" )
 let cn_assert_sym = LuaS.Symbol( "cn.assert" )
-let cn_asserts_table_sym = LuaS.Symbol( "cn.asserts" )
+let cn_asserts_sym = LuaS.Symbol( "cn.asserts" )
 let cn_error_stack_push_sym = LuaS.Symbol( "cn.error_stack.push" )
 let cn_error_stack_pop_sym  = LuaS.Symbol( "cn.error_stack.pop" )
 let cn_frames_push_fn_sym = LuaS.Symbol( "cn.frames.push_function" )
@@ -24,20 +29,39 @@ let c_sym_addr_suffix = "_addr"
 let get_type_prefix = "get_"
 let peek_type_prefix = "peek_"
 
-let get_empty_lua_stmts : (LuaS.stmt list)
+let get_empty_lua_expr : (lua_expression)
+  = (LuaS.Nil)
+let get_empty_lua_stmt : (lua_statement)
+  = (LuaS.Empty)
+let get_empty_lua_exprs : (lua_expressions)
   = ([])
-
+let get_empty_lua_stmts : (lua_statements)
+  = ([])
 let get_empty_wrapper_functions : wrapper_functions
   = ([])
 
 let get_empty_lua_cn_exec : lua_cn_exec =
-  (get_empty_lua_stmts, get_empty_wrapper_functions)
+  (get_empty_lua_stmts, get_empty_wrapper_functions, get_empty_lua_expr)
 
 let concat (exec_list : lua_cn_exec list) =
-  let lua_stmts_list, wrapper_stmts_list = List.split exec_list in
+  let lua_stmts_list, wrapper_stmts_list, lua_exprs = Utils.list_split_three exec_list in
   let merged_lua_stmts = List.concat lua_stmts_list in
   let merged_wrapper_stmts = List.concat wrapper_stmts_list in
-  (merged_lua_stmts, merged_wrapper_stmts)
+
+  (* We only concat finalized execs - any halfway generated expression cannot be handled *)
+  let _ = 
+    List.exists 
+    (fun y -> 
+      match y with 
+        LuaS.Nil -> false 
+        | _ -> 
+          (*@saljuk TODO: Eventually turn this assert on once all lua expressions are properly being generated *)
+          true (*failwith "Cannot concat lua_cn_execs containing a live expression. Finalize or pop it first."*)
+    )
+    lua_exprs
+  in
+
+  (merged_lua_stmts, merged_wrapper_stmts, get_empty_lua_expr)
 
 let convert_c_args_to_wrapper_args (c_args :(CF.Ctype.union_tag * CF.Ctype.ctype) list) 
     : (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list
@@ -49,6 +73,30 @@ let convert_c_args_to_wrapper_args (c_args :(CF.Ctype.union_tag * CF.Ctype.ctype
           (CF.Ctype.no_qualifiers, mk_ctype (CF.Ctype.Pointer (CF.Ctype.no_qualifiers, ctype)), false)
         )
     ) c_args
+
+let push_expr_to_exec ((in_exec, expr) : lua_cn_exec * lua_expression)
+  : lua_cn_exec
+=
+  let stmts, wrappers, _ = in_exec in
+  (stmts, wrappers, expr)
+
+let pop_expr_from_exec (in_exec : lua_cn_exec) 
+  : lua_cn_exec * lua_expression
+=
+  let stmts, wrappers, expr = in_exec in
+  ((stmts, wrappers, get_empty_lua_expr), expr)
+
+let push_stmts_to_exec ((in_exec, stmts) : lua_cn_exec * lua_statements)
+  : lua_cn_exec
+=
+  let stmts_pre, wrappers, expr = in_exec in
+  (stmts_pre @ stmts, wrappers, expr)
+
+let debug_print_stmts (stmts : lua_statements)
+=
+  (List.iter
+  (fun (x : lua_statement) -> (print_endline (PP.pp_stmt x)))
+  stmts)
 
 let c_sym_to_lua_sym (c_sym : CF.Ctype.union_tag)
   : LuaS.expr
@@ -73,6 +121,19 @@ let generate_c_pop_frame_fn_wrapper_call
   (A.(AilSexpr (
     mk_expr (A.(AilEcall (
       mk_expr (AilEident (Sym.fresh "lua_cn_frame_pop_function")), []))))))
+
+let generate_c_assert_fn_wrapper_name (func_id : int)
+  : string
+  =
+  let c_assert_sym = Sym.fresh "assert" in
+  (generate_c_fn_wrapper_prefix c_assert_sym) ^ (string_of_int func_id)
+
+let generate_c_assert_fn_wrapper_call (c_func_name : string)
+  : (CF.GenTypes.genTypeCategory A.statement_)
+  =
+  (A.(AilSexpr (
+      mk_expr (A.(AilEcall (
+        mk_expr (AilEident (Sym.fresh c_func_name)), []))))))
 
 let mk_binding sym ty
   : A.ail_identifier 
@@ -238,15 +299,15 @@ let generate_c_fn_struct_size (struct_name : A.ail_identifier)
   let body_stmts = 
     let size_expr = mk_expr (AilEsizeof (CF.Ctype.no_qualifiers, ty_struct_s)) in
     let lua_cn_ref = call (Sym.pp_string sym_lua_get_cn_ref) [] in
-    let lua_expr = var_sym sym_L in
+    let lua_expression = var_sym sym_L in
     ([
       mk_stmt lua_state_ss;
-      mk_stmt (A.AilSexpr (call "lua_rawgeti" [ lua_expr ; var_sym sym_lua_registry_idx ; lua_cn_ref ]));
-      mk_stmt (A.AilSexpr (call "lua_getfield" [ lua_expr ; int_const(-1) ; str_expr sym_c ]));
-      mk_stmt (A.AilSexpr (call "lua_getfield" [ lua_expr ; int_const(-1) ; str_expr sym_sizeof ]));
-      mk_stmt (A.AilSexpr (call "lua_pushinteger" [ lua_expr ; size_expr ]));
-      mk_stmt (A.AilSexpr (call "lua_setfield" [ lua_expr ; int_const(-2); str_expr struct_name ]));
-      mk_stmt (A.AilSexpr (call "lua_pop" [ lua_expr ; int_const(3) ]));
+      mk_stmt (A.AilSexpr (call "lua_rawgeti" [ lua_expression ; var_sym sym_lua_registry_idx ; lua_cn_ref ]));
+      mk_stmt (A.AilSexpr (call "lua_getfield" [ lua_expression ; int_const(-1) ; str_expr sym_c ]));
+      mk_stmt (A.AilSexpr (call "lua_getfield" [ lua_expression ; int_const(-1) ; str_expr sym_sizeof ]));
+      mk_stmt (A.AilSexpr (call "lua_pushinteger" [ lua_expression ; size_expr ]));
+      mk_stmt (A.AilSexpr (call "lua_setfield" [ lua_expression ; int_const(-2); str_expr struct_name ]));
+      mk_stmt (A.AilSexpr (call "lua_pop" [ lua_expression ; int_const(3) ]));
       mk_stmt (AilSreturn (int_const (1)));
     ])
   in
@@ -300,11 +361,11 @@ let generate_c_fn_peek_struct
   =
     let push_int_expr_to_table ((key, value) : string * CF.GenTypes.genTypeCategory A.expression) =
       let key_expr = mk_expr (AilEstr(None, [(Locations.other __LOC__, [key])])) in
-      let lua_expr = var_sym sym_L in
+      let lua_expression = var_sym sym_L in
       [
-        mk_stmt (A.AilSexpr (call "lua_pushstring" [ lua_expr; key_expr ]));
-        mk_stmt (A.AilSexpr (call "lua_pushinteger" [ lua_expr; value ]));
-        mk_stmt (A.AilSexpr (call "lua_settable" [ lua_expr; int_const (-3)]))
+        mk_stmt (A.AilSexpr (call "lua_pushstring" [ lua_expression; key_expr ]));
+        mk_stmt (A.AilSexpr (call "lua_pushinteger" [ lua_expression; value ]));
+        mk_stmt (A.AilSexpr (call "lua_settable" [ lua_expression; int_const (-3)]))
       ]
     in
 
@@ -389,6 +450,9 @@ let generate_lua_postcondition_fn_name (c_fn_name : Sym.t)
 
 let generate_lua_push_frame_fn_name (c_fn_name : Sym.t)
   = (generate_lua_fn_prefix c_fn_name) ^ ("push_frame")
+
+let generate_lua_assert_fn_name (func_id : int)
+  = Pp_lua.pp_expr (LuaS.Field(cn_asserts_sym, LuaS.Symbol("inst" ^ string_of_int func_id)))
 
 let generate_lua_runtime_core_req
   (* local cn = require("lua_cn_runtime_core") *)
@@ -495,44 +559,133 @@ let generate_lua_cn_error_stack_pop
       get_expr_str cn_error_stack_pop_sym,
       []))
 
-let generate_lua_cn_assert fn_name ail_expr error_msg
+let generate_lua_cn_assert 
+  (error_msg : string)
+  (in_exec : lua_cn_exec)
+  (spec_mode : CF.Ctype.union_tag)
+  : (CF.GenTypes.genTypeCategory A.statement_ list * lua_cn_exec)
   = 
-  (* 
-  @note saljuk: right now, only providing an implementation for assert(false) asserts.
-  Need to discuss how to actually generate more complex asserts since the ail input already has
-  'converted' cn inputs, whereas we need to propogate the original c datatypes.
+  (*
+    @saljuk TODO Don't have func name here yet (will have to plumb down). For
+    now, just generated a random value - BAD
   *)
-  let is_false_assert =
-    match rm_expr ail_expr with
-    | A.(AilEcall (sym_ident, args)) ->
-      let sym =
-        match rm_expr sym_ident with
-        | A.(AilEident sym') -> sym'
-        | _ -> failwith (__FUNCTION__ ^ ": First argument to AilEcall must be AilEident")
-      in
-      if String.equal (Sym.pp_string sym) "convert_to_cn_bool" && List.non_empty args then (
-        match rm_expr (List.hd args) with
-        | A.(AilEconst (ConstantPredefined PConstantFalse)) -> true
-        | _ -> false
-      ) else
-        false
-    | _ -> false
+  let func_id = Random.int 100 in
+  (*
+    @saljuk TODO: Don't hardcode this. Pull type spec_mode into a common file that we
+    can include here
+  *)
+  let spec_mode_str = (Sym.pp_string spec_mode) in
+  let inline_spec_mode = "STATEMENT" in 
+  let is_inline = String.equal spec_mode_str inline_spec_mode in
+
+  let c_wrapper_func_name = generate_c_assert_fn_wrapper_name func_id in
+  let lua_func_name = generate_lua_assert_fn_name func_id in
+
+  let c_wrapper_dec_and_def, c_wrapper_call
+    = 
+    if is_inline then (
+      (
+        [ generate_c_fn_wrapper_def lua_func_name c_wrapper_func_name [] ],
+        [ generate_c_assert_fn_wrapper_call c_wrapper_func_name ]
+      )
+    ) else ([], [])
+  in
+  
+  let exec', assert_expr = pop_expr_from_exec in_exec in
+
+  (* Skip asserts if it's an assert(true) or a nil *)
+  let should_assert = 
+    match assert_expr with
+      | LuaS.Bool b -> if b then false else true
+      | LuaS.Nil -> false
+      | _ -> true
   in
 
-  if is_false_assert then (
-    let error_push_stmt = LuaS.FunctionCall(get_expr_str cn_error_stack_push_sym, [ LuaS.String(error_msg) ]) in
-    let error_pop_stmt = LuaS.FunctionCall(get_expr_str cn_error_stack_pop_sym, [ ]) in
+  if should_assert then (
+    let push_err_stmt = generate_lua_cn_error_stack_push error_msg in
+    let pop_err_stmt = generate_lua_cn_error_stack_pop in
 
-    let assert_stmt = 
-      LuaS.FunctionCall(
-        get_expr_str cn_assert_sym, 
-        [ LuaS.Bool(false); LuaS.Field(cn_spec_mode_sym, LuaS.Symbol("STATEMENT")) ]) in
+    let spec_mode_field = LuaS.Field(cn_spec_mode_sym, LuaS.Symbol(Sym.pp_string spec_mode)) in
 
-    let body_stmts = [ error_push_stmt; assert_stmt; error_pop_stmt ] in
+    let core_stmt = 
+      LuaS.FunctionCall(Pp_lua.pp_expr cn_assert_sym, [ assert_expr; spec_mode_field ]) 
+    in
 
-    let fn_name_table = LuaS.Field( cn_asserts_table_sym, LuaS.Symbol(fn_name) ) in
+    let ls_initial =
+      [
+        push_err_stmt;
+        core_stmt;
+        pop_err_stmt;
+      ]
+    in
 
-    let func_stmt = LuaS.FunctionDef( get_expr_str fn_name_table, [], body_stmts ) in
+    let ls_final =
+      if is_inline then (
+        [ LuaS.FunctionDef(
+          lua_func_name,
+          [],
+          ls_initial
+        ) ]
+      ) else (
+        ls_initial
+      )
+    in
 
-    ( func_stmt )
-  ) else ( LuaS.Empty )
+    let (cn_exec_for_assert : lua_cn_exec) 
+      = ( ls_final, c_wrapper_dec_and_def, get_empty_lua_expr ) 
+    in
+
+    ( c_wrapper_call, concat [ exec'; cn_exec_for_assert; ])
+  ) else (
+    ([ ], exec')
+  )
+
+let generate_lua_cn_return (expr : lua_expression) (is_unit : bool)
+  : LuaS.stmt
+=
+  if is_unit then (
+    LuaS.Return(expr)
+  ) else ( LuaS.Return(LuaS.Nil) )
+
+(* ---------------------------------- *)
+(*         Cn-to-Lua Terms            *)
+(* ---------------------------------- *)
+
+let cn_to_lua_const 
+    (constant: IT.const)
+    (_baseType : BT.t)
+    : (lua_expression * bool)
+=
+  let lua_expression =
+    match constant with
+    | IT.Z z -> LuaS.Number_Int(z)
+    | MemByte { alloc_id = _; value = i } ->
+      LuaS.Number_Int(i)
+    | Bits ((_sgn, _sz), i) ->
+      LuaS.Number_Int(i)
+    | Q q -> LuaS.Number_Float(q)
+    | Pointer { alloc_id = _; addr = a } ->
+      LuaS.Number_Int(a)
+    | Alloc_id _ -> failwith (__LOC__ ^ ": TODO Alloc_id")
+    | Bool b -> LuaS.Bool(b)
+    | Unit -> LuaS.Nil
+    | Null -> LuaS.Nil
+    | CType_const _ -> failwith (__LOC__ ^ ": TODO CType_const")
+    | Default _bt -> failwith (__LOC__ ^ ": TODO Default_const")
+  in
+  let is_unit = constant == Unit in
+  (lua_expression, is_unit)
+
+let cn_to_lua_sym (c_sym : CF.Ctype.union_tag)
+  : (lua_expression)
+=
+  LuaS.Symbol(Sym.pp_string c_sym)
+
+let cn_to_lua_binop (expr_a, expr_b, binop)
+  : (lua_expression)
+=
+  let lua_expression =
+    match binop with
+    | IT.EQ | _ -> LuaS.Call("cn.equals", [ expr_a; expr_b ])
+  in
+  (lua_expression)
