@@ -608,63 +608,79 @@ let cn_to_ail_default bt =
   | None -> failwith ("[UNSUPPORTED] default<" ^ Pp.plain (BT.pp bt) ^ ">")
 
 
-let cn_to_ail_const const basetype =
-  let wrap x = wrap_with_convert_to x basetype in
-  let ail_const =
-    match const with
-    | IT.Z z -> wrap (A.AilEconst (ConstantInteger (IConstant (z, Decimal, None))))
-    | MemByte { alloc_id = _; value = i } ->
-      wrap (A.AilEconst (ConstantInteger (IConstant (i, Decimal, None))))
-    | Bits ((sgn, sz), i) ->
-      let z_min, _ = BT.bits_range (sgn, sz) in
-      let suffix =
-        let size_of = Memory.size_of_integer_type in
-        match sgn with
-        | Unsigned ->
-          if sz <= size_of (Unsigned Int_) then
-            Some A.U
-          else if sz <= size_of (Unsigned Long) then
-            Some A.UL
-          else
-            Some A.ULL
-        | Signed ->
-          if sz <= size_of (Signed Int_) then
-            None
-          else if sz <= size_of (Signed Long) then
-            Some A.L
-          else
-            Some A.LL
-      in
+let cn_to_ail_const const basetype 
+  : (CF.GenTypes.genTypeCategory A.expression_ * CnL.lua_cn_exec * bool)
+=
+  match RC.get_runtime() with
+    | RC.C ->
+      let wrap x = wrap_with_convert_to x basetype in
       let ail_const =
-        let k a = A.(AilEconst (ConstantInteger (IConstant (a, Decimal, suffix)))) in
-        if Z.equal i z_min && BT.equal_sign sgn BT.Signed then
-          A.(
-            AilEbinary
-              ( mk_expr (k (Z.neg (Z.sub (Z.neg i) Z.one))),
-                Arithmetic Sub,
-                mk_expr (k Z.one) ))
-        else
-          k i
+        match const with
+        | IT.Z z -> wrap (A.AilEconst (ConstantInteger (IConstant (z, Decimal, None))))
+        | MemByte { alloc_id = _; value = i } ->
+          wrap (A.AilEconst (ConstantInteger (IConstant (i, Decimal, None))))
+        | Bits ((sgn, sz), i) ->
+          let z_min, _ = BT.bits_range (sgn, sz) in
+          let suffix =
+            let size_of = Memory.size_of_integer_type in
+            match sgn with
+            | Unsigned ->
+              if sz <= size_of (Unsigned Int_) then
+                Some A.U
+              else if sz <= size_of (Unsigned Long) then
+                Some A.UL
+              else
+                Some A.ULL
+            | Signed ->
+              if sz <= size_of (Signed Int_) then
+                None
+              else if sz <= size_of (Signed Long) then
+                Some A.L
+              else
+                Some A.LL
+          in
+          let ail_const =
+            let k a = A.(AilEconst (ConstantInteger (IConstant (a, Decimal, suffix)))) in
+            if Z.equal i z_min && BT.equal_sign sgn BT.Signed then
+              A.(
+                AilEbinary
+                  ( mk_expr (k (Z.neg (Z.sub (Z.neg i) Z.one))),
+                    Arithmetic Sub,
+                    mk_expr (k Z.one) ))
+            else
+              k i
+          in
+          wrap ail_const
+        | Q q -> wrap (A.AilEconst (ConstantFloating (Q.to_string q, None)))
+        | Pointer z ->
+          let ail_const' =
+            A.AilEconst (ConstantInteger (IConstant (z.addr, Decimal, None)))
+          in
+          wrap (A.AilEunary (Address, mk_expr ail_const'))
+        | Alloc_id _ -> failwith (__LOC__ ^ ": TODO Alloc_id")
+        | Bool b ->
+          wrap
+            (A.AilEconst (ConstantPredefined (if b then PConstantTrue else PConstantFalse)))
+        | Unit -> wrap ail_null (* Gets overridden by dest_with_unit_check *)
+        | Null -> wrap ail_null
+        | CType_const _ -> failwith (__LOC__ ^ ": TODO CType_const")
+        | Default bt -> cn_to_ail_default bt
       in
-      wrap ail_const
-    | Q q -> wrap (A.AilEconst (ConstantFloating (Q.to_string q, None)))
-    | Pointer z ->
-      let ail_const' =
-        A.AilEconst (ConstantInteger (IConstant (z.addr, Decimal, None)))
-      in
-      wrap (A.AilEunary (Address, mk_expr ail_const'))
-    | Alloc_id _ -> failwith (__LOC__ ^ ": TODO Alloc_id")
-    | Bool b ->
-      wrap
-        (A.AilEconst (ConstantPredefined (if b then PConstantTrue else PConstantFalse)))
-    | Unit -> wrap ail_null (* Gets overridden by dest_with_unit_check *)
-    | Null -> wrap ail_null
-    | CType_const _ -> failwith (__LOC__ ^ ": TODO CType_const")
-    | Default bt -> cn_to_ail_default bt
-  in
-  let is_unit = const == Unit in
-  (ail_const, is_unit)
-
+      let is_unit = const == Unit in
+      (*
+      @saljuk REMOVE
+      Pp.debug 0 (lazy (CF.Pp_ail.pp_expression (mk_expr ail_const)));
+      *)
+      (ail_const, CnL.get_empty_lua_cn_exec, is_unit)
+    | RC.Lua ->
+      let lua_expression, is_unit = CnL.cn_to_lua_const const basetype in
+      (*
+      @saljuk REMOVE
+      let open Lua.Pp_lua in
+      print_endline (pp_expr lua_expression);
+      *)
+      let lua_exec = CnL.push_expr_to_exec (CnL.get_empty_lua_cn_exec, lua_expression) in
+      (ail_null, lua_exec, is_unit)
 
 type ail_bindings_and_statements =
   A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.lua_cn_exec
@@ -731,23 +747,24 @@ let dest_with_unit_check
           in
           (b, s @ additional_ss, l)
         | RC.Lua -> 
-          (*
-            @note saljuk: Don't have func name here yet (will have to plumb down). For
-            now, just hardcoding 
-          *)
-          let func_name = "Random" ^ string_of_int(Random.int 100) in
+          let err_msg = gather_error_message_from_loc loc in
+          let spec_mode = sym_of_spec_mode_opt spec_mode_opt in
 
-          let error_msg_str = gather_error_message_from_loc loc in
-          let lua_assert_stmt = CnL.generate_lua_cn_assert func_name e error_msg_str in
-
-          (*
-            @TODO saljuk: here, we'd also need to generate an ail statement for the wrapper call from C.
-            And then also create that wrapper later on 
-          *)
-          ([], [], ( [ lua_assert_stmt ], CnL.get_empty_wrapper_functions)));
+          let c_wrapper_calls, exec_with_assert 
+            = CnL.generate_lua_cn_assert err_msg l spec_mode
+          in
+          ([], c_wrapper_calls, exec_with_assert )
+      );
   | Return ->
-    let return_stmt = if is_unit then A.(AilSreturnVoid) else A.(AilSreturn e) in
-    (b, s @ [ return_stmt ], l)
+    (match RC.get_runtime() with
+      | RC.C -> 
+        let return_stmt = if is_unit then A.(AilSreturnVoid) else A.(AilSreturn e) in
+        (b, s @ [ return_stmt ], l)
+      | RC.Lua ->
+        let l', expr = CnL.pop_expr_from_exec l in
+        let return_stmt = CnL.generate_lua_cn_return expr is_unit in
+        let l'' = CnL.push_stmts_to_exec (l', [ return_stmt ]) in
+        (b, s, l''))
   | AssignVar x ->
     let assign_stmt = A.(AilSexpr (mk_expr (AilEassign (mk_expr (AilEident x), e)))) in
     (b, s @ [ assign_stmt ], l)
@@ -923,42 +940,49 @@ let rec cn_to_ail_expr_aux
     d ->
   match term_ with
   | Const const ->
-    let ail_expr, is_unit = cn_to_ail_const const basetype in
-    dest_with_unit_check d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_expr, is_unit)
+    let ail_expr, lua_cn_exec, is_unit = cn_to_ail_const const basetype in
+    dest_with_unit_check d spec_mode_opt ([], [], lua_cn_exec, mk_expr ail_expr, is_unit)
   | Sym sym ->
-    let sym =
-      if String.equal (Sym.pp_string sym) "return" then
-        Sym.fresh "return_cn"
-      else
-        sym
-    in
-    let ail_expr_ =
-      match const_prop with
-      | Some (sym2, cn_const) ->
-        if CF.Symbol.equal_sym sym sym2 then (
-          let ail_const, _ = cn_to_ail_const cn_const basetype in
-          ail_const)
-        else
-          A.(AilEident sym)
-      | None -> A.(AilEident sym)
-      (* TODO: Check. Need to do more work if this is only a CN var *)
-    in
-    let ail_expr_ =
-      if is_sym_obj_address sym then
-        if List.exists (fun (x, _) -> Sym.equal x sym) globals then
-          wrap_with_convert
-            ~convert_from:false
-            A.(AilEcall (mk_expr (AilEident (Sym.fresh (getter_str filename sym))), []))
-            basetype
-        else
-          wrap_with_convert
-            ~convert_from:false
-            A.(AilEunary (Address, mk_expr ail_expr_))
-            basetype
-      else
-        ail_expr_
-    in
-    dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
+    (match RC.get_runtime() with
+      | RC.C ->
+        let sym =
+          if String.equal (Sym.pp_string sym) "return" then
+            Sym.fresh "return_cn"
+          else
+            sym
+        in
+        let ail_expr_, _ =
+          match const_prop with
+          | Some (sym2, cn_const) ->
+            if CF.Symbol.equal_sym sym sym2 then (
+              let ail_const, lua_cn_exec, _ = cn_to_ail_const cn_const basetype in
+              ail_const, lua_cn_exec)
+            else
+              (A.AilEident sym, CnL.get_empty_lua_cn_exec)
+          | None -> (A.AilEident sym, CnL.get_empty_lua_cn_exec)
+          (* TODO: Check. Need to do more work if this is only a CN var *)
+        in
+        let ail_expr_ =
+          if is_sym_obj_address sym then
+            if List.exists (fun (x, _) -> Sym.equal x sym) globals then
+              wrap_with_convert
+                ~convert_from:false
+                A.(AilEcall (mk_expr (AilEident (Sym.fresh (getter_str filename sym))), []))
+                basetype
+            else
+              wrap_with_convert
+                ~convert_from:false
+                A.(AilEunary (Address, mk_expr ail_expr_))
+                basetype
+          else
+            ail_expr_
+        in
+        dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
+      | RC.Lua -> 
+        let lua_cn_expr = CnL.cn_to_lua_sym sym in
+        let l = CnL.push_expr_to_exec (CnL.get_empty_lua_cn_exec, lua_cn_expr) in
+        dest d spec_mode_opt ([], [], l, mk_expr ail_null)
+    );
   | Binop (bop, t1, t2) ->
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
@@ -982,21 +1006,35 @@ let rec cn_to_ail_expr_aux
         t2
         PassBack
     in
-    let annot = cn_to_ail_binop (IT.get_bt t1) (IT.get_bt t2) bop in
-    let str =
-      match annot with
-      | Some str -> str
-      | None -> failwith (__LOC__ ^ ": No CN binop function found")
-    in
-    let default_ail_binop =
-      A.(AilEcall (mk_expr (AilEident (Sym.fresh str)), [ e1; e2 ]))
-    in
-    let ail_expr_ =
-      match bop with
-      | EQ -> get_equality_fn_call (IT.get_bt t1) e1 e2
-      | _ -> default_ail_binop
-    in
-    dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr ail_expr_)
+
+    (match RC.get_runtime() with
+      | RC.C ->
+        let annot = cn_to_ail_binop (IT.get_bt t1) (IT.get_bt t2) bop in
+        let str =
+          match annot with
+          | Some str -> str
+          | None -> failwith (__LOC__ ^ ": No CN binop function found")
+        in
+        let default_ail_binop =
+          A.(AilEcall (mk_expr (AilEident (Sym.fresh str)), [ e1; e2 ]))
+        in
+        let ail_expr_ =
+          match bop with
+          | EQ -> get_equality_fn_call (IT.get_bt t1) e1 e2
+          | _ -> default_ail_binop
+        in
+        dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr ail_expr_)
+      | RC.Lua ->
+        let l1', lua_cn_expr_1 = CnL.pop_expr_from_exec l1 in
+        let l2', lua_cn_expr_2 = CnL.pop_expr_from_exec l2 in
+
+        let l3 = CnL.concat [ l1'; l2' ] in
+        let l4 = CnL.push_expr_to_exec (
+          l3, 
+          CnL.cn_to_lua_binop (lua_cn_expr_1, lua_cn_expr_2, bop)) in
+
+        dest d spec_mode_opt (b1 @ b2, s1 @ s2, l4, mk_expr ail_null)
+    );
   | Unop (unop, t) ->
     let b, s, l, e =
       cn_to_ail_expr_aux
@@ -4039,8 +4077,14 @@ let cn_to_ail_statements
       cn_progs
   in
   let bs, ss, ls = list_split_three bs_ss_ls in
-  (loc, (List.concat bs, upd_s @ List.concat ss @ pop_s, CnL.concat ls))
 
+  match RC.get_runtime() with
+    | RC.C -> (loc, (List.concat bs, upd_s @ List.concat ss @ pop_s, CnL.concat ls))
+    (*
+    @saljuk TODO: For now, not exporting any ail statements and bindings to avoid clutter.
+    Remove this once all inline statements have been ported over to Lua
+    *)
+    | RC.Lua -> (loc, ([], [], CnL.concat ls))
 
 let rec cn_to_ail_lat_internal_loop
           ~without_lemma_checks
@@ -4418,37 +4462,63 @@ let rec cn_to_ail_lat_2
               lat
           in
           let merged_ls = 
-            [ [ upd_l ], CnL.get_empty_wrapper_functions ] 
+            [ [ upd_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] 
             @ [ l1 ] 
-            @ [ [ pop_l ], CnL.get_empty_wrapper_functions ] in
+            @ [ [ pop_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] in
           prepend_to_precondition ail_executable_spec (b1, s1, CnL.concat ( merged_ls ))
     );
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->
-    let spec_mode_opt = Some Pre in
-    let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
-    let ss =
-      match generate_cn_assert e spec_mode_opt with
-      | Some assert_stmt ->
-        let upd_s =
-          generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
+    (match RC.get_runtime() with
+      | RC.C ->
+        let spec_mode_opt = Some Pre in
+        let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
+        let ss =
+          match generate_cn_assert e spec_mode_opt with
+          | Some assert_stmt ->
+            let upd_s =
+              generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
+            in
+            let pop_s = generate_cn_pop_msg_info in
+            upd_s @ s @ (assert_stmt :: pop_s)
+          | None -> s
         in
-        let pop_s = generate_cn_pop_msg_info in
-        upd_s @ s @ (assert_stmt :: pop_s)
-      | None -> s
-    in
-    let ail_executable_spec =
-      cn_to_ail_lat_2
-        without_ownership_checking
-        with_loop_leak_checks
-        without_lemma_checks
-        filename
-        dts
-        globals
-        preds
-        c_return_type
-        lat
-    in
-    prepend_to_precondition ail_executable_spec (b1, ss, l1)
+        let ail_executable_spec =
+          cn_to_ail_lat_2
+            without_ownership_checking
+            with_loop_leak_checks
+            without_lemma_checks
+            filename
+            dts
+            globals
+            preds
+            c_return_type
+            lat
+        in
+        prepend_to_precondition ail_executable_spec (b1, ss, l1)
+      | RC.Lua -> 
+        let spec_mode_opt = Some Pre in
+        let error_message = gather_error_message_from_loc loc in
+
+        let _, _, l, _ = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
+
+        let c_wrapper_calls, exec_with_assert = 
+          CnL.generate_lua_cn_assert error_message l (sym_of_spec_mode_opt spec_mode_opt)
+        in
+
+        let ail_executable_spec =
+          cn_to_ail_lat_2
+            without_ownership_checking
+            with_loop_leak_checks
+            without_lemma_checks
+            filename
+            dts
+            globals
+            preds
+            c_return_type
+            lat
+        in
+        prepend_to_precondition ail_executable_spec ([], c_wrapper_calls, exec_with_assert)
+    );
   (* Postcondition *)
   | LAT.I (post, (stats, loop)) ->
     let rec remove_duplicates locs stats =
@@ -4550,7 +4620,11 @@ let rec cn_to_ail_pre_post_aux
   = function
   | AT.Computational ((sym, bt), _info, at) ->
     let cn_to_ail_computational_at (sym, bt) =
-      let cn_sym = generate_sym_with_suffix ~suffix:"_cn" sym in
+      let cn_sym = 
+        match RC.get_runtime() with 
+          | RC.C -> generate_sym_with_suffix ~suffix:"_cn" sym
+          | RC.Lua -> sym
+      in
       let cn_ctype = bt_to_ail_ctype bt in
       let binding = create_binding cn_sym cn_ctype in
       let rhs = wrap_with_convert_to A.(AilEident sym) bt in
@@ -4795,7 +4869,7 @@ let cn_to_ail_pre_post
               in
 
               (
-                (A.AilSexpr (mk_expr push_fn_wrapper_call), ( [ push_fn_lua ], [ push_fn_wrapper_def ])), 
+                (A.AilSexpr (mk_expr push_fn_wrapper_call), ( [ push_fn_lua ], [ push_fn_wrapper_def ], CnL.get_empty_lua_expr)), 
                 (CnL.generate_c_pop_frame_fn_wrapper_call, CnL.get_empty_lua_cn_exec)
               )
             in
@@ -4819,7 +4893,7 @@ let cn_to_ail_pre_post
                   []
               in
               let _, _, lua_cn_exec_pre = ail_executable_spec.pre in
-              let lua_stmts_pre, _ = lua_cn_exec_pre in
+              let lua_stmts_pre, _, _ = lua_cn_exec_pre in
               let precond_fn_lua = 
                 FunctionDef(
                   CnL.generate_lua_precondition_fn_name c_func_name, [], lua_stmts_pre
@@ -4842,7 +4916,7 @@ let cn_to_ail_pre_post
                   []
               in
               let _, _, lua_cn_exec_post = ail_executable_spec.post in
-              let lua_stmts_post, _ = lua_cn_exec_post in
+              let lua_stmts_post, _, _ = lua_cn_exec_post in
               let postcond_fn_lua = 
                 FunctionDef(
                   CnL.generate_lua_postcondition_fn_name c_func_name, [], lua_stmts_post
@@ -4850,8 +4924,10 @@ let cn_to_ail_pre_post
               in
 
               (
-                (A.AilSexpr (mk_expr precond_fn_wrapper_call), ( [ precond_fn_lua ], [ precond_fn_wrapper_def ])), 
-                (A.AilSexpr (mk_expr postcond_fn_wrapper_call), ( [ postcond_fn_lua ], [ postcond_fn_wrapper_def ]))
+                (A.AilSexpr (mk_expr precond_fn_wrapper_call), 
+                  ( [ precond_fn_lua ], [ precond_fn_wrapper_def ], CnL.get_empty_lua_expr)), 
+                (A.AilSexpr (mk_expr postcond_fn_wrapper_call), 
+                  ( [ postcond_fn_lua ], [ postcond_fn_wrapper_def ], CnL.get_empty_lua_expr))
               )
             in
 
