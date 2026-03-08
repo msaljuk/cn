@@ -979,6 +979,15 @@ let rec cn_to_ail_expr_aux
         in
         dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
       | RC.Lua -> 
+        (*
+        let sym =
+          if List.exists (fun (param_sym, _) -> Sym.equal param_sym sym) func_params then (
+            (CnL.wrap_with_frame_getter sym)
+          ) else (
+            sym
+          )
+        in
+        *)
         let lua_cn_expr = CnL.cn_to_lua_sym sym in
         let l = CnL.push_expr_to_exec (CnL.get_empty_lua_cn_exec, lua_cn_expr) in
         dest d spec_mode_opt ([], [], l, mk_expr ail_null)
@@ -1646,10 +1655,17 @@ let rec cn_to_ail_expr_aux
              PassBack)
         ts
     in
-    let bs, ss, ls, es = list_split_four bs_ss_ls_es in
-    let f = mk_expr A.(AilEident sym) in
-    let ail_expr_ = A.AilEcall (f, es) in
-    dest d spec_mode_opt (List.concat bs, List.concat ss, CnL.concat ls, mk_expr ail_expr_)
+    (
+      match RC.get_runtime() with
+        | RC.C ->
+          let bs, ss, _, es = list_split_four bs_ss_ls_es in
+          let f = mk_expr A.(AilEident sym) in
+          let ail_expr_ = A.AilEcall (f, es) in
+          dest d spec_mode_opt (List.concat bs, List.concat ss, CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
+        | RC.Lua ->
+          let _, _, ls, _ = list_split_four bs_ss_ls_es in
+          dest d spec_mode_opt ([], [], CnL.cn_to_lua_apply (Some sym) ls, mk_expr ail_null)
+    );
   | Let ((var, t1), body) ->
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
@@ -3013,316 +3029,638 @@ let cn_to_ail_resource
       spec_mode_opt
         (* used to check whether spec_mode enum should be pretty-printed or whether it's an inner call with the spec_mode enum parameter *)
       loc
+      request
   =
-  let calculate_resource_return_type (preds : (Sym.t * Definition.Predicate.t) list) loc
-    = function
-    | Request.Owned (sct, _) ->
-      ( Sctypes.to_ctype sct,
-        BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct )
-    | PName pname ->
-      if Sym.equal pname Alloc.Predicate.sym then (
-        Cerb_colour.with_colour
-          (fun () ->
-             print_endline
-               Pp.(
-                 plain
-                   (Pp.item
-                      "'Alloc' not currently supported at runtime"
-                      (!^"Used at" ^^^ Locations.pp loc))))
-          ();
-        exit 2);
-      let matching_preds =
-        List.filter (fun (pred_sym', _def) -> Sym.equal pname pred_sym') preds
+  match RC.get_runtime() with
+    | RC.C ->
+      (
+      let calculate_resource_return_type (preds : (Sym.t * Definition.Predicate.t) list) loc
+        = function
+        | Request.Owned (sct, _) ->
+          ( Sctypes.to_ctype sct,
+            BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct )
+        | PName pname ->
+          if Sym.equal pname Alloc.Predicate.sym then (
+            Cerb_colour.with_colour
+              (fun () ->
+                print_endline
+                  Pp.(
+                    plain
+                      (Pp.item
+                          "'Alloc' not currently supported at runtime"
+                          (!^"Used at" ^^^ Locations.pp loc))))
+              ();
+            exit 2);
+          let matching_preds =
+            List.filter (fun (pred_sym', _def) -> Sym.equal pname pred_sym') preds
+          in
+          let pred_sym', pred_def' =
+            match matching_preds with
+            | [] ->
+              Cerb_colour.with_colour
+                (fun () ->
+                  print_endline
+                    Pp.(
+                      plain
+                        (Pp.item
+                            "Predicate not found"
+                            (Sym.pp pname ^^^ !^"at" ^^^ Locations.pp loc))))
+                ();
+              exit 2
+            | p :: _ -> p
+          in
+          let cn_bt = bt_to_cn_base_type (snd pred_def'.oarg) in
+          let ctype =
+            match cn_bt with
+            | CN_record _members ->
+              let pred_record_name = generate_sym_with_suffix ~suffix:"_record" pred_sym' in
+              mk_ctype C.(Pointer (C.no_qualifiers, mk_ctype (Struct pred_record_name)))
+            | _ -> cn_to_ail_base_type ~pred_sym:(Some pred_sym') cn_bt
+          in
+          (ctype, snd pred_def'.oarg)
       in
-      let pred_sym', pred_def' =
-        match matching_preds with
-        | [] ->
-          Cerb_colour.with_colour
-            (fun () ->
-               print_endline
-                 Pp.(
-                   plain
-                     (Pp.item
-                        "Predicate not found"
-                        (Sym.pp pname ^^^ !^"at" ^^^ Locations.pp loc))))
-            ();
-          exit 2
-        | p :: _ -> p
+      let generate_owned_fn_name sct =
+        let ct_str = str_of_ctype (Sctypes.to_ctype sct) in
+        let ct_str = String.concat "_" (String.split_on_char ' ' ct_str) in
+        "owned_" ^ ct_str
       in
-      let cn_bt = bt_to_cn_base_type (snd pred_def'.oarg) in
-      let ctype =
-        match cn_bt with
-        | CN_record _members ->
-          let pred_record_name = generate_sym_with_suffix ~suffix:"_record" pred_sym' in
-          mk_ctype C.(Pointer (C.no_qualifiers, mk_ctype (Struct pred_record_name)))
-        | _ -> cn_to_ail_base_type ~pred_sym:(Some pred_sym') cn_bt
+      let enum_sym = sym_of_spec_mode_opt spec_mode_opt in
+      let it_zero_const = IT.(IT (Const (Z (Z.of_int 0)), BT.Unit, Cerb_location.unknown)) in
+      let ail_zero_const_expr_ =
+        A.(AilEconst (ConstantInteger (IConstant (Z.of_int 0, Decimal, None))))
       in
-      (ctype, snd pred_def'.oarg)
-  in
-  let generate_owned_fn_name sct =
-    let ct_str = str_of_ctype (Sctypes.to_ctype sct) in
-    let ct_str = String.concat "_" (String.split_on_char ' ' ct_str) in
-    "owned_" ^ ct_str
-  in
-  let enum_sym = sym_of_spec_mode_opt spec_mode_opt in
-  let it_zero_const = IT.(IT (Const (Z (Z.of_int 0)), BT.Unit, Cerb_location.unknown)) in
-  let ail_zero_const_expr_ =
-    A.(AilEconst (ConstantInteger (IConstant (Z.of_int 0, Decimal, None))))
-  in
-  function
-  | Request.P p ->
-    let ctype, bt = calculate_resource_return_type preds loc p.name in
-    let b, s, l, e = cn_to_ail_expr filename dts globals spec_mode_opt p.pointer PassBack in
-    let rhs, bs, ss, ls =
-      match p.name with
-      | Owned (sct, _) ->
-        ownership_ctypes := Sctypes.to_ctype sct :: !ownership_ctypes;
-        let owned_fn_name = generate_owned_fn_name sct in
-        (* Hack with enum as sym *)
-        let enum_val_get = IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown)) in
-        let loop_ownership_arg =
-          match loop_ownership_sym_opt with
-          | Some loop_ownership_sym ->
-            IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
-          | None -> it_zero_const
+      match request with
+        | Request.P p ->
+          let ctype, bt = calculate_resource_return_type preds loc p.name in
+          let b, s, l, e = cn_to_ail_expr filename dts globals spec_mode_opt p.pointer PassBack in
+          let rhs, bs, ss, ls =
+            match p.name with
+            | Owned (sct, _) ->
+              ownership_ctypes := Sctypes.to_ctype sct :: !ownership_ctypes;
+              let owned_fn_name = generate_owned_fn_name sct in
+              (* Hack with enum as sym *)
+              let enum_val_get = IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown)) in
+              let loop_ownership_arg =
+                match loop_ownership_sym_opt with
+                | Some loop_ownership_sym ->
+                  IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
+                | None -> it_zero_const
+              in
+              let fn_call_it =
+                IT.IT
+                  ( Apply
+                      (Sym.fresh owned_fn_name, [ p.pointer; enum_val_get; loop_ownership_arg ]),
+                    BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
+                    Cerb_location.unknown )
+              in
+              let bs', ss', ls', e' =
+                cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
+              in
+              let binding = create_binding sym (bt_to_ail_ctype bt) in
+              (e', binding :: bs', ss', ls')
+            | PName pname ->
+              let bs, ss, ls, es =
+                list_split_four
+                  (List.map
+                    (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
+                    p.iargs)
+              in
+              let loop_ownership_expr_ =
+                match loop_ownership_sym_opt with
+                | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
+                | None -> ail_zero_const_expr_
+              in
+              let fcall =
+                A.(
+                  AilEcall
+                    ( mk_expr (AilEident pname),
+                      (e :: es) @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ]
+                    ))
+              in
+              let binding = create_binding sym (bt_to_ail_ctype ~pred_sym:(Some pname) bt) in
+              (mk_expr fcall, binding :: List.concat bs, List.concat ss, CnL.concat ls)
+          in
+          let s_decl =
+            match rm_ctype ctype with
+            | C.Void -> A.(AilSexpr rhs)
+            | _ -> A.(AilSdeclaration [ (sym, Some rhs) ])
+          in
+          (b @ bs, s @ ss @ [ s_decl ], CnL.concat [ l; ls ])
+        | Request.Q q ->
+        (*
+          Input is expr of the form:
+          take sym = each (integer q.q; q.permission){ Owned(q.pointer + (q.q * q.step)) }
+        *)
+        let b1, s1, l1, _e1 =
+          cn_to_ail_expr filename dts globals spec_mode_opt q.pointer PassBack
         in
-        let fn_call_it =
-          IT.IT
-            ( Apply
-                (Sym.fresh owned_fn_name, [ p.pointer; enum_val_get; loop_ownership_arg ]),
-              BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
-              Cerb_location.unknown )
+        (*
+          Generating a loop of the form:
+        <set q.q to start value>
+        while (q.permission) {
+          *(sym + q.q * q.step) = *(q.pointer + q.q * q.step);
+          q.q++;
+        }
+        *)
+        let i_sym, i_bt = q.q in
+        let start_expr, _, while_loop_cond = get_while_bounds_and_cond q.q q.permission in
+        let _, _, _, e_start =
+          cn_to_ail_expr filename dts globals spec_mode_opt start_expr PassBack
         in
-        let bs', ss', ls', e' =
-          cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
+        let _, _, _, while_cond_expr =
+          cn_to_ail_expr filename dts globals spec_mode_opt while_loop_cond PassBack
         in
-        let binding = create_binding sym (bt_to_ail_ctype bt) in
-        (e', binding :: bs', ss', ls')
-      | PName pname ->
-        let bs, ss, ls, es =
-          list_split_four
-            (List.map
-               (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
-               p.iargs)
+        let _, _, _, if_cond_expr =
+          cn_to_ail_expr filename dts globals spec_mode_opt q.permission PassBack
         in
-        let loop_ownership_expr_ =
-          match loop_ownership_sym_opt with
-          | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
-          | None -> ail_zero_const_expr_
+        let cn_integer_ptr_ctype = bt_to_ail_ctype i_bt in
+        let b2, s2, l2, _e2 =
+          cn_to_ail_expr filename dts globals spec_mode_opt q.permission PassBack
         in
-        let fcall =
+        let b3, s3, l3, _e3 =
+          cn_to_ail_expr
+            filename
+            dts
+            globals
+            spec_mode_opt
+            (IT.sizeOf_ q.step Cerb_location.unknown)
+            PassBack
+        in
+        let start_binding = create_binding i_sym cn_integer_ptr_ctype in
+        let start_assign = A.(AilSdeclaration [ (i_sym, Some e_start) ]) in
+        let return_ctype, _return_bt = calculate_resource_return_type preds loc q.name in
+        (* Translation of q.pointer *)
+        let i_it = IT.IT (IT.(Sym i_sym), i_bt, Cerb_location.unknown) in
+        let value_it =
+          IT.arrayShift_ ~base:q.pointer ~index:i_it q.step Cerb_location.unknown
+        in
+        let b4, s4, _, e4 =
+          cn_to_ail_expr filename dts globals spec_mode_opt value_it PassBack
+        in
+        let ptr_add_sym = Sym.fresh_anon () in
+        let cn_pointer_return_type = bt_to_ail_ctype BT.(Loc ()) in
+        let ptr_add_binding = create_binding ptr_add_sym cn_pointer_return_type in
+        let ptr_add_stat = A.(AilSdeclaration [ (ptr_add_sym, Some e4) ]) in
+        let rhs, bs, ss, ls =
+          match q.name with
+          | Owned (sct, _) ->
+            ownership_ctypes := Sctypes.to_ctype sct :: !ownership_ctypes;
+            let owned_fn_name = generate_owned_fn_name sct in
+            let ptr_add_it = IT.(IT (Sym ptr_add_sym, BT.(Loc ()), Cerb_location.unknown)) in
+            (* Hack with enum as sym *)
+            let enum_val_get = IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown)) in
+            let loop_ownership_arg =
+              match loop_ownership_sym_opt with
+              | Some loop_ownership_sym ->
+                IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
+              | None -> it_zero_const
+            in
+            let fn_call_it =
+              IT.IT
+                ( Apply
+                    (Sym.fresh owned_fn_name, [ ptr_add_it; enum_val_get; loop_ownership_arg ]),
+                  BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
+                  Cerb_location.unknown )
+            in
+            let bs', ss', ls', e' =
+              cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
+            in
+            (e', bs', ss', ls')
+          | PName pname ->
+            let bs, ss, ls, es =
+              list_split_four
+                (List.map
+                  (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
+                  q.iargs)
+            in
+            let loop_ownership_expr_ =
+              match loop_ownership_sym_opt with
+              | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
+              | None -> ail_zero_const_expr_
+            in
+            let fcall =
+              A.(
+                AilEcall
+                  ( mk_expr (AilEident pname),
+                    (mk_expr (AilEident ptr_add_sym) :: es)
+                    @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ] ))
+            in
+            (mk_expr fcall, List.concat bs, List.concat ss, CnL.concat ls)
+        in
+        let typedef_name = get_typedef_string (bt_to_ail_ctype i_bt) in
+        let incr_func_name =
+          match typedef_name with Some str -> str ^ "_increment" | None -> ""
+        in
+        let increment_fn_sym = Sym.fresh incr_func_name in
+        let increment_stat =
           A.(
-            AilEcall
-              ( mk_expr (AilEident pname),
-                (e :: es) @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ]
-              ))
+            AilSexpr
+              (mk_expr
+                (AilEcall
+                    (mk_expr (AilEident increment_fn_sym), [ mk_expr (AilEident i_sym) ]))))
         in
-        let binding = create_binding sym (bt_to_ail_ctype ~pred_sym:(Some pname) bt) in
-        (mk_expr fcall, binding :: List.concat bs, List.concat ss, CnL.concat ls)
-    in
-    let s_decl =
-      match rm_ctype ctype with
-      | C.Void -> A.(AilSexpr rhs)
-      | _ -> A.(AilSdeclaration [ (sym, Some rhs) ])
-    in
-    (b @ bs, s @ ss @ [ s_decl ], CnL.concat [ l; ls ])
-  | Request.Q q ->
-    (*
-       Input is expr of the form:
-      take sym = each (integer q.q; q.permission){ Owned(q.pointer + (q.q * q.step)) }
-    *)
-    let b1, s1, l1, _e1 =
-      cn_to_ail_expr filename dts globals spec_mode_opt q.pointer PassBack
-    in
-    (*
-       Generating a loop of the form:
-    <set q.q to start value>
-    while (q.permission) {
-      *(sym + q.q * q.step) = *(q.pointer + q.q * q.step);
-      q.q++;
-    }
-    *)
-    let i_sym, i_bt = q.q in
-    let start_expr, _, while_loop_cond = get_while_bounds_and_cond q.q q.permission in
-    let _, _, _, e_start =
-      cn_to_ail_expr filename dts globals spec_mode_opt start_expr PassBack
-    in
-    let _, _, _, while_cond_expr =
-      cn_to_ail_expr filename dts globals spec_mode_opt while_loop_cond PassBack
-    in
-    let _, _, _, if_cond_expr =
-      cn_to_ail_expr filename dts globals spec_mode_opt q.permission PassBack
-    in
-    let cn_integer_ptr_ctype = bt_to_ail_ctype i_bt in
-    let b2, s2, l2, _e2 =
-      cn_to_ail_expr filename dts globals spec_mode_opt q.permission PassBack
-    in
-    let b3, s3, l3, _e3 =
-      cn_to_ail_expr
-        filename
-        dts
-        globals
-        spec_mode_opt
-        (IT.sizeOf_ q.step Cerb_location.unknown)
-        PassBack
-    in
-    let start_binding = create_binding i_sym cn_integer_ptr_ctype in
-    let start_assign = A.(AilSdeclaration [ (i_sym, Some e_start) ]) in
-    let return_ctype, _return_bt = calculate_resource_return_type preds loc q.name in
-    (* Translation of q.pointer *)
-    let i_it = IT.IT (IT.(Sym i_sym), i_bt, Cerb_location.unknown) in
-    let value_it =
-      IT.arrayShift_ ~base:q.pointer ~index:i_it q.step Cerb_location.unknown
-    in
-    let b4, s4, _, e4 =
-      cn_to_ail_expr filename dts globals spec_mode_opt value_it PassBack
-    in
-    let ptr_add_sym = Sym.fresh_anon () in
-    let cn_pointer_return_type = bt_to_ail_ctype BT.(Loc ()) in
-    let ptr_add_binding = create_binding ptr_add_sym cn_pointer_return_type in
-    let ptr_add_stat = A.(AilSdeclaration [ (ptr_add_sym, Some e4) ]) in
-    let rhs, bs, ss, ls =
-      match q.name with
-      | Owned (sct, _) ->
-        ownership_ctypes := Sctypes.to_ctype sct :: !ownership_ctypes;
-        let owned_fn_name = generate_owned_fn_name sct in
-        let ptr_add_it = IT.(IT (Sym ptr_add_sym, BT.(Loc ()), Cerb_location.unknown)) in
-        (* Hack with enum as sym *)
-        let enum_val_get = IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown)) in
-        let loop_ownership_arg =
-          match loop_ownership_sym_opt with
-          | Some loop_ownership_sym ->
-            IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
-          | None -> it_zero_const
+        let bs', ss', ls' =
+          match rm_ctype return_ctype with
+          | C.Void ->
+            let void_pred_call = A.(AilSexpr rhs) in
+            let if_stat =
+              A.(
+                AilSif
+                  ( wrap_with_convert_from_cn_bool if_cond_expr,
+                    mk_stmt
+                      (AilSblock
+                        ( [ ptr_add_binding ],
+                          List.map mk_stmt [ ptr_add_stat; void_pred_call ] )),
+                    mk_stmt (AilSblock ([], [ mk_stmt AilSskip ])) ))
+            in
+            let while_loop =
+              A.(
+                AilSwhile
+                  ( wrap_with_convert_from_cn_bool while_cond_expr,
+                    mk_stmt (AilSblock ([], List.map mk_stmt [ if_stat; increment_stat ])),
+                    0 ))
+            in
+            let ail_block =
+              A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
+            in
+            ([], [ ail_block ], CnL.get_empty_lua_cn_exec )
+          | _ ->
+            (* TODO: Change to mostly use index terms rather than Ail directly - avoids duplication between these functions and cn_to_ail *)
+            let cn_map_type =
+              mk_ctype ~annots:[ CF.Annot.Atypedef (Sym.fresh "cn_map") ] C.Void
+            in
+            let sym_binding =
+              create_binding sym (mk_ctype C.(Pointer (C.no_qualifiers, cn_map_type)))
+            in
+            let create_call =
+              A.(AilEcall (mk_expr (AilEident (Sym.fresh "map_create")), []))
+            in
+            let sym_decl = A.(AilSdeclaration [ (sym, Some (mk_expr create_call)) ]) in
+            let i_ident_expr = A.(AilEident i_sym) in
+            let i_bt_str =
+              match get_typedef_string (bt_to_ail_ctype i_bt) with
+              | Some str -> str
+              | None -> ""
+            in
+            let i_expr =
+              if i_bt == BT.Integer then
+                i_ident_expr
+              else
+                A.(
+                  AilEcall
+                    ( mk_expr (AilEident (Sym.fresh ("cast_" ^ i_bt_str ^ "_to_cn_integer"))),
+                      [ mk_expr i_ident_expr ] ))
+            in
+            let map_set_expr_ =
+              A.(
+                AilEcall
+                  ( mk_expr (AilEident (Sym.fresh "cn_map_set")),
+                    List.map mk_expr [ AilEident sym; i_expr ] @ [ rhs ] ))
+            in
+            let if_stat =
+              A.(
+                AilSif
+                  ( wrap_with_convert_from_cn_bool if_cond_expr,
+                    mk_stmt
+                      (AilSblock
+                        ( ptr_add_binding :: b4,
+                          List.map
+                            mk_stmt
+                            (s4 @ [ ptr_add_stat; AilSexpr (mk_expr map_set_expr_) ]) )),
+                    mk_stmt (AilSblock ([], [ mk_stmt AilSskip ])) ))
+            in
+            let while_loop =
+              A.(
+                AilSwhile
+                  ( wrap_with_convert_from_cn_bool while_cond_expr,
+                    mk_stmt A.(AilSblock ([], List.map mk_stmt [ if_stat; increment_stat ])),
+                    0 ))
+            in
+            let ail_block =
+              A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
+            in
+            ([ sym_binding ], [ sym_decl; ail_block ], CnL.get_empty_lua_cn_exec )
         in
-        let fn_call_it =
-          IT.IT
-            ( Apply
-                (Sym.fresh owned_fn_name, [ ptr_add_it; enum_val_get; loop_ownership_arg ]),
-              BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
-              Cerb_location.unknown )
-        in
-        let bs', ss', ls', e' =
-          cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
-        in
-        (e', bs', ss', ls')
-      | PName pname ->
-        let bs, ss, ls, es =
-          list_split_four
-            (List.map
-               (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
-               q.iargs)
-        in
-        let loop_ownership_expr_ =
-          match loop_ownership_sym_opt with
-          | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
-          | None -> ail_zero_const_expr_
-        in
-        let fcall =
-          A.(
-            AilEcall
-              ( mk_expr (AilEident pname),
-                (mk_expr (AilEident ptr_add_sym) :: es)
-                @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ] ))
-        in
-        (mk_expr fcall, List.concat bs, List.concat ss, CnL.concat ls)
-    in
-    let typedef_name = get_typedef_string (bt_to_ail_ctype i_bt) in
-    let incr_func_name =
-      match typedef_name with Some str -> str ^ "_increment" | None -> ""
-    in
-    let increment_fn_sym = Sym.fresh incr_func_name in
-    let increment_stat =
-      A.(
-        AilSexpr
-          (mk_expr
-             (AilEcall
-                (mk_expr (AilEident increment_fn_sym), [ mk_expr (AilEident i_sym) ]))))
-    in
-    let bs', ss', ls' =
-      match rm_ctype return_ctype with
-      | C.Void ->
-        let void_pred_call = A.(AilSexpr rhs) in
-        let if_stat =
-          A.(
-            AilSif
-              ( wrap_with_convert_from_cn_bool if_cond_expr,
-                mk_stmt
-                  (AilSblock
-                     ( [ ptr_add_binding ],
-                       List.map mk_stmt [ ptr_add_stat; void_pred_call ] )),
-                mk_stmt (AilSblock ([], [ mk_stmt AilSskip ])) ))
-        in
-        let while_loop =
-          A.(
-            AilSwhile
-              ( wrap_with_convert_from_cn_bool while_cond_expr,
-                mk_stmt (AilSblock ([], List.map mk_stmt [ if_stat; increment_stat ])),
-                0 ))
-        in
-        let ail_block =
-          A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
-        in
-        ([], [ ail_block ], CnL.get_empty_lua_cn_exec )
-      | _ ->
-        (* TODO: Change to mostly use index terms rather than Ail directly - avoids duplication between these functions and cn_to_ail *)
-        let cn_map_type =
-          mk_ctype ~annots:[ CF.Annot.Atypedef (Sym.fresh "cn_map") ] C.Void
-        in
-        let sym_binding =
-          create_binding sym (mk_ctype C.(Pointer (C.no_qualifiers, cn_map_type)))
-        in
-        let create_call =
-          A.(AilEcall (mk_expr (AilEident (Sym.fresh "map_create")), []))
-        in
-        let sym_decl = A.(AilSdeclaration [ (sym, Some (mk_expr create_call)) ]) in
-        let i_ident_expr = A.(AilEident i_sym) in
-        let i_bt_str =
-          match get_typedef_string (bt_to_ail_ctype i_bt) with
-          | Some str -> str
-          | None -> ""
-        in
-        let i_expr =
-          if i_bt == BT.Integer then
-            i_ident_expr
-          else
-            A.(
-              AilEcall
-                ( mk_expr (AilEident (Sym.fresh ("cast_" ^ i_bt_str ^ "_to_cn_integer"))),
-                  [ mk_expr i_ident_expr ] ))
-        in
-        let map_set_expr_ =
-          A.(
-            AilEcall
-              ( mk_expr (AilEident (Sym.fresh "cn_map_set")),
-                List.map mk_expr [ AilEident sym; i_expr ] @ [ rhs ] ))
-        in
-        let if_stat =
-          A.(
-            AilSif
-              ( wrap_with_convert_from_cn_bool if_cond_expr,
-                mk_stmt
-                  (AilSblock
-                     ( ptr_add_binding :: b4,
-                       List.map
-                         mk_stmt
-                         (s4 @ [ ptr_add_stat; AilSexpr (mk_expr map_set_expr_) ]) )),
-                mk_stmt (AilSblock ([], [ mk_stmt AilSskip ])) ))
-        in
-        let while_loop =
-          A.(
-            AilSwhile
-              ( wrap_with_convert_from_cn_bool while_cond_expr,
-                mk_stmt A.(AilSblock ([], List.map mk_stmt [ if_stat; increment_stat ])),
-                0 ))
-        in
-        let ail_block =
-          A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
-        in
-        ([ sym_binding ], [ sym_decl; ail_block ], CnL.get_empty_lua_cn_exec )
-    in
-    (b1 @ b2 @ b3 @ bs' @ bs, s1 @ s2 @ s3 @ ss @ ss', CnL.concat [l1; l2; l3; ls; ls'])
+        (b1 @ b2 @ b3 @ bs' @ bs, s1 @ s2 @ s3 @ ss @ ss', CnL.concat [l1; l2; l3; ls; ls'])
+      )
+    | RC.Lua ->
+      (
+      let calculate_resource_return_type (preds : (Sym.t * Definition.Predicate.t) list) loc
+        = function
+        | Request.Owned (sct, _) ->
+          ( Sctypes.to_ctype sct,
+            BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct )
+        | PName pname ->
+          if Sym.equal pname Alloc.Predicate.sym then (
+            Cerb_colour.with_colour
+              (fun () ->
+                print_endline
+                  Pp.(
+                    plain
+                      (Pp.item
+                          "'Alloc' not currently supported at runtime"
+                          (!^"Used at" ^^^ Locations.pp loc))))
+              ();
+            exit 2);
+          let matching_preds =
+            List.filter (fun (pred_sym', _def) -> Sym.equal pname pred_sym') preds
+          in
+          let pred_sym', pred_def' =
+            match matching_preds with
+            | [] ->
+              Cerb_colour.with_colour
+                (fun () ->
+                  print_endline
+                    Pp.(
+                      plain
+                        (Pp.item
+                            "Predicate not found"
+                            (Sym.pp pname ^^^ !^"at" ^^^ Locations.pp loc))))
+                ();
+              exit 2
+            | p :: _ -> p
+          in
+          let cn_bt = bt_to_cn_base_type (snd pred_def'.oarg) in
+          let ctype =
+            match cn_bt with
+            | CN_record _members ->
+              let pred_record_name = generate_sym_with_suffix ~suffix:"_record" pred_sym' in
+              mk_ctype C.(Pointer (C.no_qualifiers, mk_ctype (Struct pred_record_name)))
+            | _ -> cn_to_ail_base_type ~pred_sym:(Some pred_sym') cn_bt
+          in
+          (ctype, snd pred_def'.oarg)
+      in
+      let enum_sym = sym_of_spec_mode_opt spec_mode_opt in
+      let it_zero_const = IT.(IT (Const (Z (Z.of_int 0)), BT.Unit, Cerb_location.unknown)) in
+      let ail_zero_const_expr_ =
+        A.(AilEconst (ConstantInteger (IConstant (Z.of_int 0, Decimal, None))))
+      in
+      match request with
+        | Request.P p ->
+          let _, _, l, _ = cn_to_ail_expr filename dts globals spec_mode_opt p.pointer PassBack in
+          let ctype, bt = calculate_resource_return_type preds loc p.name in
+          let _, _, _, ls =
+            match p.name with
+            | Owned (sct, _) ->
+              let owned_fn_name = "cn.owned" in
+              (* Hack with enum as sym *)
+              let get_arg = 
+                let lua_resource_get = CnL.generate_lua_resource_get l in
+                let lua_resource_get_str = CnL.expr_to_string lua_resource_get in
+                IT.IT
+                  ( Sym (Sym.fresh lua_resource_get_str),
+                    BT.Unit,
+                    Cerb_location.unknown )
+              in
+              let enum_val_get = 
+                let lua_spec_mode = CnL.generate_lua_spec_mode enum_sym in
+                let lua_spec_mode_str = CnL.expr_to_string lua_spec_mode in
+                (IT.(IT (Sym (Sym.fresh lua_spec_mode_str), BT.Integer, Cerb_location.unknown)))
+              in
+              let loop_ownership_arg =
+                match loop_ownership_sym_opt with
+                | Some loop_ownership_sym ->
+                  IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
+                | None -> it_zero_const
+              in
+              let _reader_arg =
+                let peek_fn_expr = CnL.generate_lua_type_reader (Sctypes.to_ctype sct) in
+                (IT.(IT (Sym (Sym.fresh (CnL.expr_to_string peek_fn_expr)), BT.Integer, Cerb_location.unknown)))
+              in
+              let fn_call_it =
+                IT.IT
+                  ( Apply
+                      (Sym.fresh owned_fn_name, [ get_arg; enum_val_get; loop_ownership_arg ]),
+                    BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
+                    Cerb_location.unknown )
+              in
+              let _, _, ls', _ =
+                cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
+              in
+              (mk_expr ail_null, [], [], ls')
+            | PName pname ->
+              let bs, ss, ls, es =
+                list_split_four
+                  (List.map
+                    (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
+                    p.iargs)
+              in
+              let loop_ownership_expr_ =
+                match loop_ownership_sym_opt with
+                | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
+                | None -> ail_zero_const_expr_
+              in
+              let fcall =
+                A.(
+                  AilEcall
+                    ( mk_expr (AilEident pname),
+                      (es) @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ]
+                    ))
+              in
+              let binding = create_binding sym (bt_to_ail_ctype ~pred_sym:(Some pname) bt) in
+              (mk_expr fcall, binding :: List.concat bs, List.concat ss, CnL.concat ls)
+          in
 
+          let final_exec = CnL.generate_lua_resource sym ctype ls in
+
+          ([], [], final_exec)
+        | Request.Q q ->
+        (*
+          Input is expr of the form:
+          take sym = each (integer q.q; q.permission){ Owned(q.pointer + (q.q * q.step)) }
+        *)
+        let b1, s1, l1, _e1 =
+          cn_to_ail_expr filename dts globals spec_mode_opt q.pointer PassBack
+        in
+        (*
+          Generating a loop of the form:
+        <set q.q to start value>
+        while (q.permission) {
+          *(sym + q.q * q.step) = *(q.pointer + q.q * q.step);
+          q.q++;
+        }
+        *)
+        let i_sym, i_bt = q.q in
+        let start_expr, _, while_loop_cond = get_while_bounds_and_cond q.q q.permission in
+        let _, _, _, e_start =
+          cn_to_ail_expr filename dts globals spec_mode_opt start_expr PassBack
+        in
+        let _, _, _, while_cond_expr =
+          cn_to_ail_expr filename dts globals spec_mode_opt while_loop_cond PassBack
+        in
+        let _, _, _, if_cond_expr =
+          cn_to_ail_expr filename dts globals spec_mode_opt q.permission PassBack
+        in
+        let cn_integer_ptr_ctype = bt_to_ail_ctype i_bt in
+        let b2, s2, l2, _e2 =
+          cn_to_ail_expr filename dts globals spec_mode_opt q.permission PassBack
+        in
+        let b3, s3, l3, _e3 =
+          cn_to_ail_expr
+            filename
+            dts
+            globals
+            spec_mode_opt
+            (IT.sizeOf_ q.step Cerb_location.unknown)
+            PassBack
+        in
+        let start_binding = create_binding i_sym cn_integer_ptr_ctype in
+        let start_assign = A.(AilSdeclaration [ (i_sym, Some e_start) ]) in
+        let return_ctype, _return_bt = calculate_resource_return_type preds loc q.name in
+        (* Translation of q.pointer *)
+        let i_it = IT.IT (IT.(Sym i_sym), i_bt, Cerb_location.unknown) in
+        let value_it =
+          IT.arrayShift_ ~base:q.pointer ~index:i_it q.step Cerb_location.unknown
+        in
+        let b4, s4, _, e4 =
+          cn_to_ail_expr filename dts globals spec_mode_opt value_it PassBack
+        in
+        let ptr_add_sym = Sym.fresh_anon () in
+        let cn_pointer_return_type = bt_to_ail_ctype BT.(Loc ()) in
+        let ptr_add_binding = create_binding ptr_add_sym cn_pointer_return_type in
+        let ptr_add_stat = A.(AilSdeclaration [ (ptr_add_sym, Some e4) ]) in
+        let rhs, bs, ss, ls =
+          match q.name with
+          | Owned (sct, _) ->
+            ownership_ctypes := Sctypes.to_ctype sct :: !ownership_ctypes;
+            let owned_fn_name = "cn.owned" in
+            let ptr_add_it = IT.(IT (Sym ptr_add_sym, BT.(Loc ()), Cerb_location.unknown)) in
+            (* Hack with enum as sym *)
+            let enum_val_get = IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown)) in
+            let loop_ownership_arg =
+              match loop_ownership_sym_opt with
+              | Some loop_ownership_sym ->
+                IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
+              | None -> it_zero_const
+            in
+            let fn_call_it =
+              IT.IT
+                ( Apply
+                    (Sym.fresh owned_fn_name, [ ptr_add_it; enum_val_get; loop_ownership_arg ]),
+                  BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
+                  Cerb_location.unknown )
+            in
+            let bs', ss', ls', e' =
+              cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
+            in
+            (e', bs', ss', ls')
+          | PName pname ->
+            let bs, ss, ls, es =
+              list_split_four
+                (List.map
+                  (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
+                  q.iargs)
+            in
+            let loop_ownership_expr_ =
+              match loop_ownership_sym_opt with
+              | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
+              | None -> ail_zero_const_expr_
+            in
+            let fcall =
+              A.(
+                AilEcall
+                  ( mk_expr (AilEident pname),
+                    (mk_expr (AilEident ptr_add_sym) :: es)
+                    @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ] ))
+            in
+            (mk_expr fcall, List.concat bs, List.concat ss, CnL.concat ls)
+        in
+        let typedef_name = get_typedef_string (bt_to_ail_ctype i_bt) in
+        let incr_func_name =
+          match typedef_name with Some str -> str ^ "_increment" | None -> ""
+        in
+        let increment_fn_sym = Sym.fresh incr_func_name in
+        let increment_stat =
+          A.(
+            AilSexpr
+              (mk_expr
+                (AilEcall
+                    (mk_expr (AilEident increment_fn_sym), [ mk_expr (AilEident i_sym) ]))))
+        in
+        let bs', ss', ls' =
+          match rm_ctype return_ctype with
+          | C.Void ->
+            let void_pred_call = A.(AilSexpr rhs) in
+            let if_stat =
+              A.(
+                AilSif
+                  ( wrap_with_convert_from_cn_bool if_cond_expr,
+                    mk_stmt
+                      (AilSblock
+                        ( [ ptr_add_binding ],
+                          List.map mk_stmt [ ptr_add_stat; void_pred_call ] )),
+                    mk_stmt (AilSblock ([], [ mk_stmt AilSskip ])) ))
+            in
+            let while_loop =
+              A.(
+                AilSwhile
+                  ( wrap_with_convert_from_cn_bool while_cond_expr,
+                    mk_stmt (AilSblock ([], List.map mk_stmt [ if_stat; increment_stat ])),
+                    0 ))
+            in
+            let ail_block =
+              A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
+            in
+            ([], [ ail_block ], CnL.get_empty_lua_cn_exec )
+          | _ ->
+            (* TODO: Change to mostly use index terms rather than Ail directly - avoids duplication between these functions and cn_to_ail *)
+            let cn_map_type =
+              mk_ctype ~annots:[ CF.Annot.Atypedef (Sym.fresh "cn_map") ] C.Void
+            in
+            let sym_binding =
+              create_binding sym (mk_ctype C.(Pointer (C.no_qualifiers, cn_map_type)))
+            in
+            let create_call =
+              A.(AilEcall (mk_expr (AilEident (Sym.fresh "map_create")), []))
+            in
+            let sym_decl = A.(AilSdeclaration [ (sym, Some (mk_expr create_call)) ]) in
+            let i_ident_expr = A.(AilEident i_sym) in
+            let i_bt_str =
+              match get_typedef_string (bt_to_ail_ctype i_bt) with
+              | Some str -> str
+              | None -> ""
+            in
+            let i_expr =
+              if i_bt == BT.Integer then
+                i_ident_expr
+              else
+                A.(
+                  AilEcall
+                    ( mk_expr (AilEident (Sym.fresh ("cast_" ^ i_bt_str ^ "_to_cn_integer"))),
+                      [ mk_expr i_ident_expr ] ))
+            in
+            let map_set_expr_ =
+              A.(
+                AilEcall
+                  ( mk_expr (AilEident (Sym.fresh "cn_map_set")),
+                    List.map mk_expr [ AilEident sym; i_expr ] @ [ rhs ] ))
+            in
+            let if_stat =
+              A.(
+                AilSif
+                  ( wrap_with_convert_from_cn_bool if_cond_expr,
+                    mk_stmt
+                      (AilSblock
+                        ( ptr_add_binding :: b4,
+                          List.map
+                            mk_stmt
+                            (s4 @ [ ptr_add_stat; AilSexpr (mk_expr map_set_expr_) ]) )),
+                    mk_stmt (AilSblock ([], [ mk_stmt AilSskip ])) ))
+            in
+            let while_loop =
+              A.(
+                AilSwhile
+                  ( wrap_with_convert_from_cn_bool while_cond_expr,
+                    mk_stmt A.(AilSblock ([], List.map mk_stmt [ if_stat; increment_stat ])),
+                    0 ))
+            in
+            let ail_block =
+              A.(AilSblock ([ start_binding ], List.map mk_stmt [ start_assign; while_loop ]))
+            in
+            ([ sym_binding ], [ sym_decl; ail_block ], CnL.get_empty_lua_cn_exec )
+        in
+        (b1 @ b2 @ b3 @ bs' @ bs, s1 @ s2 @ s3 @ ss @ ss', CnL.concat [l1; l2; l3; ls; ls'])
+      )
 
 let cn_to_ail_logical_constraint_aux
   : type a.
@@ -4081,10 +4419,10 @@ let cn_to_ail_statements
   match RC.get_runtime() with
     | RC.C -> (loc, (List.concat bs, upd_s @ List.concat ss @ pop_s, CnL.concat ls))
     (*
-    @saljuk TODO: For now, not exporting any ail statements and bindings to avoid clutter.
+    @saljuk TODO: For now, not exporting any statements to avoid clutter.
     Remove this once all inline statements have been ported over to Lua
     *)
-    | RC.Lua -> (loc, ([], [], CnL.concat ls))
+    | RC.Lua -> (loc, ([], [], CnL.get_empty_lua_cn_exec))
 
 let rec cn_to_ail_lat_internal_loop
           ~without_lemma_checks
@@ -4449,6 +4787,7 @@ let rec cn_to_ail_lat_2
           let b1, s1, l1 =
             cn_to_ail_resource filename name dts globals preds None spec_mode_opt loc ret
           in
+
           let ail_executable_spec =
             cn_to_ail_lat_2
               without_ownership_checking
