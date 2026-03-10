@@ -1657,7 +1657,7 @@ let rec cn_to_ail_expr_aux
           dest d spec_mode_opt (List.concat bs, List.concat ss, CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
         | RC.Lua ->
           let _, _, ls, _ = list_split_four bs_ss_ls_es in
-          dest d spec_mode_opt ([], [], CnL.cn_to_lua_apply (Some sym) ls, mk_expr ail_null)
+          dest d spec_mode_opt ([], [], CnL.cn_to_lua_apply sym ls, mk_expr ail_null)
     );
   | Let ((var, t1), body) ->
     let b1, s1, l1, e1 =

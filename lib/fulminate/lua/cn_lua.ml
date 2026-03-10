@@ -785,13 +785,7 @@ let cn_to_lua_apply sym in_execs
 = 
   let execs_and_exprs = List.map pop_expr_from_exec in_execs in
   let execs, exprs = List.split execs_and_exprs in
-
-  let sym_str = match sym with
-    | None -> ""
-    | Some sym -> Sym.pp_string sym
-  in
-
-  let apply_expr = LuaS.Call(sym_str, exprs) in
+  let apply_expr = LuaS.Call(Sym.pp_string sym, exprs) in
   let merged_execs = concat execs in
   let final_exec = push_expr_to_exec (merged_execs, apply_expr) in
   (final_exec)

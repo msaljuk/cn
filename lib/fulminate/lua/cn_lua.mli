@@ -250,6 +250,6 @@ val cn_to_lua_binop
     lua_expression
 
 val cn_to_lua_apply
-    : CF.Ctype.union_tag option ->
+    : CF.Ctype.union_tag ->
     lua_cn_exec list ->
     (lua_cn_exec)
