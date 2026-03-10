@@ -1,13 +1,14 @@
 #include "lua_wrappers.h"
 
-#include <cn-executable/utils.h>
-
 #include <assert.h>
 
 // Lua globals
 
 lua_State *lua_state = NULL;
 int lua_cn_runtime_ref = LUA_NOREF;
+
+static const char* LUA_FACTORY_BASE_TYPE_NAME = "base_type";
+static const char* LUA_FACTORY_POINTER_TYPE_NAME = "pointer_type";
 
 // Core Lua State
 
@@ -123,7 +124,7 @@ static int c_get_integer() {
 }
 
 static int c_get_float() {
-    float* addr = (float)luaL_checkinteger(lua_state, 1);
+    float* addr = (float*)luaL_checkinteger(lua_state, 1);
     lua_pushnumber(lua_state, *addr);
     return 1;
 }
@@ -354,4 +355,81 @@ void lua_cn_frame_pop_loop() {
 // Types Utils
 int64_t lua_convert_ptr_to_int(void* ptr) {
     return (int64_t)(uintptr_t)ptr;
+}
+
+// Thunks
+
+// Helpers
+int lua_push_factories_table(const char* factory_type_name)
+{
+    struct lua_State* L = lua_get_state();
+    lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+    int cn_idx = lua_gettop(L);
+
+    lua_getfield(L, cn_idx, "factories");
+    lua_getfield(L, -1, factory_type_name);
+
+    return cn_idx;
+}
+
+void lua_call_factories_table(int cn_idx, int factory_arg_count)
+{
+    struct lua_State* L = lua_get_state();
+
+    if (lua_pcall(L, factory_arg_count, 1, 0) != LUA_OK) {
+        fprintf(stderr, "Thunk Factory Error: %s. Top idx: %d\n. ", 
+            lua_tostring(L, -1),
+            lua_gettop(L));
+        return;
+    }
+
+    lua_replace(L, cn_idx); 
+    lua_settop(L, cn_idx);
+}
+
+void lua_push_bool_thunk(bool val) {
+    int cn_idx = lua_push_factories_table(LUA_FACTORY_BASE_TYPE_NAME);
+    lua_State* L = lua_get_state();
+    lua_pushboolean(L, val);
+    lua_call_factories_table(cn_idx, 1);
+}
+
+void lua_push_char_thunk(char val) {
+    int cn_idx = lua_push_factories_table(LUA_FACTORY_BASE_TYPE_NAME);
+    lua_State* L = lua_get_state();
+    lua_pushlstring(lua_state, &val, 1);
+    lua_call_factories_table(cn_idx, 1);
+}
+
+void lua_push_integer_thunk(int val) {
+    int cn_idx = lua_push_factories_table(LUA_FACTORY_BASE_TYPE_NAME);
+    lua_State* L = lua_get_state();
+    lua_pushinteger(lua_state, val);
+    lua_call_factories_table(cn_idx, 1);
+}
+
+void lua_push_float_thunk(float val) {
+    int cn_idx = lua_push_factories_table(LUA_FACTORY_BASE_TYPE_NAME);
+    lua_State* L = lua_get_state();
+    lua_pushnumber(lua_state, val);
+    lua_call_factories_table(cn_idx, 1);
+}
+
+void lua_push_pointer_thunk(void* addr, int ptr_depth, const char* final_reader_name) {
+    struct lua_State* L = lua_get_state();
+    lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+    int cn_idx = lua_gettop(L);
+
+    lua_getfield(L, cn_idx, "c");
+    lua_getfield(L, -1, final_reader_name);
+    int reader_idx = lua_gettop(L);
+
+    lua_getfield(L, cn_idx, "factories");
+    lua_getfield(L, -1, LUA_FACTORY_POINTER_TYPE_NAME);
+    
+    lua_pushinteger(L, lua_convert_ptr_to_int(addr));
+    lua_pushinteger(L, ptr_depth);
+    lua_pushvalue(L, reader_idx);
+
+    lua_call_factories_table(cn_idx, 3);
 }
