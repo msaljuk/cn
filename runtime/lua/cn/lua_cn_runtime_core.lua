@@ -32,6 +32,7 @@ local cn = {
         NON_SPEC = 6
     },
     equals = deep_compare,
+    owned = {},
     c = {
         -- c asserts
         assert = {},
@@ -139,6 +140,11 @@ end
 
 function cn.ghost_state.postcondition_leak_check()
     cn.c.postcondition_leak_check();
+end
+
+function cn.owned(mode, base_addr, size, loop_ownership)
+    cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
+    return base_addr
 end
 
 --[[

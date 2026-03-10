@@ -14,6 +14,10 @@ type wrapper_function = (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sig
 type wrapper_functions = (wrapper_function list)
 type lua_cn_exec = (lua_statements * wrapper_functions * lua_expression)
 
+(* Globals *)
+(* List of all locals that have been set so far inside the Lua CN environment for the current frame *)
+let frame_locals: (string * CF.Ctype.ctype) list ref = ref []
+
 let get_expr_str expr = PP.pp_expr expr
 
 let cn_sym = LuaS.Symbol( "cn" )
@@ -22,8 +26,9 @@ let cn_assert_sym = LuaS.Symbol( "cn.assert" )
 let cn_asserts_sym = LuaS.Symbol( "cn.asserts" )
 let cn_error_stack_push_sym = LuaS.Symbol( "cn.error_stack.push" )
 let cn_error_stack_pop_sym  = LuaS.Symbol( "cn.error_stack.pop" )
-let cn_frames_push_fn_sym = LuaS.Symbol( "cn.frames.push_function" )
+let cn_frames_get_local_sym = LuaS.Symbol( "cn.frames.get_local" )
 let cn_frames_set_local_sym = LuaS.Symbol( "cn.frames.set_local" )
+let cn_frames_push_fn_sym = LuaS.Symbol( "cn.frames.push_function" )
 let c_sym = LuaS.Symbol( "c" )
 let c_sym_addr_suffix = "_addr"
 let get_type_prefix = "get_"
@@ -92,6 +97,25 @@ let push_stmts_to_exec ((in_exec, stmts) : lua_cn_exec * lua_statements)
   let stmts_pre, wrappers, expr = in_exec in
   (stmts_pre @ stmts, wrappers, expr)
 
+let wrap_sym_for_lua (in_sym : Sym.t)
+  : Sym.t
+=   
+  if (
+  List.exists 
+  (fun (local_name, _) -> String.equal (Sym.pp_string in_sym) local_name) 
+  !frame_locals) then (
+    let frame_getter_wrap = 
+      LuaS.Call(Pp_lua.pp_expr cn_frames_get_local_sym, [ LuaS.String(Sym.pp_string in_sym) ])
+    in
+    Sym.fresh (Pp_lua.pp_expr frame_getter_wrap)
+  ) else (
+    in_sym
+  )
+
+let expr_to_string (expr : lua_expression)
+  : string
+= Pp_lua.pp_expr expr
+
 let debug_print_stmts (stmts : lua_statements)
 =
   (List.iter
@@ -142,6 +166,41 @@ let mk_binding sym ty
     * CF.Ctype.qualifiers 
     * CF.Ctype.ctype) = 
   (sym, ((Cerb_location.unknown, A.Automatic, false), None, CF.Ctype.no_qualifiers, ty))
+
+let lua_init_function_generation () : unit
+  =
+  frame_locals := [];
+  ()
+
+let lua_set_frame_local 
+  (local_name : string) 
+  (local_type : CF.Ctype.ctype) 
+  (local_value : lua_expression)
+  : lua_statement
+  =
+  frame_locals := (local_name, local_type) :: !frame_locals;
+
+  (*@saljuk HACK: One of the purposes of storing these locals is that we can find them later
+  * to conduct useful operations like:
+  * - wrap the locals with lua_getters (cn.frames.get_local("var")),
+  * - or recover their original c types.
+  * However, if we've already set a local, the next time we encounter it will be in its wrapped form
+  * (cn.frames.get_local("var")). To make it easier to still extract var's type info, we also map
+  * the wrapped form to the same type here. 
+  *
+  * TODO: Find a better solution (preferably one that doesn't involve string 
+  * parsing the wrapped symbol.)
+  *)
+  let local_name_sym = Sym.fresh local_name in
+  frame_locals := (Sym.pp_string (wrap_sym_for_lua local_name_sym), local_type) :: !frame_locals;
+
+  (LuaS.FunctionCall(
+    Pp_lua.pp_expr cn_frames_set_local_sym,
+    [
+      LuaS.String(local_name);
+      local_value
+    ]
+  ))
 
 let generate_c_get_lua_state
   =
@@ -461,51 +520,47 @@ let generate_lua_runtime_core_req
         LuaS.Call( "require", [ LuaS.String("lua_cn_runtime_core") ] )
       ))
 
+let generate_lua_type_reader (c_type : CF.Ctype.ctype)
+  =
+  let type_str = 
+    let get_type type_str = get_type_prefix ^ type_str in
+    let peek_type type_str = peek_type_prefix ^ type_str in
+
+    match (rm_ctype c_type) with
+      | CF.Ctype.Basic (x) ->
+        (match (x) with 
+          | CF.Ctype.Integer (i_type) -> 
+            (match i_type with
+              | CF.Ctype.Bool -> get_type "bool"
+              | CF.Ctype.Char -> get_type "char"
+              (*@saljuk TODO: Revisit this in the future. *)
+              | CF.Ctype.Signed (_) | CF.Ctype.Unsigned (_) -> get_type "integer"
+              | CF.Ctype.Size_t -> get_type "size_t"
+              | _ -> (""))
+          | CF.Ctype.Floating (f_type) ->
+            match f_type with
+              | CF.Ctype.RealFloating (rf_type) ->
+                match rf_type with
+                  | CF.Ctype.Float -> get_type "float"
+                  | CF.Ctype.Double | CF.Ctype.LongDouble -> get_type "double")
+      | CF.Ctype.Pointer (_, _) -> get_type "pointer"
+      | CF.Ctype.Struct (s_sym) -> peek_type (Sym.pp_string s_sym)
+      | _ -> ""
+  in
+  LuaS.Field(LuaS.Field(cn_sym, c_sym), LuaS.Symbol(type_str))
+
 let generate_lua_push_frame_fn
   (lua_fn_name : string)
   (c_fn_args : (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list)
   : LuaS.stmt
   = 
-
-  (*@saljuk NOTE: Consider hoisting this out if we need to reuse this logic for pre/post/inline
-  stmt parameter reading (most likely)*)
   let get_arg_expr
     (arg : (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)))
     = 
-    let get_fn_prefix = LuaS.Field(cn_sym, c_sym) in
-
     let c_symbol, (_, (c_addr_type : CF.Ctype.ctype), _) = arg in
     let c_type = get_ctype_without_ptr c_addr_type in
-
-    let type_str = 
-      let get_type type_str = get_type_prefix ^ type_str in
-      let peek_type type_str = peek_type_prefix ^ type_str in
-
-      (match (rm_ctype c_type) with
-        | CF.Ctype.Basic (x) ->
-          (match (x) with 
-            | CF.Ctype.Integer (i_type) -> 
-              (match i_type with
-                | CF.Ctype.Bool -> get_type "bool";
-                | CF.Ctype.Char -> get_type "char";
-                (*@saljuk TODO: Revisit this in the future. *)
-                | CF.Ctype.Signed (_) | CF.Ctype.Unsigned (_) -> get_type "integer";
-                | CF.Ctype.Size_t -> get_type "size_t";
-                | _ -> (""));
-            | CF.Ctype.Floating (f_type) ->
-              match f_type with
-                | CF.Ctype.RealFloating (rf_type) ->
-                  match rf_type with
-                    | CF.Ctype.Float -> get_type "float";
-                    | CF.Ctype.Double | CF.Ctype.LongDouble -> get_type "double");
-        | CF.Ctype.Pointer (_, _) -> get_type "pointer";
-        | CF.Ctype.Struct (s_sym) -> peek_type (Sym.pp_string s_sym);
-        | _ -> "")
-    in
-
-    LuaS.Call(
-      Pp_lua.pp_expr (LuaS.Field(get_fn_prefix, LuaS.Symbol(type_str))),
-      [ c_sym_to_lua_sym c_symbol ] )
+    let reader_field = generate_lua_type_reader c_type in
+    LuaS.Call( Pp_lua.pp_expr reader_field, [ c_sym_to_lua_sym c_symbol ] )
   in
 
   let get_args 
@@ -519,15 +574,9 @@ let generate_lua_push_frame_fn
         String.sub sym_name_w_suffix 0 (len_a - len_b)
       in
 
-      let c_sym_w_addr, _ = arg in
+      let c_sym_w_addr, (_, c_type, _) = arg in
 
-      (LuaS.FunctionCall(
-        Pp_lua.pp_expr cn_frames_set_local_sym,
-        [
-          LuaS.String(get_sym_name_wo_addr_suffix c_sym_w_addr);
-          get_arg_expr arg
-        ]
-      ))
+      lua_set_frame_local (get_sym_name_wo_addr_suffix c_sym_w_addr) c_type (get_arg_expr arg)
     ))
     c_fn_args
   in
@@ -559,6 +608,11 @@ let generate_lua_cn_error_stack_pop
       get_expr_str cn_error_stack_pop_sym,
       []))
 
+let generate_lua_spec_mode spec_mode_sym
+  : lua_expression
+=
+  LuaS.Field(cn_spec_mode_sym, LuaS.Symbol(Sym.pp_string spec_mode_sym))
+    
 let generate_lua_cn_assert 
   (error_msg : string)
   (in_exec : lua_cn_exec)
@@ -605,7 +659,7 @@ let generate_lua_cn_assert
     let push_err_stmt = generate_lua_cn_error_stack_push error_msg in
     let pop_err_stmt = generate_lua_cn_error_stack_pop in
 
-    let spec_mode_field = LuaS.Field(cn_spec_mode_sym, LuaS.Symbol(Sym.pp_string spec_mode)) in
+    let spec_mode_field = generate_lua_spec_mode spec_mode in
 
     let core_stmt = 
       LuaS.FunctionCall(Pp_lua.pp_expr cn_assert_sym, [ assert_expr; spec_mode_field ]) 
@@ -640,12 +694,31 @@ let generate_lua_cn_assert
     ([ ], exec')
   )
 
+let generate_lua_resource_get in_exec
+  : (lua_expression)
+=
+  let _, expr = pop_expr_from_exec in_exec in
+  LuaS.Call(Pp_lua.pp_expr cn_frames_get_local_sym, [ LuaS.String(Pp_lua.pp_expr expr) ])
+
 let generate_lua_cn_return (expr : lua_expression) (is_unit : bool)
   : LuaS.stmt
 =
   if is_unit then (
     LuaS.Return(expr)
   ) else ( LuaS.Return(LuaS.Nil) )
+
+let generate_lua_resource sym ctype in_exec
+  : lua_cn_exec
+=
+  let exec, expr = pop_expr_from_exec in_exec in
+
+  let stmt = match rm_ctype ctype with
+    | CF.Ctype.Void -> LuaS.FunctionCall("", [ expr ])
+    | _ -> 
+      lua_set_frame_local (Sym.pp_string sym) ctype expr
+  in
+
+  (push_stmts_to_exec (exec, [ stmt ]))
 
 (* ---------------------------------- *)
 (*         Cn-to-Lua Terms            *)
@@ -686,6 +759,33 @@ let cn_to_lua_binop (expr_a, expr_b, binop)
 =
   let lua_expression =
     match binop with
-    | IT.EQ | _ -> LuaS.Call("cn.equals", [ expr_a; expr_b ])
+    | IT.EQ | _ -> 
+      let extracted_type_a = 
+        let target_name = Pp_lua.pp_expr expr_a in
+        match List.find_opt (fun (local_name, _) -> String.equal local_name target_name) !frame_locals with
+        | Some (_, local_type) -> Some local_type
+        | None -> None
+      in
+
+      let final_expr_a = 
+        match extracted_type_a with
+          | Some (c_type) ->
+              LuaS.Call(
+                Pp_lua.pp_expr (generate_lua_type_reader c_type),
+                [ expr_a ])
+          | None -> expr_a
+      in
+
+      LuaS.Call("cn.equals", [ final_expr_a; expr_b ])
   in
   (lua_expression)
+  
+let cn_to_lua_apply sym in_execs
+  : (lua_cn_exec)
+= 
+  let execs_and_exprs = List.map pop_expr_from_exec in_execs in
+  let execs, exprs = List.split execs_and_exprs in
+  let apply_expr = LuaS.Call(Sym.pp_string sym, exprs) in
+  let merged_execs = concat execs in
+  let final_exec = push_expr_to_exec (merged_execs, apply_expr) in
+  (final_exec)
