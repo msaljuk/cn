@@ -431,6 +431,7 @@ let generate_c_specs
   : executable_spec
   =
   let generate_c_spec (instrumentation : Extract.instrumentation) =
+    CnL.lua_init_function_generation();
     generate_c_specs_internal
       without_ownership_checking
       without_loop_invariants

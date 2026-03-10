@@ -53,9 +53,16 @@ val push_expr_to_exec : (lua_cn_exec * lua_expression) -> lua_cn_exec
 val pop_expr_from_exec : (lua_cn_exec) -> (lua_cn_exec * lua_expression)
 val push_stmts_to_exec : (lua_cn_exec * lua_statements) -> lua_cn_exec
 
+val wrap_sym_for_lua : Sym.t -> Sym.t
+
 val expr_to_string : lua_expression -> string
 
 val debug_print_stmts : lua_statements -> unit
+
+(* ---------------------------------- *)
+(*              Globals               *)
+(* ---------------------------------- *)
+val lua_init_function_generation : unit -> unit
 
 (* ---------------------------------- *)
 (*             Generators             *)

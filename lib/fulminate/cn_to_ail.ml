@@ -979,16 +979,8 @@ let rec cn_to_ail_expr_aux
         in
         dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
       | RC.Lua -> 
-        (*
-        let sym =
-          if List.exists (fun (param_sym, _) -> Sym.equal param_sym sym) func_params then (
-            (CnL.wrap_with_frame_getter sym)
-          ) else (
-            sym
-          )
-        in
-        *)
-        let lua_cn_expr = CnL.cn_to_lua_sym sym in
+        let wrapped_sym = CnL.wrap_sym_for_lua sym in
+        let lua_cn_expr = CnL.cn_to_lua_sym wrapped_sym in
         let l = CnL.push_expr_to_exec (CnL.get_empty_lua_cn_exec, lua_cn_expr) in
         dest d spec_mode_opt ([], [], l, mk_expr ail_null)
     );
@@ -1039,8 +1031,9 @@ let rec cn_to_ail_expr_aux
 
         let l3 = CnL.concat [ l1'; l2' ] in
         let l4 = CnL.push_expr_to_exec (
-          l3, 
-          CnL.cn_to_lua_binop (lua_cn_expr_1, lua_cn_expr_2, bop)) in
+          l3,
+          CnL.cn_to_lua_binop (lua_cn_expr_1, lua_cn_expr_2, bop)
+        ) in
 
         dest d spec_mode_opt (b1 @ b2, s1 @ s2, l4, mk_expr ail_null)
     );
@@ -3109,7 +3102,7 @@ let cn_to_ail_resource
               let fn_call_it =
                 IT.IT
                   ( Apply
-                      (Sym.fresh owned_fn_name, [ p.pointer; enum_val_get; loop_ownership_arg ]),
+                      (Sym.fresh owned_fn_name, [ enum_val_get; p.pointer; loop_ownership_arg ]),
                     BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
                     Cerb_location.unknown )
               in
@@ -3674,7 +3667,8 @@ let cn_to_ail_logical_constraint_aux
   =
   fun filename dts globals spec_mode_opt d lc ->
   match lc with
-  | LogicalConstraints.T it -> cn_to_ail_expr filename dts globals spec_mode_opt it d
+  | LogicalConstraints.T it -> 
+    cn_to_ail_expr filename dts globals spec_mode_opt it d
   | LogicalConstraints.Forall ((sym, bt), it) ->
     let cond_it, t =
       match IT.get_term it with
