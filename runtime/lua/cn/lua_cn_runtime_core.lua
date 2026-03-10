@@ -144,6 +144,7 @@ end
 
 function cn.owned(mode, base_addr, size, loop_ownership)
     cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
+    return base_addr
 end
 
 --[[
