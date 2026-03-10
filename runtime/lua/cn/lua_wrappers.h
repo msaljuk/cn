@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cn-executable/utils.h>
+
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
@@ -38,3 +40,10 @@ void lua_cn_frame_pop_loop();
 
 // Types Utils
 int64_t lua_convert_ptr_to_int(void* ptr);
+
+// Thunks
+void lua_push_bool_thunk(bool val);
+void lua_push_char_thunk(char val);
+void lua_push_integer_thunk(int val);
+void lua_push_float_thunk(float val);
+void lua_push_pointer_thunk(void* addr, int ptr_depth, const char* final_reader_name);

@@ -32,6 +32,8 @@ local cn = {
         NON_SPEC = 6
     },
     equals = deep_compare,
+    owned = {},
+    factories = {},
     c = {
         -- c asserts
         assert = {},
@@ -139,6 +141,49 @@ end
 
 function cn.ghost_state.postcondition_leak_check()
     cn.c.postcondition_leak_check();
+end
+
+--[[
+OWNED
+--]]
+function cn.owned(mode, thunk_table, size, loop_ownership)
+    local ptr = thunk_table[1]
+    cn.ghost_state.get_or_put_ownership(mode, ptr, size, loop_ownership)
+    local field = thunk_table[2]()
+    return field
+end
+
+--[[
+FACTORIES
+--]]
+function cn.factories.base_type(value)
+    return function()
+        return value
+    end
+end
+
+--[
+-- Recursive factory to allow successive dereferences for pointers of infinite depth
+-- without base type erasure
+--]
+function cn.factories.pointer_type(addr, depth, reader)
+    local function make_thunk(current_addr, current_depth)
+        return function()
+            if current_depth > 1 then
+                local next_addr = cn.c.get_pointer(current_addr)
+                local next_thunk = make_thunk(next_addr, current_depth - 1)
+                return { current_addr, next_thunk }
+            else
+                local make_final_thunk = function(base_reader, base_addr)
+                    return function() return base_reader(base_addr) end
+                end
+                local final_thunk = make_final_thunk(reader, current_addr)
+
+                return { current_addr, final_thunk }
+            end
+        end
+    end
+    return make_thunk(addr, depth)
 end
 
 --[[
