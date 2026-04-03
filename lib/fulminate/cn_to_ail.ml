@@ -1167,7 +1167,7 @@ let rec cn_to_ail_expr_aux
         start_const_it
         PassBack
     in
-    let _, _, end_int_const =
+    let _, _, _, end_int_const =
       cn_to_ail_expr_aux
         filename
         const_prop
@@ -3201,7 +3201,7 @@ let cn_to_ail_resource
     let _, _, _, e_start =
       cn_to_ail_expr filename dts globals spec_mode_opt start_expr PassBack
     in
-    let _, _, e_end =
+    let _, _, _, e_end =
       cn_to_ail_expr filename dts globals spec_mode_opt end_expr PassBack
     in
     let _, _, _, while_cond_expr =
@@ -3252,7 +3252,7 @@ let cn_to_ail_resource
     let ptr_add_decl_no_rhs = A.(AilSdeclaration [ (ptr_add_sym, None) ]) in
     (* if permission only contains bounds, the range of memory is contiguous we can assert ownership over entire range in one call for `Owned` *)
     let permission_only_bounds = IndexTerms.Bounds.it_only_bounds q.q q.permission in
-    let rhs, bs, ss, opt_bs, opt_ss =
+    let rhs, bs, ss, opt_bs, opt_ss, ls =
       match q.name with
       | Owned (sct, _) ->
         ownership_ctypes := Sctypes.to_ctype sct :: !ownership_ctypes;
@@ -3292,13 +3292,13 @@ let cn_to_ail_resource
                   IT.sym_ (i_sym, i_bt, Cerb_location.unknown) )
                 Cerb_location.unknown
             in
-            let _, _, range_expr =
+            let _, _, _, range_expr =
               cn_to_ail_expr filename dts globals spec_mode_opt range_it PassBack
             in
-            let _, _, enum_expr =
+            let _, _, _, enum_expr =
               cn_to_ail_expr filename dts globals spec_mode_opt enum_val_get PassBack
             in
-            let _, _, loop_ownership_expr =
+            let _, _, _, loop_ownership_expr =
               cn_to_ail_expr
                 filename
                 dts
@@ -3307,7 +3307,7 @@ let cn_to_ail_resource
                 loop_ownership_arg
                 PassBack
             in
-            let ptr_bs, ptr_ss, ptr_expr =
+            let ptr_bs, ptr_ss, _, ptr_expr =
               cn_to_ail_expr filename dts globals spec_mode_opt ptr_add_it PassBack
             in
             let ownership_assert_fn_expr_ = A.(AilEident (Sym.fresh ownership_fn_str)) in
@@ -3344,7 +3344,7 @@ let cn_to_ail_resource
           else
             ([ ptr_add_binding ], [ ptr_add_decl_no_rhs ])
         in
-        (e', bs', ss', opt_bs, opt_ss)
+        (e', bs', ss', opt_bs, opt_ss, ls')
       | PName pname ->
         let bs, ss, ls, es =
           list_split_four
@@ -3382,7 +3382,7 @@ let cn_to_ail_resource
              (AilEcall
                 (mk_expr (AilEident increment_fn_sym), [ mk_expr (AilEident i_sym) ]))))
     in
-    let gen_conj_loop ~permission_only_bounds (bs, ss) if_cond while_cond incr_stat, ls' =
+    let gen_conj_loop ~permission_only_bounds (bs, ss) if_cond while_cond incr_stat =
       let loop_body =
         if permission_only_bounds then
           (* Optimise Fulminate output if permission only consists of bounds *)
@@ -3399,7 +3399,7 @@ let cn_to_ail_resource
       in
       A.(AilSwhile (wrap_with_convert_from_cn_bool while_cond, mk_stmt loop_body, 0))
     in
-    let bs', ss' =
+    let bs', ss', ls' =
       match rm_ctype return_ctype with
       | C.Void ->
         (* For optimisation, map is not constructed anyway in this case since return type is Void, which is also never the case for Owned. Therefore, there are less checks to do in this case *)
@@ -3550,7 +3550,7 @@ let cn_to_ail_logical_constraint_aux
        let _, _, _, e_start =
          cn_to_ail_expr filename dts globals spec_mode_opt start_expr PassBack
        in
-       let _, _, e_end =
+       let _, _, _, e_end =
          cn_to_ail_expr filename dts globals spec_mode_opt end_expr PassBack
        in
        let _, _, _, while_cond_expr =
@@ -4767,7 +4767,7 @@ let rec cn_to_ail_lat_2
         let spec_mode_opt = Some Pre in
         let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
         let pop_s = generate_cn_pop_msg_info in
-            let b1, s1, l1 =
+        let b1, s1, l1 =
           cn_to_ail_resource
         ~is_used
         filename
@@ -5603,7 +5603,7 @@ let cn_to_ail_assume_resource
     let _, _, _, e_start =
       cn_to_ail_expr filename dts globals spec_mode_opt start_expr PassBack
     in
-    let _, _, e_end =
+    let _, _, _, e_end =
       cn_to_ail_expr filename dts globals spec_mode_opt end_expr PassBack
     in
     let _, _, _, while_cond_expr =
