@@ -967,10 +967,14 @@ let generate_struct_wrappers (ail_struct_data)
           (fun x -> CnL.generate_c_fn_struct_size (fst x))
           ail_struct_data)
       in
-      let struct_peek_wrappers 
-        = (List.map CnL.generate_c_fn_peek_struct ail_struct_data) 
+      let struct_push_wrappers 
+        = (List.map CnL.generate_c_fn_push_struct ail_struct_data) 
+      in
+      let struct_get_wrappers 
+        = (List.map CnL.generate_c_fn_get_struct ail_struct_data) 
       in
       let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
-      let peek_decs, peek_defs = gen_wrapper_dec_and_def_strs struct_peek_wrappers in
-      ([ size_decs; peek_decs ], [ size_defs; peek_defs ])
+      let push_decs, push_defs = gen_wrapper_dec_and_def_strs struct_push_wrappers in
+      let get_decs, get_defs = gen_wrapper_dec_and_def_strs struct_get_wrappers in
+      ([ size_decs; push_decs; get_decs ], [ size_defs; push_defs; get_defs ])
     | _ -> ([], [])

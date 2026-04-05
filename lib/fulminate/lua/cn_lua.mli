@@ -110,14 +110,19 @@ val generate_c_fn_struct_size
     wrapper_function
 
 (*
-Utility used to generate a function to peek at any custom C structs. Called from
-Lua to get back a Lua table that is 'essentially' a mirrored version of the C struct,
-with 2 main differences:
-1. Every member is replaced by a pointer to that member (so a member 'x' becomes 'x_addr')
-2. A size entry is appended to the very end of the table and represents the total size of the
-struct in C (i.e. a sizeof)
+Utility used to generate a function to push any custom C structs as a Lua table onto the
+stack.
 *)
-val generate_c_fn_peek_struct
+val generate_c_fn_push_struct
+    : (A.ail_identifier *
+        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
+    wrapper_function
+
+(*
+Utility used to generate a function that can be called from Lua to get a C struct as 
+a Lua table
+*)
+val generate_c_fn_get_struct
     : (A.ail_identifier *
         (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
     wrapper_function
