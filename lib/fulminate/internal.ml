@@ -964,8 +964,11 @@ let generate_struct_wrappers (ail_struct_data)
     | RC.Lua ->
       let struct_size_wrappers
         = (List.map 
-          (fun x -> CnL.generate_c_fn_struct_size (fst x))
+          (fun x -> CnL.generate_c_fn_push_struct_size (fst x))
           ail_struct_data)
+      in
+      let struct_offset_wrappers 
+        = (List.map CnL.generate_c_fn_push_struct_offsets ail_struct_data) 
       in
       let struct_push_wrappers 
         = (List.map CnL.generate_c_fn_push_struct ail_struct_data) 
@@ -974,7 +977,8 @@ let generate_struct_wrappers (ail_struct_data)
         = (List.map CnL.generate_c_fn_get_struct ail_struct_data) 
       in
       let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
+      let offset_decs, offset_defs = gen_wrapper_dec_and_def_strs struct_offset_wrappers in
       let push_decs, push_defs = gen_wrapper_dec_and_def_strs struct_push_wrappers in
       let get_decs, get_defs = gen_wrapper_dec_and_def_strs struct_get_wrappers in
-      ([ size_decs; push_decs; get_decs ], [ size_defs; push_defs; get_defs ])
+      ([ size_decs; offset_decs; push_decs; get_decs ], [ size_defs; offset_defs; push_defs; get_defs ])
     | _ -> ([], [])

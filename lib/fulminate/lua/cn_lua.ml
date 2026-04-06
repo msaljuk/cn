@@ -302,7 +302,7 @@ let generate_c_fn_wrapper_def
   (decl, def)
 
 
-let generate_c_fn_struct_size (struct_name : A.ail_identifier)
+let generate_c_fn_push_struct_size (struct_name : A.ail_identifier)
   : wrapper_function
   =
   let call name args = mk_expr (AilEcall (mk_expr (AilEident (Sym.fresh name)), args)) in
@@ -368,6 +368,134 @@ let generate_c_fn_push_struct_name (struct_name : A.ail_identifier)
   =
   let fn_sym = Sym.fresh (push_type_prefix ^ Sym.pp_string struct_name) in
   (generate_c_fn_wrapper_name fn_sym)
+
+let generate_c_fn_push_struct_offsets
+  (struct_data : (A.ail_identifier *
+        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)))
+  : wrapper_function
+  (*
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "c");
+  lua_getfield(L, -1, "offsets");
+
+  lua_newtable(L);
+  lua_pushinteger(L, offsetof(struct s, a));
+  lua_setfield(L, -2, "a");
+  lua_pushinteger(L, offsetof(struct s, b));
+  lua_setfield(L, -2, "b");
+  lua_pushinteger(L, offsetof(struct s, s));
+  lua_setfield(L, -2, "s");
+
+  lua_setfield(L, -2, "s");
+  lua_pop(L, 3);
+  *)
+  =
+  let struct_name, struct_members = struct_data in
+
+  let loc = Cerb_location.unknown in
+  let attrs = CF.Annot.no_attributes in
+
+  let id_prefix = (generate_c_fn_push_struct_name struct_name) in
+  let id = Sym.fresh (id_prefix ^ "_offsets") in
+  
+  let call name args = mk_expr (AilEcall (mk_expr (AilEident (Sym.fresh name)), args)) in
+  let var_sym s = mk_expr (AilEident s) in
+  let int_const i = mk_expr (A.AilEconst (ConstantInteger (IConstant (Z.of_int i, Decimal, None)))) in
+  let str_expr s = mk_expr (A.AilEstr ( None, [ ( Locations.other __LOC__, [ s ]) ])) in
+  
+  let sym_L = Sym.fresh "L" in
+  let expr_L = var_sym sym_L in
+
+  let call_get_field index field = call "lua_get_field" [ expr_L; int_const(index); field ] in
+  let call_set_field index field = call "lua_set_field" [ expr_L; int_const(index); field ] in
+
+  let lua_state_bs, lua_state_ss = generate_c_get_lua_state in
+
+  let preamble = 
+    List.map
+    mk_stmt
+    [
+      lua_state_ss;
+      A.AilSexpr (call "lua_rawgeti" [expr_L; var_sym (Sym.fresh "LUA_REGISTRYINDEX"); call "lua_cn_get_runtime_ref" []]);
+      A.AilSexpr (call_get_field (-1) (str_expr "c"));
+      A.AilSexpr (call_get_field (-1) (str_expr "offsets"));
+    ]
+  in
+
+  let generate_lua_table_for_struct_offsets
+    (struct_members : Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)
+  =
+    let generate_table_entry_for_member (member_name, _ : (CF.Symbol.identifier * CF.Ctype.ctype)) =
+      let member_name_string = 
+        (CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier member_name)) 
+      in
+      let member_name_as_string_expr = mk_expr (AilEstr(None, [(loc, [ member_name_string ])])) in
+      let offset_of_expr = 
+        call "offsetof" 
+        [ 
+          mk_expr (AilEident (Sym.fresh ("struct " ^ Sym.pp_string struct_name)));
+          mk_expr (AilEident (Sym.fresh member_name_string));
+        ] 
+      in
+      [
+        mk_stmt (A.AilSexpr (call "lua_pushinteger" [ expr_L; offset_of_expr ]));
+        mk_stmt (A.AilSexpr (call_set_field (-2) member_name_as_string_expr ))
+      ]
+    in
+
+    let _, _, tag_defs = struct_members in
+    let member_names_and_types = 
+      match tag_defs with
+      | CF.Ctype.StructDef(tag_data_list, _) ->
+          List.map (fun (id, (_, _, _, ctype)) -> (id, ctype)) tag_data_list
+      | _ -> []
+    in
+
+    let new_table_stmt = mk_stmt (AilSexpr (call "lua_newtable" [ mk_expr (AilEident (sym_L)) ])) in
+
+    (
+      [ new_table_stmt ]
+      @ (List.concat (List.map generate_table_entry_for_member member_names_and_types))
+    )
+  in
+  let lua_table_push = generate_lua_table_for_struct_offsets struct_members in
+
+  let epilogue = 
+  List.map
+  mk_stmt
+  [
+    A.AilSexpr (call_set_field (-2) (str_expr (Sym.pp_string struct_name)));
+    A.AilSexpr (call "lua_pop" [ expr_L; int_const(3) ])
+  ] in
+
+  let body_stmts = 
+    preamble
+    @ lua_table_push
+    @ epilogue
+  in
+
+  let block_bindings = [
+    lua_state_bs;
+  ] in
+
+  let final_body = mk_stmt (A.AilSblock (block_bindings, body_stmts)) in
+
+  let decl =
+    ( id,
+      ( loc,
+        attrs,
+        A.(
+          Decl_function
+            ( false, ( CF.Ctype.no_qualifiers, CF.Ctype.void), [], false, false, false )) ) 
+    )
+  in
+
+  let def = 
+    (id, (loc, 0, attrs, [], (final_body))) 
+  in
+
+  (decl, def)
 
 let generate_c_fn_push_struct 
   (struct_data : (A.ail_identifier *

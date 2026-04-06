@@ -105,8 +105,17 @@ val generate_c_fn_wrapper_def
 Utility used to generate a function to push the size of a custom c struct onto the
 sizeof table that exists in CN Lua
 *)
-val generate_c_fn_struct_size
+val generate_c_fn_push_struct_size
     : A.ail_identifier ->
+    wrapper_function
+
+(*
+Utility used to generate a function to push the offsets of each member in a custom c struct onto the
+offsets table that exists in CN Lua
+*)
+val generate_c_fn_push_struct_offsets
+    : (A.ail_identifier *
+        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
     wrapper_function
 
 (*
