@@ -123,7 +123,7 @@ static int c_get_integer() {
 }
 
 static int c_get_float() {
-    float* addr = (float)luaL_checkinteger(lua_state, 1);
+    float* addr = (float*)luaL_checkinteger(lua_state, 1);
     lua_pushnumber(lua_state, *addr);
     return 1;
 }
@@ -170,6 +170,12 @@ void push_cn_c_tables() {
         lua_setfield(lua_state, -2, "pointer");
 
         lua_setfield(lua_state, -2, "sizeof");
+    }
+
+    // Offsets table
+    {
+        lua_newtable(lua_state);
+        lua_setfield(lua_state, -2, "offsets");
     }
 
     lua_pop(lua_state, 2);

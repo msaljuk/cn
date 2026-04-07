@@ -22,6 +22,7 @@ the entire thing falls under cn.
 local cn = {
     error_stack = {},
     frames = {},
+    locals = {}, -- proxy table
     ghost_state = {},
     spec_mode = {
         PRE  = 1,
@@ -141,6 +142,15 @@ function cn.ghost_state.postcondition_leak_check()
     cn.c.postcondition_leak_check();
 end
 
+function cn.owned(mode, base_addr, size, loop_ownership, reader)
+    cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
+    return reader(base_addr)
+end
+
+function cn.member_shift(base_addr, offset)
+    return (base_addr + offset)
+end
+
 --[[
 @Saljuk TODO: Get rid of this. This makes it easy for us
 to generate Lua functions within nested tables since we don't have 
@@ -155,5 +165,27 @@ mt.__index = function(t, k)
     return t[k]
 end
 setmetatable(cn, mt)
+
+--[[
+This allows us to set and get locals using cn.locals.X = Y instead of the more
+verbose function calls (i.e. cn.frames.set/get_local())
+]]--
+setmetatable(cn.locals, {
+    -- support assignments
+    __newindex = function(_, key, value)
+        cn.frames.set_local(key, value)
+    end,
+
+    -- support lookups
+    __index = function(_, key)
+        return cn.frames.get_local(key)
+    end,
+
+    -- support iteration over locals
+    __pairs = function(_)
+        local real_table = get_current_frame()
+        return next, real_table, nil
+    end
+})
 
 return cn
