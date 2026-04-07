@@ -15,6 +15,8 @@ type wrapper_functions = (wrapper_function list)
 type lua_cn_exec = (lua_statements * wrapper_functions * lua_expression)
 
 let get_expr_str expr = PP.pp_expr expr
+let get_type_prefix = "get_"
+let push_type_prefix = "push_"
 
 let cn_sym = LuaS.Symbol( "cn" )
 let cn_spec_mode_sym = LuaS.Symbol( "cn.spec_mode" )
@@ -24,8 +26,12 @@ let cn_error_stack_push_sym = LuaS.Symbol( "cn.error_stack.push" )
 let cn_error_stack_pop_sym  = LuaS.Symbol( "cn.error_stack.pop" )
 let cn_frames_push_fn_sym = LuaS.Symbol( "cn.frames.push_function" )
 let cn_locals_sym = LuaS.Symbol("cn.locals")
-let get_type_prefix = "get_"
-let push_type_prefix = "push_"
+let cn_owned_sym = LuaS.Symbol("cn.owned")
+let cn_member_shift_sym = LuaS.Symbol("cn.member_shift")
+let cn_sizeof_field_sym = LuaS.Symbol("cn.c.sizeof")
+let cn_offsets_field_sym = LuaS.Symbol("cn.c.offsets")
+let cn_get_field_prefix_sym = LuaS.Symbol("cn.c.get_")
+
 
 let get_empty_lua_expr : (lua_expression)
   = (LuaS.Nil)
@@ -90,11 +96,32 @@ let push_stmts_to_exec ((in_exec, stmts) : lua_cn_exec * lua_statements)
   let stmts_pre, wrappers, expr = in_exec in
   (stmts_pre @ stmts, wrappers, expr)
 
+let prepend_cn_local cn_var
+  : string
+=
+  (Pp_lua.pp_expr cn_locals_sym) ^ "." ^ (Sym.pp_string cn_var)
+
+let stmt_to_string lua_statement
+ : string
+= 
+  Pp_lua.pp_stmt lua_statement
+
+let expr_to_string lua_expression
+ : string
+= 
+  Pp_lua.pp_expr lua_expression
+
 let debug_print_stmts (stmts : lua_statements)
 =
   (List.iter
   (fun (x : lua_statement) -> (print_endline (PP.pp_stmt x)))
   stmts)
+
+let debug_print_exprs (exprs : lua_expressions)
+=
+  (List.iter
+  (fun (x : lua_expression) -> (print_endline (PP.pp_expr x)))
+  exprs)
 
 let generate_c_fn_wrapper_name (c_fn_name : Sym.t)
  = "lua_cn_" ^ (Sym.pp_string c_fn_name)
@@ -697,6 +724,55 @@ let generate_c_fn_get_struct
 
   (decl, def)
 
+let generate_lua_ctype_symbol (ctype : CF.Ctype.ctype)
+  : lua_expression
+=
+  let sym = 
+    begin match rm_ctype ctype with
+      | CF.Ctype.Basic (x) ->
+        begin match x with 
+          | CF.Ctype.Integer (i_type) -> 
+            begin match i_type with
+              | CF.Ctype.Bool -> LuaS.Symbol("bool")
+              | CF.Ctype.Char -> LuaS.Symbol("char")
+              | CF.Ctype.Signed (_) | CF.Ctype.Unsigned (_)
+                -> LuaS.Symbol("int")
+              | _ -> exit 2
+            end
+          | CF.Ctype.Floating (f_type) ->
+            begin match f_type with
+              | CF.Ctype.RealFloating (rf_type) ->
+                begin match rf_type with
+                  | CF.Ctype.Float -> LuaS.Symbol("float")
+                  (*@saljuk TODO: Add support on c side *)
+                  (**| CF.Ctype.Double | CF.Ctype.LongDouble
+                      -> LuaS.Symbol("double")*)
+                  | _ -> exit 2
+                end
+            end
+        end 
+      | CF.Ctype.Pointer (_, _) -> LuaS.Symbol("pointer")
+      | CF.Ctype.Struct (s_sym) -> 
+          LuaS.Symbol(Sym.pp_string s_sym)
+      | _ -> exit 2
+    end
+  in
+
+  (sym)
+
+let generate_lua_ctype_sizeof (ctype : CF.Ctype.ctype)
+  : lua_expression
+=
+  LuaS.Field(cn_sizeof_field_sym, generate_lua_ctype_symbol ctype)
+
+let generate_lua_ctype_get (ctype : CF.Ctype.ctype)
+  : lua_expression
+=
+  let get_str = 
+    Pp_lua.pp_expr(cn_get_field_prefix_sym) ^ Pp_lua.pp_expr(generate_lua_ctype_symbol ctype) 
+  in
+  LuaS.Symbol(get_str)
+
 let generate_lua_filename basefile 
   = (Filename.remove_extension basefile) ^ ".lua"
 
@@ -714,6 +790,9 @@ let generate_lua_push_frame_fn_name (c_fn_name : Sym.t)
 
 let generate_lua_assert_fn_name (func_id : int)
   = Pp_lua.pp_expr (LuaS.Field(cn_asserts_sym, LuaS.Symbol("inst" ^ string_of_int func_id)))
+
+let generate_lua_owned_fn_name
+  = Pp_lua.pp_expr (cn_owned_sym)
 
 let generate_lua_runtime_core_req
   (* local cn = require("lua_cn_runtime_core") *)
@@ -858,6 +937,19 @@ let generate_lua_cn_return (expr : lua_expression) (is_unit : bool)
     LuaS.Return(expr)
   ) else ( LuaS.Return(LuaS.Nil) )
 
+let generate_lua_cn_resource sym ctype in_exec
+  : lua_cn_exec
+=
+  let exec, expr = pop_expr_from_exec in_exec in
+
+  let stmt = match rm_ctype ctype with
+    | CF.Ctype.Void -> LuaS.SExpr(expr)
+    | _ -> 
+      LuaS.Assign(Sym.pp_string sym, expr)
+  in
+
+  (push_stmts_to_exec (exec, [ stmt ]))
+
 (* ---------------------------------- *)
 (*         Cn-to-Lua Terms            *)
 (* ---------------------------------- *)
@@ -900,3 +992,25 @@ let cn_to_lua_binop (expr_a, expr_b, binop)
     | IT.EQ | _ -> LuaS.Call("cn.equals", [ expr_a; expr_b ])
   in
   (lua_expression)
+
+let cn_to_lua_member_shift 
+  (struct_expr : lua_expression)
+  (struct_tag : CF.Ctype.union_tag)
+  (member_tag : CF.Ctype.union_tag)
+  : lua_expression
+=
+let struct_tag_sym = LuaS.Symbol (Sym.pp_string struct_tag) in
+let member_tag_sym = LuaS.Symbol (Sym.pp_string member_tag) in
+let offsets_field_expr = LuaS.Field(cn_offsets_field_sym, LuaS.Field(struct_tag_sym, member_tag_sym)) in
+
+LuaS.Call(Pp_lua.pp_expr cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
+
+let cn_to_lua_apply sym in_execs
+  : (lua_cn_exec)
+= 
+  let execs_and_exprs = List.map pop_expr_from_exec in_execs in
+  let execs, exprs = List.split execs_and_exprs in
+  let apply_expr = LuaS.Call(Sym.pp_string sym, exprs) in
+  let merged_execs = concat execs in
+  let final_exec = push_expr_to_exec (merged_execs, apply_expr) in
+  (final_exec)

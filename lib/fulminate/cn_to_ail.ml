@@ -111,8 +111,7 @@ let create_id_from_sym ?(lowercase = false) sym =
   let str = if lowercase then String.lowercase_ascii str else str in
   let here = Locations.other __LOC__ in
   Id.make here str
-
-
+  
 let create_sym_from_id id = Sym.fresh (Id.get_string id)
 
 let ail_null = A.(AilEconst (ConstantInteger (IConstant (Z.zero, Decimal, None))))
@@ -1476,7 +1475,6 @@ let rec cn_to_ail_expr_aux
         CnL.concat l,
         mk_expr res_ident)
   | MemberShift (it, tag, member) ->
-    let membershift_macro_sym = Sym.fresh "cn_member_shift" in
     let bs, ss, ls, e =
       cn_to_ail_expr_aux
         filename
@@ -1488,16 +1486,25 @@ let rec cn_to_ail_expr_aux
         it
         PassBack
     in
-    let ail_fcall =
-      A.(
-        AilEcall
-          ( mk_expr (AilEident membershift_macro_sym),
-            [ e;
-              mk_expr (AilEident tag);
-              mk_expr (AilEident (create_sym_from_id member))
-            ] ))
-    in
-    dest d spec_mode_opt (bs, ss, ls, mk_expr ail_fcall)
+    (match RC.get_runtime() with
+      | RC.C ->
+        let membershift_macro_sym = Sym.fresh "cn_member_shift" in
+        let ail_fcall =
+          A.(
+            AilEcall
+              ( mk_expr (AilEident membershift_macro_sym),
+                [ e;
+                  mk_expr (AilEident tag);
+                  mk_expr (AilEident (create_sym_from_id member))
+                ] ))
+        in
+        dest d spec_mode_opt (bs, ss, ls, mk_expr ail_fcall)
+      | RC.Lua ->
+        let ls', field_expr = CnL.pop_expr_from_exec ls in
+        let member_shift_expr = CnL.cn_to_lua_member_shift field_expr tag (create_sym_from_id member) in
+        let ls'' = CnL.push_expr_to_exec (ls', member_shift_expr) in
+        dest d spec_mode_opt (bs, ss, ls'', mk_expr ail_null)
+    );
   | ArrayShift { base; ct; index } ->
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
@@ -1677,10 +1684,17 @@ let rec cn_to_ail_expr_aux
              PassBack)
         ts
     in
-    let bs, ss, ls, es = list_split_four bs_ss_ls_es in
-    let f = mk_expr A.(AilEident sym) in
-    let ail_expr_ = A.AilEcall (f, es) in
-    dest d spec_mode_opt (List.concat bs, List.concat ss, CnL.concat ls, mk_expr ail_expr_)
+    (
+      match RC.get_runtime() with
+        | RC.C ->
+          let bs, ss, _, es = list_split_four bs_ss_ls_es in
+          let f = mk_expr A.(AilEident sym) in
+          let ail_expr_ = A.AilEcall (f, es) in
+          dest d spec_mode_opt (List.concat bs, List.concat ss, CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
+        | RC.Lua ->
+          let _, _, ls, _ = list_split_four bs_ss_ls_es in
+          dest d spec_mode_opt ([], [], CnL.cn_to_lua_apply sym ls, mk_expr ail_null)
+    );
   | Let ((var, t1), body) ->
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
@@ -3111,12 +3125,25 @@ let cn_to_ail_resource
       (ctype, snd pred_def'.oarg)
   in
   let generate_owned_fn_name ~without_ownership_checking sct =
-    let ct_str = str_of_ctype (Sctypes.to_ctype sct) in
-    let ct_str = String.concat "_" (String.split_on_char ' ' ct_str) in
-    let fn_prefix = if without_ownership_checking then "deref_" else "owned_" in
-    fn_prefix ^ ct_str
+    match RC.get_runtime() with
+      | RC.C ->
+        let ct_str = str_of_ctype (Sctypes.to_ctype sct) in
+        let ct_str = String.concat "_" (String.split_on_char ' ' ct_str) in
+        let fn_prefix = if without_ownership_checking then "deref_" else "owned_" in
+        fn_prefix ^ ct_str
+      | RC.Lua ->
+        CnL.generate_lua_owned_fn_name
   in
-  let enum_sym = sym_of_spec_mode_opt spec_mode_opt in
+  let enum_sym = 
+    match RC.get_runtime() with
+      | RC.C ->
+        sym_of_spec_mode_opt spec_mode_opt
+      | RC.Lua ->
+        match spec_mode_opt with
+          | Some spec_mode ->
+            Sym.fresh ("cn.spec_mode." ^ spec_mode_to_str spec_mode)
+          | None -> exit 2
+  in
   let it_zero_const = IT.(IT (Const (Z (Z.of_int 0)), BT.Unit, Cerb_location.unknown)) in
   let ail_zero_const_expr_ =
     A.(AilEconst (ConstantInteger (IConstant (Z.of_int 0, Decimal, None))))
@@ -3128,28 +3155,64 @@ let cn_to_ail_resource
     let rhs, bs, ss, ls =
       match p.name with
       | Owned (sct, _) ->
-        ownership_ctypes := Sctypes.to_ctype sct :: !ownership_ctypes;
-        let owned_fn_name = generate_owned_fn_name ~without_ownership_checking sct in
-        (* Hack with enum as sym *)
-        let enum_val_get = IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown)) in
-        let loop_ownership_arg =
-          match loop_ownership_sym_opt with
-          | Some loop_ownership_sym ->
-            IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
-          | None -> it_zero_const
-        in
-        let fn_call_it =
-          IT.IT
-            ( Apply
-                (Sym.fresh owned_fn_name, [ p.pointer; enum_val_get; loop_ownership_arg ]),
-              BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
-              Cerb_location.unknown )
-        in
-        let bs', ss', ls', e' =
-          cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
-        in
-        let binding = create_binding sym (bt_to_ail_ctype bt) in
-        (e', binding :: bs', ss', ls')
+        (match RC.get_runtime() with
+          | RC.C ->
+            ownership_ctypes := Sctypes.to_ctype sct :: !ownership_ctypes;
+            let owned_fn_name = generate_owned_fn_name ~without_ownership_checking sct in
+            (* Hack with enum as sym *)
+            let enum_val_get = IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown)) in
+            let loop_ownership_arg =
+              match loop_ownership_sym_opt with
+              | Some loop_ownership_sym ->
+                IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
+              | None -> it_zero_const
+            in
+            let fn_call_it =
+              IT.IT
+                ( Apply
+                    (Sym.fresh owned_fn_name, [ p.pointer; enum_val_get; loop_ownership_arg ]),
+                  BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
+                  Cerb_location.unknown )
+            in
+            let bs', ss', ls', e' =
+              cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
+            in
+            let binding = create_binding sym (bt_to_ail_ctype bt) in
+            (e', binding :: bs', ss', ls')
+          | RC.Lua ->
+            let owned_fn_name = generate_owned_fn_name ~without_ownership_checking sct in
+            let enum_val_get = IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown)) in
+
+            let sizeof_term =
+              let sizeof_expr = CnL.generate_lua_ctype_sizeof ctype in
+              IT.(IT (Sym (Sym.fresh (CnL.expr_to_string sizeof_expr)), BT.Unit, Cerb_location.unknown))
+            in
+
+            let reader_term =
+              let reader_expr = CnL.generate_lua_ctype_get ctype in
+              IT.(IT (Sym (Sym.fresh (CnL.expr_to_string reader_expr)), BT.Unit, Cerb_location.unknown))
+            in
+
+            let loop_ownership_arg =
+              match loop_ownership_sym_opt with
+              | Some loop_ownership_sym ->
+                IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
+              | None -> 
+                IT.(IT (Sym (Sym.fresh "nil"), BT.Unit, Cerb_location.unknown))
+            in
+            let fn_call_it =
+              IT.IT
+                ( Apply
+                    (Sym.fresh owned_fn_name, [ enum_val_get; p.pointer; sizeof_term; loop_ownership_arg; reader_term ]),
+                  BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
+                  Cerb_location.unknown )
+            in
+            let _, _, ls', _ =
+              cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
+            in
+
+            (mk_expr ail_null, [], [], ls')
+        );
       | PName pname ->
         let bs, ss, ls, es =
           list_split_four
@@ -3172,12 +3235,20 @@ let cn_to_ail_resource
         let binding = create_binding sym (bt_to_ail_ctype ~pred_sym:(Some pname) bt) in
         (mk_expr fcall, binding :: List.concat bs, List.concat ss, CnL.concat ls)
     in
-    let s_decl =
-      match rm_ctype ctype with
-      | C.Void -> A.(AilSexpr rhs)
-      | _ -> A.(AilSdeclaration [ (sym, Some rhs) ])
-    in
-    (b @ bs, s @ ss @ [ s_decl ], CnL.concat [ l; ls ])
+
+    (
+      match RC.get_runtime() with
+      | RC.C ->
+        let s_decl =
+        match rm_ctype ctype with
+          | C.Void -> A.(AilSexpr rhs)
+          | _ -> A.(AilSdeclaration [ (sym, Some rhs) ])
+        in
+        (b @ bs, s @ ss @ [ s_decl ], CnL.concat [ l; ls ])
+      | RC.Lua ->
+        let final_exec = CnL.generate_lua_cn_resource sym ctype ls in
+        ([], [], final_exec)
+    );
   | Request.Q q ->
     (*
        Input is expr of the form:
@@ -4718,7 +4789,11 @@ let rec cn_to_ail_lat_2
   | LAT.Define ((name, it), _info, lat) ->
     let spec_mode_opt = Some Pre in
     let ctype = bt_to_ail_ctype (IT.get_bt it) in
-    let new_name = generate_sym_with_suffix ~suffix:"_cn" name in
+    let new_name = 
+      match RC.get_runtime() with
+        | RC.C -> generate_sym_with_suffix ~suffix:"_cn" name
+        | RC.Lua -> Sym.fresh (CnL.prepend_cn_local name)
+    in
     let new_lat =
       ESE.fn_largs_and_body_subst (ESE.sym_subst (name, IT.get_bt it, new_name)) lat
     in
@@ -4758,7 +4833,11 @@ let rec cn_to_ail_lat_2
         lat
     in
     let is_used = Sym.Set.mem name free_vars_in_rest in
-    let new_name = generate_sym_with_suffix ~suffix:"_cn" name in
+    let new_name = 
+      match RC.get_runtime() with
+        | RC.C -> generate_sym_with_suffix ~suffix:"_cn" name
+        | RC.Lua -> Sym.fresh (CnL.prepend_cn_local name)
+    in
     let new_lat = ESE.fn_largs_and_body_subst (ESE.sym_subst (name, bt, new_name)) lat in
     (match RC.get_runtime() with
       | RC.C ->
@@ -4820,7 +4899,7 @@ let rec cn_to_ail_lat_2
               globals
               preds
               c_return_type
-              lat
+              new_lat
           in
           let merged_ls = 
             [ [ upd_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] 
@@ -4988,7 +5067,7 @@ let rec cn_to_ail_pre_post_aux
       let cn_sym = 
         match RC.get_runtime() with 
           | RC.C -> generate_sym_with_suffix ~suffix:"_cn" sym
-          | RC.Lua -> sym
+          | RC.Lua -> Sym.fresh (CnL.prepend_cn_local sym)
       in
       let cn_ctype = bt_to_ail_ctype bt in
       let binding = create_binding cn_sym cn_ctype in

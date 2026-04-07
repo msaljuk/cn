@@ -32,5 +32,6 @@ let rec pp_stmt = function
     | LuaS.FunctionCall (fn, args) ->
         pp_expr (LuaS.Call(fn, args))
     | LuaS.Return (expr) ->
-        "return " ^ pp_expr (expr) 
+        "return " ^ pp_expr (expr)
+    | LuaS.SExpr (expr) -> pp_expr expr
     | _ -> ""
