@@ -4092,7 +4092,11 @@ let rec cn_to_ail_post_aux
   = 
   function
   | LRT.Define ((name, it), (_loc, _), t) ->
-    let new_name = generate_sym_with_suffix ~suffix:"_cn" name in
+    let new_name = 
+      match RC.get_runtime() with
+        | RC.C -> generate_sym_with_suffix ~suffix:"_cn" name
+        | RC.Lua -> Sym.fresh (CnL.prepend_cn_local name)
+    in
     let new_lrt =
       LogicalReturnTypes.subst (ESE.sym_subst (name, IT.get_bt it, new_name)) t
     in
@@ -4115,10 +4119,13 @@ let rec cn_to_ail_post_aux
   | LRT.Resource ((name, (re, bt)), (loc, _str_opt), t) ->
     let free_vars_in_rest = LRT.free_vars t in
     let is_used = Sym.Set.mem name free_vars_in_rest in
-    let new_name = generate_sym_with_suffix ~suffix:"_cn" name in
+    let new_name = 
+      match RC.get_runtime() with
+        | RC.C -> generate_sym_with_suffix ~suffix:"_cn" name
+        | RC.Lua -> Sym.fresh (CnL.prepend_cn_local name)
+    in
     let new_lrt = LogicalReturnTypes.subst (ESE.sym_subst (name, bt, new_name)) t in
-    let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
-    let pop_s = generate_cn_pop_msg_info in
+
     let b1, s1, l1 =
       cn_to_ail_resource
         ~is_used
@@ -4143,19 +4150,26 @@ let rec cn_to_ail_post_aux
         without_ownership_checking
         new_lrt
     in
-    (b1 @ b2, upd_s @ s1 @ pop_s @ s2, CnL.concat [l1; l2])
+
+    (match RC.get_runtime() with
+      | RC.C ->
+        let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
+        let pop_s = generate_cn_pop_msg_info in
+        (b1 @ b2, upd_s @ s1 @ pop_s @ s2, CnL.get_empty_lua_cn_exec)
+      | RC.Lua ->
+        let upd_l = CnL.generate_lua_cn_error_stack_push (gather_error_message_from_loc loc) in
+        let pop_l = CnL.generate_lua_cn_error_stack_pop in
+
+        let final_ls = 
+            [ [ upd_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] 
+            @ [ l1 ]
+            @ [ [ pop_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] 
+            @ [ l2 ] in
+
+        ([], [], CnL.concat final_ls)
+    );
   | LRT.Constraint (lc, (loc, _str_opt), t) ->
     let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
-    let ss =
-      match generate_cn_assert e spec_mode_opt with
-      | Some assert_stmt ->
-        let upd_s =
-          generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
-        in
-        let pop_s = generate_cn_pop_msg_info in
-        upd_s @ s @ (assert_stmt :: pop_s)
-      | None -> s
-    in
     let b2, s2, l2 =
       cn_to_ail_post_aux
         filename
@@ -4166,7 +4180,29 @@ let rec cn_to_ail_post_aux
         without_ownership_checking
         t
     in
-    (b1 @ b2, ss @ s2, CnL.concat [l1; l2])
+    (
+      begin match RC.get_runtime() with
+      | RC.C ->
+        let ss =
+          begin match generate_cn_assert e spec_mode_opt with
+            | Some assert_stmt ->
+              let upd_s =
+                generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
+              in
+              let pop_s = generate_cn_pop_msg_info in
+              upd_s @ s @ (assert_stmt :: pop_s)
+            | None -> s
+          end
+        in
+        (b1 @ b2, ss @ s2, CnL.get_empty_lua_cn_exec)
+      | RC.Lua ->
+        let error_message = gather_error_message_from_loc loc in
+        let _, exec_with_assert = 
+          CnL.generate_lua_cn_assert error_message l1 (sym_of_spec_mode_opt spec_mode_opt)
+        in
+        ([], [], CnL.concat [ exec_with_assert; l2 ])
+      end
+    )
   | LRT.I -> ([], [], CnL.get_empty_lua_cn_exec)
 
 
@@ -4941,7 +4977,7 @@ let rec cn_to_ail_lat_2
 
         let _, _, l, _ = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
 
-        let c_wrapper_calls, exec_with_assert = 
+        let _, exec_with_assert = 
           CnL.generate_lua_cn_assert error_message l (sym_of_spec_mode_opt spec_mode_opt)
         in
 
@@ -4957,7 +4993,7 @@ let rec cn_to_ail_lat_2
             c_return_type
             lat
         in
-        prepend_to_precondition ail_executable_spec ([], c_wrapper_calls, exec_with_assert)
+        prepend_to_precondition ail_executable_spec ([], [], exec_with_assert)
     );
   (* Postcondition *)
   | LAT.I (post, (stats, loops)) ->
