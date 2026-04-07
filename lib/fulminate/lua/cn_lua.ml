@@ -434,8 +434,8 @@ let generate_c_fn_push_struct_offsets
   let sym_L = Sym.fresh "L" in
   let expr_L = var_sym sym_L in
 
-  let call_get_field index field = call "lua_get_field" [ expr_L; int_const(index); field ] in
-  let call_set_field index field = call "lua_set_field" [ expr_L; int_const(index); field ] in
+  let call_get_field index field = call "lua_getfield" [ expr_L; int_const(index); field ] in
+  let call_set_field index field = call "lua_setfield" [ expr_L; int_const(index); field ] in
 
   let lua_state_bs, lua_state_ss = generate_c_get_lua_state in
 
@@ -629,7 +629,7 @@ let generate_c_fn_push_struct
 let generate_c_fn_get_struct
   (struct_data : (A.ail_identifier *
         (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)))
-  : wrapper_function
+  : (CF.GenTypes.genTypeCategory A.statement * wrapper_function)
   (*
   struct lua_State* L = lua_get_state();
   intptr_t ptr = luaL_checkinteger(L, 1);
@@ -722,9 +722,59 @@ let generate_c_fn_get_struct
     (id, (loc, 0, attrs, [ ], (final_body))) 
   in
 
+  (*lua_cn_register_c_func("get_s", lua_cn_get_s);*)
+  let register_struct_stmt =
+    let register_fn_expr = mk_expr (A.AilEident (Sym.fresh "lua_cn_register_c_func")) in
+    let fn_expr = mk_expr (A.AilEstr ( None, [ (loc, [ Sym.pp_string fn_sym ] ) ])) in
+    let get_struct_expr = mk_expr (A.AilEident (id)) in
+
+    mk_stmt (A.AilSexpr(mk_expr (A.AilEcall (register_fn_expr, [ fn_expr; get_struct_expr ]))))
+  in
+
+  (register_struct_stmt, (decl, def))
+
+let generate_c_fn_push_struct_metadata 
+  (get_bind_stmts : CF.GenTypes.genTypeCategory A.statement list)
+  (sizeof_decls : A.sigma_declaration list)
+  (offset_decls : A.sigma_declaration list)
+  : wrapper_function
+=
+  let make_fn_call_stmt (x : A.sigma_declaration) =
+     mk_stmt (make_fn_call (x)) 
+  in
+
+  let gets_block_stmts = mk_stmt (A.AilSblock ([], get_bind_stmts)) in
+  let sizeof_block_stmts = mk_stmt (A.AilSblock ([], List.map make_fn_call_stmt sizeof_decls)) in
+  let offset_block_stmts = mk_stmt (A.AilSblock ([], List.map make_fn_call_stmt offset_decls)) in
+  let body_stmts = 
+    [ 
+      gets_block_stmts;
+      sizeof_block_stmts;
+      offset_block_stmts
+    ]
+  in
+
+  let loc = Cerb_location.unknown in
+  let attrs = CF.Annot.no_attributes in
+  let id = Sym.fresh "lua_cn_push_runtime_metadata" in
+
+  let decl =
+    ( id,
+      ( loc,
+        attrs,
+        A.(
+          Decl_function
+            ( false, ( CF.Ctype.no_qualifiers, CF.Ctype.void), [], false, false, false )) ) 
+    )
+  in
+
+  let def = 
+    (id, (loc, 0, attrs, [], (mk_stmt (A.AilSblock ([  ], body_stmts))))) 
+  in
+
   (decl, def)
 
-let generate_lua_ctype_symbol (ctype : CF.Ctype.ctype)
+  let generate_lua_ctype_symbol (ctype : CF.Ctype.ctype)
   : lua_expression
 =
   let sym = 
@@ -800,6 +850,10 @@ let generate_lua_runtime_core_req
         get_expr_str cn_sym,
         LuaS.Call( "require", [ LuaS.String("lua_cn_runtime_core") ] )
       ))
+
+let generate_lua_runtime_return
+  (* return cn *)
+  = (LuaS.Return(cn_sym))
 
 let generate_lua_push_frame_fn
   (lua_fn_name : string)

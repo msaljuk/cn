@@ -5328,7 +5328,7 @@ let cn_to_ail_pre_post
                     
                     (
                       List.map (fun sym ->
-                        mk_expr (A.AilEunary (Address, mk_expr (A.AilEident sym)) )
+                        mk_expr (A.AilEident(sym))
                       ) func_param_syms
                     )
                   )

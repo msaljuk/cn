@@ -108,7 +108,7 @@ val generate_c_fn_wrapper_def
     wrapper_function
 
 (*
-Utility used to generate a function to push the size of a custom c struct onto the
+Utility used to generate a c function to push the size of a custom c struct onto the
 sizeof table that exists in CN Lua
 *)
 val generate_c_fn_push_struct_size
@@ -116,7 +116,7 @@ val generate_c_fn_push_struct_size
     wrapper_function
 
 (*
-Utility used to generate a function to push the offsets of each member in a custom c struct onto the
+Utility used to generate a c function to push the offsets of each member in a custom c struct onto the
 offsets table that exists in CN Lua
 *)
 val generate_c_fn_push_struct_offsets
@@ -125,7 +125,7 @@ val generate_c_fn_push_struct_offsets
     wrapper_function
 
 (*
-Utility used to generate a function to push any custom C structs as a Lua table onto the
+Utility used to generate a c function to push any custom C structs as a Lua table onto the
 stack.
 *)
 val generate_c_fn_push_struct
@@ -134,12 +134,22 @@ val generate_c_fn_push_struct
     wrapper_function
 
 (*
-Utility used to generate a function that can be called from Lua to get a C struct as 
+Utility used to generate a c function that can be called from Lua to get a C struct as 
 a Lua table
 *)
 val generate_c_fn_get_struct
     : (A.ail_identifier *
         (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
+    (CF.GenTypes.genTypeCategory A.statement * wrapper_function)
+
+(*
+Utility used to generate a c function that can be called to push all custom struct
+metadata to the lua cn runtime
+*)
+val generate_c_fn_push_struct_metadata
+    : CF.GenTypes.genTypeCategory A.statement list ->
+    A.sigma_declaration list ->
+    A.sigma_declaration list ->
     wrapper_function
 
 val generate_lua_ctype_sizeof
@@ -184,6 +194,11 @@ val generate_lua_owned_fn_name : string
 Utility used to generate the require for the Lua core runtime.
 *)
 val generate_lua_runtime_core_req : LuaS.stmt
+
+(* 
+Utility used to generate the return for the Lua core runtime.
+*)
+val generate_lua_runtime_return : LuaS.stmt
 
 (*
 Utility used to generate a Lua function that pushes a bunch of 

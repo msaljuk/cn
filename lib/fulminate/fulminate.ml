@@ -613,7 +613,7 @@ let main
     generate_ownership_functions without_ownership_checking !Cn_to_ail.ownership_ctypes
   in
   let ordered_ail_tag_defs = order_ail_tag_definitions sigm.tag_definitions in
-  let struct_wrapper_decs, struct_wrapper_defs = generate_struct_wrappers ordered_ail_tag_defs in
+  let struct_metadata_fn_call, (struct_wrapper_decs, struct_wrapper_defs) = generate_struct_metadata ordered_ail_tag_defs in
   let c_tag_defs = generate_c_tag_def_strs ordered_ail_tag_defs in
   let cn_converted_struct_defs = generate_cn_versions_of_structs ordered_ail_tag_defs in
   let record_fun_defs, record_fun_decls = Records.generate_c_record_funs sigm in
@@ -820,6 +820,7 @@ let main
           ~experimental_ownership_stack_mode
           ?max_bump_blocks
           ?bump_block_size
+          struct_metadata_fn_call
           cabs_tunit
           sigm
           prog5
@@ -891,6 +892,9 @@ let main
         output_to_oc
           lua_oc
           executable_spec.alt_file;
+
+        output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_return ^ "\n" ];
+        
         close_out lua_oc;
     | _ -> ();
   );
