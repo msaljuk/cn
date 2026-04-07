@@ -823,8 +823,10 @@ let generate_lua_ctype_get (ctype : CF.Ctype.ctype)
   in
   LuaS.Symbol(get_str)
 
-let generate_lua_filename basefile 
-  = (Filename.remove_extension basefile) ^ ".lua"
+let generate_lua_filename output_dir basefile 
+  = 
+  let filename = (Filename.remove_extension basefile) ^ ".lua" in
+  Filename.concat output_dir filename
 
 let generate_lua_fn_prefix (c_fn_name : Sym.t)
   = (Pp_lua.pp_expr cn_sym) ^ (".") ^ (Sym.pp_string c_fn_name) ^ (".")

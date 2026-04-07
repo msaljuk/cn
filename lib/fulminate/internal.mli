@@ -100,6 +100,7 @@ val has_main : GenTypes.genTypeCategory AilSyntax.sigma -> bool
 
 val generate_global_assignments
   :  string ->
+  string ->
   ?exec_c_locs_mode:bool ->
   ?experimental_ownership_stack_mode:bool ->
   ?max_bump_blocks:int ->

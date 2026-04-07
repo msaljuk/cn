@@ -162,9 +162,10 @@ val generate_lua_ctype_get
 
 (* 
 Utility used to generate the filename of the Lua file (with .Lua extension)
-based on the given C filename.
+based on the given output directory and C filename.
 *)
 val generate_lua_filename :
+    string ->
     string ->
     string
 

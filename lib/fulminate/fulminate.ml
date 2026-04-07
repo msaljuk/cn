@@ -816,6 +816,7 @@ let main
       let global_ownership_init_pair =
         generate_global_assignments
           basefile
+          output_dir
           ~exec_c_locs_mode
           ~experimental_ownership_stack_mode
           ?max_bump_blocks
@@ -884,7 +885,8 @@ let main
         let open Lua.Pp_lua in
 
         let lua_filename = 
-          get_filename_with_prefix output_dir (CnL.generate_lua_filename basefile) in
+          CnL.generate_lua_filename output_dir basefile in
+
         let lua_oc = Stdlib.open_out lua_filename in
 
         output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];

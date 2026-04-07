@@ -753,6 +753,7 @@ let has_main (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =
 
 let generate_global_assignments
       basefile
+      output_dir
       ?(exec_c_locs_mode = false)
       ?(experimental_ownership_stack_mode = false)
       ?(max_bump_blocks=0)
@@ -847,7 +848,7 @@ let generate_global_assignments
                     A.AilEstr ( 
                       None,
                         [
-                          (Locations.other __LOC__, ["./" ^ filename])
+                          (Locations.other __LOC__, [filename])
                         ]
                       )
                     ) 
@@ -876,7 +877,7 @@ let generate_global_assignments
                 (lua_load_runtime_stmt)
               in
 
-              let lua_filename = CnL.generate_lua_filename basefile in
+              let lua_filename = CnL.generate_lua_filename output_dir basefile in
 
               ([
                 gen_void_call("lua_init"); 
