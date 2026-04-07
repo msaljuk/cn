@@ -260,6 +260,11 @@ val cn_to_lua_binop
     : (lua_expression * lua_expression * IT.binop) ->
     lua_expression
 
+val cn_to_lua_struct_member
+    : lua_cn_exec ->
+    Id.t ->
+    lua_cn_exec
+
 val cn_to_lua_member_shift
     : lua_expression ->
     CF.Ctype.union_tag ->

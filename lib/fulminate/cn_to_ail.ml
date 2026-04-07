@@ -1271,8 +1271,15 @@ let rec cn_to_ail_expr_aux
         t
         PassBack
     in
-    let ail_expr_ = A.(AilEmemberofptr (e, m)) in
-    dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+    (
+      match RC.get_runtime() with
+        | RC.C ->
+          let ail_expr_ = A.(AilEmemberofptr (e, m)) in
+          dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+        | RC.Lua ->
+          let l' = CnL.cn_to_lua_struct_member l m in
+          dest d spec_mode_opt ([], [], l', mk_expr ail_null)
+    )
   | StructUpdate ((struct_term, m), new_val) ->
     let struct_tag =
       match IT.get_bt struct_term with

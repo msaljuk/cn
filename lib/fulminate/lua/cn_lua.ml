@@ -993,6 +993,18 @@ let cn_to_lua_binop (expr_a, expr_b, binop)
   in
   (lua_expression)
 
+let cn_to_lua_struct_member
+  (in_exec : lua_cn_exec)
+  (member_term : Id.t)
+  : lua_cn_exec
+=
+  let exec, struct_expr = pop_expr_from_exec in_exec in
+  let member_term_string = 
+    (CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier member_term)) 
+  in
+  let struct_member_expr = LuaS.Field(struct_expr, LuaS.Symbol(member_term_string)) in
+  push_expr_to_exec (exec, struct_member_expr)
+
 let cn_to_lua_member_shift 
   (struct_expr : lua_expression)
   (struct_tag : CF.Ctype.union_tag)
