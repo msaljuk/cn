@@ -6,14 +6,16 @@ CFLAGS ?= -O2
 OPAM_SWITCH_PREFIX ?= $(shell opam var prefix)
 CN_RUNTIME := $(OPAM_SWITCH_PREFIX)/lib/cn/runtime
 
-LUA_SRC_DIR := ../src
-
 INCLUDES := \
-	-I$(LUA_SRC_DIR) \
+	-I$(CN_RUNTIME)/lua/cn \
+	-I$(CN_RUNTIME)/lua/src \
 	-I$(CN_RUNTIME)/include
 
 OBJS := lua_wrappers.o
 LIB  := lua_wrappers.a
+
+LUA_CN_PATH_VAL := $(CN_RUNTIME)/lua/cn/?.lua
+CFLAGS += -DCN_LUA_PATH='"$(LUA_CN_PATH_VAL)"'
 
 all: $(LIB)
 

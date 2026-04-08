@@ -238,8 +238,8 @@ void lua_cn_load_runtime(
     lua_getfield(lua_state, -1, "path"); // get package.path
     const char *current_path = lua_tostring(lua_state, -1);
     lua_pop(lua_state, 1);
-    char new_path[1024];
-    snprintf(new_path, sizeof(new_path), "%s;%s/?.lua", current_path, "./runtime/lua/cn");
+    char new_path[2048];
+    snprintf(new_path, sizeof(new_path), "%s;%s", CN_LUA_PATH, current_path);
     lua_pushstring(lua_state, new_path);
     lua_setfield(lua_state, -2, "path");
     lua_pop(lua_state, 1);

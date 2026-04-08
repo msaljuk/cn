@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail -o noclobber
 
-USAGE="USAGE: $0 -h\n       $0 [-nqu] FILE.c"
+USAGE="USAGE: $0 -h\n       $0 [-nqul] FILE.c"
 
 function echo_and_err() {
     printf "$1\n"
@@ -10,8 +10,9 @@ function echo_and_err() {
 
 QUIET=""
 NO_CHECK_OWNERSHIP=""
+RUNTIME=""
 
-while getopts "hnqu" flag; do
+while getopts "hnqul" flag; do
  case "$flag" in
    h)
    printf "${USAGE}"
@@ -26,6 +27,9 @@ while getopts "hnqu" flag; do
    u)
    export UBSAN_OPTIONS=halt_on_error=1
    export CFLAGS="-fsanitize=undefined ${CFLAGS:-}"
+   ;;
+   l)
+   RUNTIME="--experimental-lua-runtime"
    ;;
    \?)
    echo_and_err "${USAGE}"
@@ -45,11 +49,23 @@ RUNTIME_PREFIX="$OPAM_SWITCH_PREFIX/lib/cn/runtime"
 [ -d "${RUNTIME_PREFIX}" ] || echo_and_err "Could not find CN's runtime directory (looked at: '${RUNTIME_PREFIX}')"
 
 # Instrument code with CN
-if cn instrument "${INPUT_FN}" \
-    --run --no-debug-info --tmp --print-steps \
-    --output="${INPUT_BASENAME}.exec.c" \
-    ${NO_CHECK_OWNERSHIP}; then
-  [ "${QUIET}" ] || echo "Success!"
+if [[ -n "$QUIET" ]]; then
+  # Bit of a hammer solution but doing this now to ensure no log spam gets thrown
+  exec 2>/dev/null
+  if cn instrument "${INPUT_FN}" --run --no-debug-info --tmp \
+       --output="${INPUT_BASENAME}.exec.c" \
+       ${NO_CHECK_OWNERSHIP} ${RUNTIME} > /dev/null; then
+    :
+  else
+    exit 1
+  fi
 else
-  echo_and_err "Test $1 failed."
+  if cn instrument "${INPUT_FN}" --run --no-debug-info --tmp --print-steps \
+      --output="${INPUT_BASENAME}.exec.c" \
+      ${NO_CHECK_OWNERSHIP} ${RUNTIME}; then
+    echo "Success!"
+  else
+    echo "Test $1 failed." >&2
+    exit 1
+  fi
 fi
