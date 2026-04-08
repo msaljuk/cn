@@ -116,7 +116,7 @@ static int c_get_char() {
     return 1;
 }
 
-static int c_get_integer() {
+static int c_get_int() {
     int* addr = (int*)luaL_checkinteger(lua_state, 1);
     lua_pushinteger(lua_state, *addr);
     return 1;
@@ -201,7 +201,7 @@ void bind_cn_c_functions() {
     // C type reading
     lua_cn_register_c_func("get_bool", c_get_bool);
     lua_cn_register_c_func("get_char", c_get_char);
-    lua_cn_register_c_func("get_integer", c_get_integer);
+    lua_cn_register_c_func("get_int", c_get_int);
     lua_cn_register_c_func("get_float", c_get_float);
     lua_cn_register_c_func("get_pointer", c_get_pointer);
 
