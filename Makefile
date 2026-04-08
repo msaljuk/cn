@@ -15,6 +15,8 @@ PROFILE := dev
 # To enable the printing of commands, use [make Q= ...],
 Q = @
 
+OPAM_LIB := $(shell opam var lib)
+
 .PHONY: default
 default: cn
 
@@ -41,6 +43,9 @@ clean:
 install: cn
 	@echo "[DUNE] install cn"
 	$(Q)dune install cn --profile=$(PROFILE)
+	@echo "[LUA_SRC_COPY] runtime/lua to $(OPAM_LIB)/cn/runtime"
+	$(Q)mkdir -p $(OPAM_LIB)/cn/runtime
+	$(Q)cp -rp runtime/lua $(OPAM_LIB)/cn/runtime/
 
 .PHONY: uninstall
 uninstall:

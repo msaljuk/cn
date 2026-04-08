@@ -8,8 +8,6 @@ function echo_and_err() {
     exit 1
 }
 
-[ $# -eq 0 ] || echo_and_err "USAGE: $0"
-
 RUNTIME_PREFIX="$OPAM_SWITCH_PREFIX/lib/cn/runtime"
 [ -d "${RUNTIME_PREFIX}" ] || echo_and_err "Could not find CN's runtime directory (looked at: '${RUNTIME_PREFIX}')"
 
@@ -18,6 +16,9 @@ CHECK_SCRIPT="${RUNTIME_PREFIX}/libexec/cn-runtime-single-file.sh"
 [ -f "${CHECK_SCRIPT}" ] || echo_and_err "Could not find single file helper script: ${CHECK_SCRIPT}"
 
 SCRIPT_OPT="-qu"
+if [ "${1:-}" = "lua" ]; then
+    SCRIPT_OPT+="l"
+fi
 
 function exits_with_code() {
   local file=$1
@@ -35,7 +36,11 @@ function exits_with_code() {
     printf "\033[32mPASS\033[0m\n"
     return 0
   else
-    printf "\033[31mFAIL\033[0m (Unexpected return code: $result expected: $expected_exit_code)\n${OUTPUT}\n"
+    printf "\033[31mFAIL\033[0m (Unexpected return code: $result expected: $expected_exit_code)\n"
+    if [[ -n "$OUTPUT" ]]; then
+      printf "$OUTPUT\n"
+    fi
+
     return 1
   fi
 }
