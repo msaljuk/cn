@@ -22,6 +22,7 @@ let run_tests
       exec_c_locs_mode
       correct_missing_ownership_mode
       experimental_ownership_stack_mode
+      experimental_lua_runtime
       (* without_loop_invariants *)
       (* Test Generation *)
         print_steps
@@ -226,11 +227,13 @@ let run_tests
            ~correct_missing_ownership_mode
            ~experimental_ownership_stack_mode
            ~experimental_curly_braces:false
+           ~experimental_lua_runtime
            ~with_testing:true
            ~skip_and_only:(skip_fulminate, only_fulminate)
            ~disable_ghost_arg_failure:true
            ?max_bump_blocks
            ?bump_block_size
+           basefile
            filename
            cc
            pp_file
@@ -837,6 +840,7 @@ let cmd =
     $ Instrument.Flags.exec_c_locs_mode
     $ Instrument.Flags.correct_missing_ownership_mode
     $ Instrument.Flags.experimental_ownership_stack_mode
+    $ Instrument.Flags.experimental_lua_runtime
     $ Flags.print_steps
     $ Flags.output_dir
     $ Flags.only
