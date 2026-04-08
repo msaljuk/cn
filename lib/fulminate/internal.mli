@@ -100,10 +100,12 @@ val has_main : GenTypes.genTypeCategory AilSyntax.sigma -> bool
 
 val generate_global_assignments
   :  string ->
+  string ->
   ?exec_c_locs_mode:bool ->
   ?experimental_ownership_stack_mode:bool ->
   ?max_bump_blocks:int ->
   ?bump_block_size:int ->
+  GenTypes.genTypeCategory AilSyntax.statement_ ->
   Cabs.translation_unit ->
   GenTypes.genTypeCategory AilSyntax.sigma ->
   unit Mucore.file ->
@@ -120,7 +122,7 @@ val generate_tag_definition_injs
   :  AilSyntax.sigma_tag_definition list ->
   (Cerb_location.t * string list) list
 
-val generate_struct_wrappers
+val generate_struct_metadata
   : (AilSyntax.ail_identifier *
         (Cerb_location.t * Annot.attributes * Ctype.tag_definition)) list ->
-  (string list * string list)
+  (GenTypes.genTypeCategory AilSyntax.statement_ * (string list * string list))

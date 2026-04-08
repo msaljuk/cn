@@ -53,7 +53,13 @@ val push_expr_to_exec : (lua_cn_exec * lua_expression) -> lua_cn_exec
 val pop_expr_from_exec : (lua_cn_exec) -> (lua_cn_exec * lua_expression)
 val push_stmts_to_exec : (lua_cn_exec * lua_statements) -> lua_cn_exec
 
+val prepend_cn_local : CF.Ctype.union_tag -> string
+
+val stmt_to_string : lua_statement -> string
+val expr_to_string : lua_expression -> string
+
 val debug_print_stmts : lua_statements -> unit
+val debug_print_exprs : lua_expressions -> unit
 
 (* ---------------------------------- *)
 (*             Generators             *)
@@ -102,31 +108,64 @@ val generate_c_fn_wrapper_def
     wrapper_function
 
 (*
-Utility used to generate a function to push the size of a custom c struct onto the
+Utility used to generate a c function to push the size of a custom c struct onto the
 sizeof table that exists in CN Lua
 *)
-val generate_c_fn_struct_size
+val generate_c_fn_push_struct_size
     : A.ail_identifier ->
     wrapper_function
 
 (*
-Utility used to generate a function to peek at any custom C structs. Called from
-Lua to get back a Lua table that is 'essentially' a mirrored version of the C struct,
-with 2 main differences:
-1. Every member is replaced by a pointer to that member (so a member 'x' becomes 'x_addr')
-2. A size entry is appended to the very end of the table and represents the total size of the
-struct in C (i.e. a sizeof)
+Utility used to generate a c function to push the offsets of each member in a custom c struct onto the
+offsets table that exists in CN Lua
 *)
-val generate_c_fn_peek_struct
+val generate_c_fn_push_struct_offsets
     : (A.ail_identifier *
         (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
     wrapper_function
 
+(*
+Utility used to generate a c function to push any custom C structs as a Lua table onto the
+stack.
+*)
+val generate_c_fn_push_struct
+    : (A.ail_identifier *
+        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
+    wrapper_function
+
+(*
+Utility used to generate a c function that can be called from Lua to get a C struct as 
+a Lua table
+*)
+val generate_c_fn_get_struct
+    : (A.ail_identifier *
+        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
+    (CF.GenTypes.genTypeCategory A.statement * wrapper_function)
+
+(*
+Utility used to generate a c function that can be called to push all custom struct
+metadata to the lua cn runtime
+*)
+val generate_c_fn_push_struct_metadata
+    : CF.GenTypes.genTypeCategory A.statement list ->
+    A.sigma_declaration list ->
+    A.sigma_declaration list ->
+    wrapper_function
+
+val generate_lua_ctype_sizeof
+    : CF.Ctype.ctype ->
+    lua_expression
+
+val generate_lua_ctype_get
+    : CF.Ctype.ctype ->
+    lua_expression
+
 (* 
 Utility used to generate the filename of the Lua file (with .Lua extension)
-based on the given C filename.
+based on the given output directory and C filename.
 *)
 val generate_lua_filename :
+    string ->
     string ->
     string
 
@@ -150,10 +189,17 @@ val generate_lua_push_frame_fn_name : Sym.t -> string
 
 val generate_lua_assert_fn_name : int -> string
 
+val generate_lua_owned_fn_name : string
+
 (* 
 Utility used to generate the require for the Lua core runtime.
 *)
 val generate_lua_runtime_core_req : LuaS.stmt
+
+(* 
+Utility used to generate the return for the Lua core runtime.
+*)
+val generate_lua_runtime_return : LuaS.stmt
 
 (*
 Utility used to generate a Lua function that pushes a bunch of 
@@ -200,6 +246,12 @@ val generate_lua_cn_return
     : lua_expression -> bool ->
     LuaS.stmt
 
+val generate_lua_cn_resource
+    : CF.Ctype.union_tag ->
+    CF.Ctype.ctype ->
+    lua_cn_exec ->
+    lua_cn_exec
+
 (* ---------------------------------- *)
 (*          Cn-to-Lua Terms           *)
 (* ---------------------------------- *)
@@ -223,3 +275,19 @@ val cn_to_lua_sym
 val cn_to_lua_binop
     : (lua_expression * lua_expression * IT.binop) ->
     lua_expression
+
+val cn_to_lua_struct_member
+    : lua_cn_exec ->
+    Id.t ->
+    lua_cn_exec
+
+val cn_to_lua_member_shift
+    : lua_expression ->
+    CF.Ctype.union_tag ->
+    CF.Ctype.union_tag ->
+    lua_expression
+
+val cn_to_lua_apply
+    : CF.Ctype.union_tag ->
+    lua_cn_exec list ->
+    (lua_cn_exec)

@@ -753,10 +753,12 @@ let has_main (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =
 
 let generate_global_assignments
       basefile
+      output_dir
       ?(exec_c_locs_mode = false)
       ?(experimental_ownership_stack_mode = false)
       ?(max_bump_blocks=0)
       ?(bump_block_size=0)
+      (metadata_fn_call : CF.GenTypes.genTypeCategory A.statement_)
       (cabs_tunit : CF.Cabs.translation_unit)
       (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
       (prog5 : unit Mucore.file)
@@ -846,7 +848,7 @@ let generate_global_assignments
                     A.AilEstr ( 
                       None,
                         [
-                          (Locations.other __LOC__, ["./" ^ filename])
+                          (Locations.other __LOC__, [filename])
                         ]
                       )
                     ) 
@@ -875,7 +877,7 @@ let generate_global_assignments
                 (lua_load_runtime_stmt)
               in
 
-              let lua_filename = CnL.generate_lua_filename basefile in
+              let lua_filename = CnL.generate_lua_filename output_dir basefile in
 
               ([
                 gen_void_call("lua_init"); 
@@ -885,7 +887,8 @@ let generate_global_assignments
                   max_bump_blocks,
                   bump_block_size,
                   exec_c_locs_mode,
-                  experimental_ownership_stack_mode)
+                  experimental_ownership_stack_mode);
+                metadata_fn_call;
               ]);
       in
 
@@ -957,20 +960,44 @@ let generate_tag_definition_injs (tag_defs : CF.AilSyntax.sigma_tag_definition l
   in
   all_tag_def_injs
 
-let generate_struct_wrappers (ail_struct_data)
-  : (string list * string list)
+let generate_struct_metadata (ail_struct_data)
+  : (CF.GenTypes.genTypeCategory A.statement_ * (string list * string list))
   =
   match RC.get_runtime() with
     | RC.Lua ->
       let struct_size_wrappers
         = (List.map 
-          (fun x -> CnL.generate_c_fn_struct_size (fst x))
+          (fun x -> CnL.generate_c_fn_push_struct_size (fst x))
           ail_struct_data)
       in
-      let struct_peek_wrappers 
-        = (List.map CnL.generate_c_fn_peek_struct ail_struct_data) 
+      let struct_offset_wrappers 
+        = (List.map CnL.generate_c_fn_push_struct_offsets ail_struct_data) 
       in
+      let struct_push_wrappers 
+        = (List.map CnL.generate_c_fn_push_struct ail_struct_data) 
+      in
+      let struct_get_binds_and_wrappers 
+        = (List.map CnL.generate_c_fn_get_struct ail_struct_data) 
+      in
+      let struct_get_binds, struct_get_wrappers = List.split struct_get_binds_and_wrappers in
+
+      let struct_sizeof_decs = List.map fst struct_size_wrappers in
+      let struct_offset_decs = List.map fst struct_offset_wrappers in
+      let metadata_wrapper = 
+        CnL.generate_c_fn_push_struct_metadata struct_get_binds struct_sizeof_decs struct_offset_decs 
+      in
+
       let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
-      let peek_decs, peek_defs = gen_wrapper_dec_and_def_strs struct_peek_wrappers in
-      ([ size_decs; peek_decs ], [ size_defs; peek_defs ])
-    | _ -> ([], [])
+      let offset_decs, offset_defs = gen_wrapper_dec_and_def_strs struct_offset_wrappers in
+      let push_decs, push_defs = gen_wrapper_dec_and_def_strs struct_push_wrappers in
+      let get_decs, get_defs = gen_wrapper_dec_and_def_strs struct_get_wrappers in
+      let metadata_dec, metadata_def = gen_wrapper_dec_and_def_strs [ metadata_wrapper ] in
+
+      let metadata_fn_dec, _ = metadata_wrapper in
+      let metadata_fn_call_stmt = make_fn_call metadata_fn_dec in
+        
+      (metadata_fn_call_stmt, 
+        ([ size_decs; offset_decs; push_decs; metadata_dec; get_decs ], 
+        [ size_defs; offset_defs; push_defs; metadata_def; get_defs ])
+      )
+    | _ -> (A.AilSexpr(mk_expr empty_ail_expr), ([], []))

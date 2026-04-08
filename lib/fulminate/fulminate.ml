@@ -613,7 +613,7 @@ let main
     generate_ownership_functions without_ownership_checking !Cn_to_ail.ownership_ctypes
   in
   let ordered_ail_tag_defs = order_ail_tag_definitions sigm.tag_definitions in
-  let struct_wrapper_decs, struct_wrapper_defs = generate_struct_wrappers ordered_ail_tag_defs in
+  let struct_metadata_fn_call, (struct_wrapper_decs, struct_wrapper_defs) = generate_struct_metadata ordered_ail_tag_defs in
   let c_tag_defs = generate_c_tag_def_strs ordered_ail_tag_defs in
   let cn_converted_struct_defs = generate_cn_versions_of_structs ordered_ail_tag_defs in
   let record_fun_defs, record_fun_decls = Records.generate_c_record_funs sigm in
@@ -816,10 +816,12 @@ let main
       let global_ownership_init_pair =
         generate_global_assignments
           basefile
+          output_dir
           ~exec_c_locs_mode
           ~experimental_ownership_stack_mode
           ?max_bump_blocks
           ?bump_block_size
+          struct_metadata_fn_call
           cabs_tunit
           sigm
           prog5
@@ -883,7 +885,8 @@ let main
         let open Lua.Pp_lua in
 
         let lua_filename = 
-          get_filename_with_prefix output_dir (CnL.generate_lua_filename basefile) in
+          CnL.generate_lua_filename output_dir basefile in
+
         let lua_oc = Stdlib.open_out lua_filename in
 
         output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
@@ -891,6 +894,9 @@ let main
         output_to_oc
           lua_oc
           executable_spec.alt_file;
+
+        output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_return ^ "\n" ];
+        
         close_out lua_oc;
     | _ -> ();
   );
