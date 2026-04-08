@@ -21,6 +21,7 @@ let run_tests
         without_ownership_checking
       exec_c_locs_mode
       experimental_ownership_stack_mode
+      experimental_lua_runtime
       (* without_loop_invariants *)
       (* Test Generation *)
         print_steps
@@ -218,7 +219,7 @@ let run_tests
            ~exec_c_locs_mode
            ~experimental_ownership_stack_mode
            ~experimental_curly_braces:false
-           ~experimental_lua_runtime:false
+           ~experimental_lua_runtime
            ~with_testing:true
            ~skip_and_only:(skip_fulminate, only_fulminate)
            ?max_bump_blocks
@@ -810,6 +811,7 @@ let cmd =
     $ Instrument.Flags.without_ownership_checking
     $ Instrument.Flags.exec_c_locs_mode
     $ Instrument.Flags.experimental_ownership_stack_mode
+    $ Instrument.Flags.experimental_lua_runtime
     $ Flags.print_steps
     $ Flags.output_dir
     $ Flags.only
