@@ -57,6 +57,13 @@ let[@warning "-32" (* unused-value-declaration *)] rm_stmt = function
 
 let empty_ail_str = ";" (* horrible; TODO change *)
 
+let make_fn_call (fn_decl : A.sigma_declaration)
+  : CF.GenTypes.genTypeCategory A.statement_
+=
+  let fn_sym, _ = fn_decl in
+  let fn_call_expr = A.(AilEcall(mk_expr (AilEident (fn_sym)), [])) in
+  A.(AilSexpr (mk_expr fn_call_expr))
+
 let empty_ail_expr = A.(AilEident (Sym.fresh empty_ail_str))
 
 let[@warning "-32" (* unused-value-declaration *)] empty_ail_stmt =

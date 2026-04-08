@@ -18,4 +18,5 @@ type stmt =
   | FunctionDef of ident * expr list * stmt list   (* fn x(a, b) \n body \n end *)
   | FunctionCall of ident * expr list              (* assert(false) *)
   | Return of expr                                 (* return false *)
+  | SExpr of expr                                  (* used to carry an expression as a statement (similar to A.AilSexpr) *)
   | Empty

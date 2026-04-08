@@ -19,6 +19,8 @@ val rm_expr : 'a AilSyntax.expression -> 'a AilSyntax.expression_
 
 val empty_ail_expr : 'a AilSyntax.expression_
 
+val make_fn_call : AilSyntax.sigma_declaration -> GenTypes.genTypeCategory AilSyntax.statement_
+
 val generate_sym_with_suffix
   :  ?suffix:string ->
   ?uppercase:bool ->
