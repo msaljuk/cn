@@ -756,8 +756,8 @@ let generate_global_assignments
       output_dir
       ?(exec_c_locs_mode = false)
       ?(experimental_ownership_stack_mode = false)
-      ?(max_bump_blocks=0)
-      ?(bump_block_size=0)
+      ?(max_bump_blocks)
+      ?(bump_block_size)
       (metadata_fn_call : CF.GenTypes.genTypeCategory A.statement_)
       (cabs_tunit : CF.Cabs.translation_unit)
       (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
@@ -791,8 +791,8 @@ let generate_global_assignments
               let assignments =
                 OE.get_ownership_global_init_stats
                   ~ghost_array_size
-                  ~max_bump_blocks
-                  ~bump_block_size
+                  ?max_bump_blocks
+                  ?bump_block_size
                   ()
               in
 
@@ -819,19 +819,25 @@ let generate_global_assignments
                 ]))
           
           | RC.Lua ->
-              let gen_lua_runtime_load (
-                filename,
-                ghost_array_size,
-                max_bump_blocks,
-                bump_block_size,
-                exec_c_locs_mode,
-                ownership_stack_mode) 
+              let gen_lua_runtime_load
+                filename
+                ghost_array_size
+                ?(max_bump_blocks)
+                ?(bump_block_size)
+                exec_c_locs_mode
+                ownership_stack_mode
                 =
                 let gen_ail_const_from_int (integer :int) = 
                   mk_expr (
                     A.(
                       AilEconst
                         (ConstantInteger (IConstant (Z.of_int (integer), Decimal, None)))))
+                in
+                let get_option_or_neg (opt : int option) = 
+                  (match opt with
+                    | Some(x) -> x
+                    | None -> (-1)
+                  );
                 in
 
                 let gen_ail_const_from_bool (boolean: bool) =
@@ -855,8 +861,8 @@ let generate_global_assignments
                 in
 
                 let ghost_array_size_expr = gen_ail_const_from_int ghost_array_size in
-                let max_bump_blocks_expr = gen_ail_const_from_int max_bump_blocks in
-                let bump_block_size_expr = gen_ail_const_from_int bump_block_size in
+                let max_bump_blocks_expr = gen_ail_const_from_int (get_option_or_neg max_bump_blocks) in
+                let bump_block_size_expr = gen_ail_const_from_int (get_option_or_neg bump_block_size) in
                 let exec_c_locs_mode_expr = gen_ail_const_from_bool exec_c_locs_mode in
                 let ownership_stack_mode_expr = gen_ail_const_from_bool ownership_stack_mode in
 
@@ -881,13 +887,13 @@ let generate_global_assignments
 
               ([
                 gen_void_call("lua_init"); 
-                gen_lua_runtime_load(
-                  lua_filename,
-                  ghost_array_size,
-                  max_bump_blocks,
-                  bump_block_size,
-                  exec_c_locs_mode,
-                  experimental_ownership_stack_mode);
+                gen_lua_runtime_load
+                  lua_filename
+                  ghost_array_size
+                  ?max_bump_blocks
+                  ?bump_block_size
+                  exec_c_locs_mode
+                  experimental_ownership_stack_mode;
                 metadata_fn_call;
               ]);
       in
