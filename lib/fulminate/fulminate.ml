@@ -5,6 +5,7 @@ module A = CF.AilSyntax
 module Extract = Extract
 module Globals = Globals
 module Internal = Internal
+module RC = Runtime_config
 module Records = Records
 module Ownership = Ownership
 module Utils = Utils
@@ -545,11 +546,13 @@ let main
       ~correct_missing_ownership_mode
       ~experimental_ownership_stack_mode
       ~experimental_curly_braces
+      ~experimental_lua_runtime
       ~with_testing
       ~skip_and_only
       ~disable_ghost_arg_failure
       ?max_bump_blocks
       ?bump_block_size
+      basefile
       filename
       _cc
       in_filename (* WARNING: this file will be deleted after this function *)
@@ -560,6 +563,8 @@ let main
        ail_prog)
       prog5
   =
+  RC.set_runtime (if experimental_lua_runtime then RC.Lua else RC.C);
+  
   let out_filename = get_filename_with_prefix output_dir out_filename in
   (* disabled until fixed *)
   (* _gen_compile_commands_json cc output_dir out_filename; *)
@@ -613,7 +618,7 @@ let main
     generate_ownership_functions without_ownership_checking !Cn_to_ail.ownership_ctypes
   in
   let ordered_ail_tag_defs = order_ail_tag_definitions sigm.tag_definitions in
-  let struct_wrapper_decs, struct_wrapper_defs = generate_struct_wrappers ordered_ail_tag_defs in
+  let struct_metadata_fn_call, (struct_wrapper_decs, struct_wrapper_defs) = generate_struct_metadata ordered_ail_tag_defs in
   let c_tag_defs = generate_c_tag_def_strs ordered_ail_tag_defs in
   let cn_converted_struct_defs = generate_cn_versions_of_structs ordered_ail_tag_defs in
   let record_fun_defs, record_fun_decls = Records.generate_c_record_funs sigm in
@@ -734,24 +739,11 @@ let main
             
           (enclose_with_newlines headers, enclose_with_newlines defs)
   in
-  (* Definitions for CN helper functions *)
-  (* TODO: Topological sort *)
-  let cn_defs_list =
-    [ (* record_equality_fun_strs; *)
-      (* record_equality_fun_strs'; *)
-      "/* RECORD */\n";
-      record_fun_defs;
-      "/* CONVERSION */\n";
-      conversion_function_defs;
-      "/* OWNERSHIP FUNCTIONS */\n";
-      ownership_function_defs;
-      "/* CN FUNCTIONS */\n";
-      c_function_defs;
-      "\n";
-      c_predicate_defs;
-      c_lemma_defs
-    ]
+
+  let cn_header_decls_list, cn_defs_list = 
+    generate_cn_decls_and_defs() 
   in
+
   let c_datatype_locs = List.map fst c_datatype_defs in
   let toplevel_locs = group_toplevel_defs [] c_datatype_locs in
   let toplevel_injections = List.map (fun loc -> (loc, [ "" ])) toplevel_locs in
@@ -827,20 +819,29 @@ let main
       (* Inject ownership init function calls and mapping and unmapping of globals into provided main function *)
       let global_ownership_init_pair =
         generate_global_assignments
+          basefile
+          output_dir
           ~exec_c_locs_mode
           ~correct_missing_ownership_mode
           ~experimental_ownership_stack_mode
           ?max_bump_blocks
           ?bump_block_size
+          struct_metadata_fn_call
           cabs_tunit
           sigm
           prog5
       in
       global_ownership_init_pair @ executable_spec.pre_post)
   in
+
   (* Save things *)
   let oc = Stdlib.open_out out_filename in
-  output_to_oc oc [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ];
+
+  output_to_oc oc 
+    (match RC.get_runtime() with
+      | RC.C -> [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ]
+      | RC.Lua -> [ "#include <lua_wrappers.h>\n" ; "#include <cn-executable/utils.h>\n"]);
+
   output_to_oc oc cn_header_decls_list;
 
   (match RC.get_runtime() with
@@ -889,7 +890,8 @@ let main
         let open Lua.Pp_lua in
 
         let lua_filename = 
-          get_filename_with_prefix output_dir (CnL.generate_lua_filename basefile) in
+          CnL.generate_lua_filename output_dir basefile in
+
         let lua_oc = Stdlib.open_out lua_filename in
 
         output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
@@ -897,6 +899,9 @@ let main
         output_to_oc
           lua_oc
           executable_spec.alt_file;
+
+        output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_return ^ "\n" ];
+        
         close_out lua_oc;
     | _ -> ();
   );
