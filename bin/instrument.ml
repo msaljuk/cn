@@ -35,7 +35,7 @@ let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~prin
   let lua_root_dir, lua_inc_flags, lua_link_flags =
     if not experimental_lua_runtime then ("", "", "") else
 
-    let root_dir = Sys.getcwd() ^ "/runtime/lua" in
+    let root_dir = runtime_prefix ^ "/lua" in
     let src_dir = root_dir ^ "/src" in
     let cn_dir = root_dir ^ "/cn" in
     
