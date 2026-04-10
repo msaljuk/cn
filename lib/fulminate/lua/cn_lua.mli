@@ -252,6 +252,10 @@ val generate_lua_cn_resource
     lua_cn_exec ->
     lua_cn_exec
 
+val generate_lua_cn_datatype
+    : A.ail_identifier CF.Cn.cn_datatype ->
+    lua_statements 
+
 (* ---------------------------------- *)
 (*          Cn-to-Lua Terms           *)
 (* ---------------------------------- *)

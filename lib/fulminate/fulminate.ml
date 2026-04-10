@@ -593,7 +593,7 @@ let main
       prog5
   in
 
-  let c_datatype_defs = generate_c_datatypes sigm in
+  let c_datatype_defs, alt_file_datatypes = generate_c_datatypes sigm in
   let c_function_defs, c_function_decls, _c_function_locs =
     generate_c_functions filename cabs_tunit prog5 sigm
   in
@@ -890,6 +890,8 @@ let main
         let lua_oc = Stdlib.open_out lua_filename in
 
         output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
+
+        output_to_oc lua_oc alt_file_datatypes;
 
         output_to_oc
           lua_oc

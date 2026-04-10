@@ -191,7 +191,7 @@ val cn_to_ail_struct
 val cn_to_ail_datatype
   :  ?first:bool ->
   AilSyntax.sigma_cn_datatype ->
-  Locations.t * AilSyntax.sigma_tag_definition list
+  ((Locations.t * AilSyntax.sigma_tag_definition list) * CnL.lua_statements)
 
 val cn_to_ail_records
   :  (MembersKey.t * AilSyntax.ail_identifier) list ->

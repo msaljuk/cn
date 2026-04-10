@@ -40,7 +40,7 @@ val generate_c_records
 
 val generate_c_datatypes
   :  GenTypes.genTypeCategory AilSyntax.sigma ->
-  (Cerb_location.t * string) list
+  ((Cerb_location.t * string) list * (string list))
 
 val generate_ghost_enum : unit Mucore.file -> string
 

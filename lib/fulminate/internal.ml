@@ -531,25 +531,32 @@ let generate_str_from_ail_structs ail_structs =
 
 
 let generate_c_datatypes (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =
-  let ail_datatypes =
+  let ail_datatypes, lua_datatypes =
     match sigm.cn_datatypes with
-    | [] -> []
+    | [] -> ([], [])
     | d :: ds ->
-      let ail_dt1 = Cn_to_ail.cn_to_ail_datatype ~first:true d in
-      let ail_dts = List.map Cn_to_ail.cn_to_ail_datatype ds in
-      ail_dt1 :: ail_dts
+      let ail_dt1, lua_dt1 = Cn_to_ail.cn_to_ail_datatype ~first:true d in
+      let ail_and_lua_dts = List.map Cn_to_ail.cn_to_ail_datatype ds in
+      let ail_dts, lua_dts = List.split ail_and_lua_dts in
+      (ail_dt1 :: ail_dts, List.concat (lua_dt1 :: lua_dts))
   in
-  let locs_and_struct_strs =
-    List.map
-      (fun (loc, structs) ->
-         let doc =
-           Utils.concat_map_newline (List.map generate_doc_from_ail_struct structs)
-         in
-         (loc, doc_to_pretty_string doc))
-      ail_datatypes
-  in
-  locs_and_struct_strs
 
+  match RC.get_runtime() with
+    | RC.C ->
+      let locs_and_struct_strs =
+        List.map
+          (fun (loc, structs) ->
+            let doc =
+              Utils.concat_map_newline (List.map generate_doc_from_ail_struct structs)
+            in
+            (loc, doc_to_pretty_string doc))
+          ail_datatypes
+      in
+      (locs_and_struct_strs, [])
+    | RC.Lua ->
+      let open Lua.Pp_lua in
+      let lua_datatypes_str = List.map pp_stmt lua_datatypes in
+      ([], lua_datatypes_str)
 
 let generate_ghost_enum prog5 =
   let args_and_body_list = Extract.args_and_body_list_of_mucore prog5 in

@@ -989,9 +989,7 @@ let generate_lua_cn_assert
 let generate_lua_cn_return (expr : lua_expression) (is_unit : bool)
   : LuaS.stmt
 =
-  if is_unit then (
-    LuaS.Return(expr)
-  ) else ( LuaS.Return(LuaS.Nil) )
+  LuaS.Return(if is_unit then expr else LuaS.Nil)
 
 let generate_lua_cn_resource sym ctype in_exec
   : lua_cn_exec
@@ -1005,6 +1003,39 @@ let generate_lua_cn_resource sym ctype in_exec
   in
 
   (push_stmts_to_exec (exec, [ stmt ]))
+
+let generate_lua_cn_datatype (cn_datatype : A.ail_identifier CF.Cn.cn_datatype)
+  : lua_statements
+=
+  let sym_str sym = (CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier sym)) in
+
+  let dt_name = Sym.pp_string(cn_datatype.cn_dt_name) in
+
+  let dt_table_members = 
+    List.map
+    (fun (sym, args) -> 
+      (
+        let tbl_member_name = Sym.pp_string sym in
+        (*@saljuk NOTE: For some reason, args are in reverse order. Doing this here so that we match spec *)
+        let args = List.rev args in
+        let arg_names = List.map (fun (id, _) -> sym_str id) args in
+        let tbl_member_fn_args = List.map (fun x -> LuaS.Symbol(x)) arg_names in
+        let arg_tbl_fields = 
+          let gen_arg_fields = List.map (fun x -> LuaS.Named(x, LuaS.Symbol(x))) arg_names in
+          let tag_arg_field = LuaS.Named("tag", LuaS.String(String.uppercase_ascii tbl_member_name)) in
+          [ tag_arg_field ] @ gen_arg_fields
+        in
+        let tbl_member_fn_body = LuaS.Return(LuaS.Table(arg_tbl_fields, false)) in
+
+        LuaS.Named(tbl_member_name, LuaS.Function(tbl_member_fn_args, [ tbl_member_fn_body ], false))
+      )
+    )
+    cn_datatype.cn_dt_cases
+  in
+
+  let dt_table = LuaS.Table(dt_table_members, true) in
+  
+  [ LuaS.LocalAssign(dt_name, dt_table) ]
 
 (* ---------------------------------- *)
 (*         Cn-to-Lua Terms            *)
