@@ -254,7 +254,13 @@ val generate_lua_cn_resource
 
 val generate_lua_cn_datatype
     : A.ail_identifier CF.Cn.cn_datatype ->
-    lua_statements 
+    lua_statement
+
+val generate_lua_cn_predicate
+    : CF.Ctype.union_tag ->
+    Definition.Predicate.t ->
+    lua_cn_exec ->
+    lua_statement
 
 (* ---------------------------------- *)
 (*          Cn-to-Lua Terms           *)

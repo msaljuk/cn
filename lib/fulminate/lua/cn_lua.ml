@@ -1005,7 +1005,7 @@ let generate_lua_cn_resource sym ctype in_exec
   (push_stmts_to_exec (exec, [ stmt ]))
 
 let generate_lua_cn_datatype (cn_datatype : A.ail_identifier CF.Cn.cn_datatype)
-  : lua_statements
+  : lua_statement
 =
   let sym_str sym = (CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier sym)) in
 
@@ -1035,7 +1035,22 @@ let generate_lua_cn_datatype (cn_datatype : A.ail_identifier CF.Cn.cn_datatype)
 
   let dt_table = LuaS.Table(dt_table_members, true) in
   
-  [ LuaS.LocalAssign(dt_name, dt_table) ]
+  LuaS.LocalAssign(dt_name, dt_table)
+
+let generate_lua_cn_predicate 
+  (pred_sym : CF.Ctype.union_tag)
+  (pred_def : Definition.Predicate.t)
+  (pred_exec : lua_cn_exec)
+=
+  let params =
+    List.map
+      (fun (sym, _) -> 
+        print_endline (Sym.pp_string sym);
+        LuaS.Symbol(Sym.pp_string sym))
+      ((pred_def.pointer, BT.(Loc ())) :: pred_def.iargs)
+  in
+  let stmts, _, _ = pred_exec in
+  LuaS.FunctionDef(Sym.pp_string pred_sym, params, stmts)
 
 (* ---------------------------------- *)
 (*         Cn-to-Lua Terms            *)

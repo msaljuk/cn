@@ -223,7 +223,7 @@ let compile_test_file
   let c_function_defs, c_function_decls, _c_function_locs =
     generate_c_functions filename cabs_tunit prog5 sigma
   in
-  let c_predicate_defs, c_predicate_decls, _c_predicate_locs =
+  let c_predicate_defs, c_predicate_decls, _c_predicate_locs, _ =
     generate_c_predicates filename without_ownership_checking cabs_tunit prog5 sigma
   in
   let conversion_function_defs, conversion_function_decls =

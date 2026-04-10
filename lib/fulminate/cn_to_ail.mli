@@ -191,7 +191,7 @@ val cn_to_ail_struct
 val cn_to_ail_datatype
   :  ?first:bool ->
   AilSyntax.sigma_cn_datatype ->
-  ((Locations.t * AilSyntax.sigma_tag_definition list) * CnL.lua_statements)
+  ((Locations.t * AilSyntax.sigma_tag_definition list) * CnL.lua_statement)
 
 val cn_to_ail_records
   :  (MembersKey.t * AilSyntax.ail_identifier) list ->
@@ -219,6 +219,7 @@ val cn_to_ail_predicates
   * GenTypes.genTypeCategory AilSyntax.sigma_function_definition)
     list
   * AilSyntax.sigma_tag_definition option list
+  * CnL.lua_statements
 
 val cn_to_ail_lemmas
   :  string ->

@@ -538,7 +538,7 @@ let generate_c_datatypes (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
       let ail_dt1, lua_dt1 = Cn_to_ail.cn_to_ail_datatype ~first:true d in
       let ail_and_lua_dts = List.map Cn_to_ail.cn_to_ail_datatype ds in
       let ail_dts, lua_dts = List.split ail_and_lua_dts in
-      (ail_dt1 :: ail_dts, List.concat (lua_dt1 :: lua_dts))
+      (ail_dt1 :: ail_dts, lua_dt1 :: lua_dts)
   in
 
   match RC.get_runtime() with
@@ -632,7 +632,7 @@ let generate_c_predicates
       (prog5 : _ Mucore.file)
       (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
   =
-  let ail_funs, _ =
+  let ail_funs, _, lua_funcs =
     Cn_to_ail.cn_to_ail_predicates
       prog5.resource_predicates
       filename
@@ -641,13 +641,20 @@ let generate_c_predicates
       sigm.cn_predicates
       without_ownership_checking
   in
-  let locs_and_decls, defs = List.split ail_funs in
-  let locs, decls = List.split locs_and_decls in
-  let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
-  ( "\n/* CN PREDICATES */\n\n" ^ doc_to_pretty_string defs_doc,
-    doc_to_pretty_string decls_doc,
-    locs )
 
+  match RC.get_runtime() with
+    | RC.C ->
+      let locs_and_decls, defs = List.split ail_funs in
+      let locs, decls = List.split locs_and_decls in
+      let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
+      ( "\n/* CN PREDICATES */\n\n" ^ doc_to_pretty_string defs_doc,
+        doc_to_pretty_string decls_doc,
+        locs, 
+        [] )
+    | RC.Lua ->
+      let open Lua.Pp_lua in
+      let lua_pred_strs = List.map pp_stmt lua_funcs in
+      ("", "", [], lua_pred_strs)
 
 let generate_c_lemmas
       filename

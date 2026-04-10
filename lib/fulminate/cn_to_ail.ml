@@ -2126,7 +2126,7 @@ let generate_map_get sym =
 
 
 let cn_to_ail_datatype ?(first = false) (cn_datatype : _ cn_datatype)
-  : ((Locations.t * A.sigma_tag_definition list) * CnL.lua_statements)
+  : ((Locations.t * A.sigma_tag_definition list) * CnL.lua_statement)
   =
   match RC.get_runtime() with
     | RC.C ->
@@ -2204,7 +2204,7 @@ let cn_to_ail_datatype ?(first = false) (cn_datatype : _ cn_datatype)
                       None )) ) )
           ]
       in
-      ((cn_datatype.cn_dt_magic_loc, enum :: structs), CnL.get_empty_lua_stmts)
+      ((cn_datatype.cn_dt_magic_loc, enum :: structs), CnL.get_empty_lua_stmt)
   | RC.Lua -> 
       let lua_dt = CnL.generate_lua_cn_datatype cn_datatype in
       ((cn_datatype.cn_dt_magic_loc, []), lua_dt)
@@ -3975,7 +3975,6 @@ let cn_to_ail_predicate
       without_ownership_checking
       (pred_sym, (rp_def : Definition.Predicate.t))
   =
-  let ret_type = bt_to_ail_ctype ~pred_sym:(Some pred_sym) (snd rp_def.oarg) in
   let rec clause_translate (clauses : Definition.Clause.t list) =
     match clauses with
     | [] -> ([], [], CnL.get_empty_lua_cn_exec)
@@ -4020,9 +4019,10 @@ let cn_to_ail_predicate
          (bs', ss' @ [ ail_if_stat ], CnL.concat [ls'; ls''])
       );
   in
-  let bs, ss, _ =
+  let bs, ss, ls =
     match rp_def.clauses with Some clauses -> clause_translate clauses | None -> ([], [], CnL.get_empty_lua_cn_exec)
   in
+  let ret_type = bt_to_ail_ctype ~pred_sym:(Some pred_sym) (snd rp_def.oarg) in
   let pred_body = List.map mk_stmt ss in
   let ail_record_opt = generate_record_opt pred_sym (snd rp_def.oarg) in
   let params =
@@ -4072,16 +4072,17 @@ let cn_to_ail_predicate
     | p :: _ -> p
   in
   let loc = matched_cn_pred.cn_pred_magic_loc in
-  (((loc, decl), def), ail_record_opt)
-
+  let lua_pred_stmt = CnL.generate_lua_cn_predicate pred_sym rp_def ls in
+  (((loc, decl), def), ail_record_opt, lua_pred_stmt)
 
 let cn_to_ail_predicates preds filename dts globals cn_preds without_ownership_checking
   : ((Locations.t * A.sigma_declaration)
     * CF.GenTypes.genTypeCategory A.sigma_function_definition)
       list
     * A.sigma_tag_definition option list
+    * CnL.lua_statements
   =
-  List.split
+  Utils.list_split_three
     (List.map
        (cn_to_ail_predicate
           filename
@@ -4091,7 +4092,6 @@ let cn_to_ail_predicates preds filename dts globals cn_preds without_ownership_c
           cn_preds
           without_ownership_checking)
        preds)
-
 
 (* TODO: Add destination passing? *)
 let rec cn_to_ail_post_aux
