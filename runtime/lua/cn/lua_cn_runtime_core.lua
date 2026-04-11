@@ -195,7 +195,7 @@ Setup an environment where builtins can be easily used 'globally'
 so that we can just call error_stack.push() instead of cn.error_stack.push()
 ]] --
 local builtins = {
-    is_null = function(p) return (p == 0) end
+    is_null = function(p) return (p == nil) end
 }
 cn.env = setmetatable({}, {
     __index = function(_, k) 
