@@ -188,4 +188,19 @@ setmetatable(cn.locals, {
     end
 })
 
+--[[ 
+Setup an environment where builtins can be easily used 'globally'
+
+@saljuk TODO Consider porting over more things to the environment paradigm
+so that we can just call error_stack.push() instead of cn.error_stack.push()
+]] --
+local builtins = {
+    is_null = function(p) return (p == 0) end
+}
+cn.env = setmetatable({}, {
+    __index = function(_, k) 
+        return builtins[k] or _G[k] 
+    end 
+})
+
 return cn

@@ -20,6 +20,9 @@ let push_type_prefix = "push_"
 
 let cn_sym = LuaS.Symbol( "cn" )
 let cn_spec_mode_sym = LuaS.Symbol( "cn.spec_mode" )
+let cn_spec_mode_var_sym = LuaS.Symbol("spec_mode")
+let cn_loop_ownership_var_sym = LuaS.Symbol("loop_ownership")
+let cn_env_sym = LuaS.Symbol("cn.env")
 let cn_assert_sym = LuaS.Symbol( "cn.assert" )
 let cn_asserts_sym = LuaS.Symbol( "cn.asserts" )
 let cn_error_stack_push_sym = LuaS.Symbol( "cn.error_stack.push" )
@@ -857,6 +860,18 @@ let generate_lua_runtime_return
   (* return cn *)
   = (LuaS.Return(cn_sym))
 
+let generate_lua_env_req
+  (* _ENV = cn.env *)
+  = (LuaS.Assign("_ENV", cn_env_sym))
+
+let generate_if_else_cond
+  (condition : lua_expression)
+  (if_block : lua_statement list)
+  (else_block : lua_statement list)
+  : LuaS.stmt
+=
+  LuaS.IfElse(condition, if_block, else_block)
+
 let generate_lua_push_frame_fn
   (lua_fn_name : string)
   (c_fn_args : (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list)
@@ -989,9 +1004,25 @@ let generate_lua_cn_assert
 let generate_lua_cn_return (expr : lua_expression) (is_unit : bool)
   : LuaS.stmt
 =
-  LuaS.Return(if is_unit then expr else LuaS.Nil)
+  LuaS.Return(if is_unit then LuaS.Nil else expr)
 
-let generate_lua_cn_resource sym ctype in_exec
+let generate_lua_cn_pname_resource_call
+  (pname : CF.Ctype.union_tag)
+  (args : lua_cn_exec list)
+  : lua_cn_exec
+=
+  let execs_and_exprs =
+    List.map
+    (fun x -> 
+      pop_expr_from_exec x
+    )
+    args
+  in
+  let execs, exprs = List.split execs_and_exprs in
+  let final_expr = (LuaS.Call(Sym.pp_string pname, exprs)) in
+  (push_expr_to_exec (concat execs, final_expr))
+
+let generate_lua_cn_resource sym ctype in_exec is_local_res
   : lua_cn_exec
 =
   let exec, expr = pop_expr_from_exec in_exec in
@@ -999,7 +1030,12 @@ let generate_lua_cn_resource sym ctype in_exec
   let stmt = match rm_ctype ctype with
     | CF.Ctype.Void -> LuaS.SExpr(expr)
     | _ -> 
-      LuaS.Assign(Sym.pp_string sym, expr)
+      let sym_str = Sym.pp_string sym in
+
+      if is_local_res then 
+        LuaS.LocalAssign(sym_str, expr)
+      else 
+        LuaS.Assign(Sym.pp_string sym, expr)
   in
 
   (push_stmts_to_exec (exec, [ stmt ]))
@@ -1037,17 +1073,34 @@ let generate_lua_cn_datatype (cn_datatype : A.ail_identifier CF.Cn.cn_datatype)
   
   LuaS.LocalAssign(dt_name, dt_table)
 
+let generate_lua_cn_function
+  (fn_sym : CF.Ctype.union_tag)
+  (fn_def : Definition.Function.t)
+  (fn_exec : lua_cn_exec)
+=
+  let params =
+    List.map
+      (fun (sym, _) -> 
+        LuaS.Symbol(Sym.pp_string sym))
+      (fn_def.args)
+  in
+  let stmts, _, _ = fn_exec in
+  LuaS.FunctionDef(Sym.pp_string fn_sym, params, stmts)
+
 let generate_lua_cn_predicate 
   (pred_sym : CF.Ctype.union_tag)
   (pred_def : Definition.Predicate.t)
   (pred_exec : lua_cn_exec)
 =
   let params =
-    List.map
-      (fun (sym, _) -> 
-        print_endline (Sym.pp_string sym);
-        LuaS.Symbol(Sym.pp_string sym))
-      ((pred_def.pointer, BT.(Loc ())) :: pred_def.iargs)
+    let initial =
+      List.map
+        (fun (sym, _) -> 
+          LuaS.Symbol(Sym.pp_string sym))
+        ((pred_def.pointer, BT.(Loc ())) :: pred_def.iargs)
+    in
+    (* Every predicate gets a spec mode and loop ownership arg *)
+    initial @ [ cn_spec_mode_var_sym; cn_loop_ownership_var_sym ]
   in
   let stmts, _, _ = pred_exec in
   LuaS.FunctionDef(Sym.pp_string pred_sym, params, stmts)
@@ -1106,6 +1159,15 @@ let cn_to_lua_struct_member
   in
   let struct_member_expr = LuaS.Field(struct_expr, LuaS.Symbol(member_term_string)) in
   push_expr_to_exec (exec, struct_member_expr)
+
+let cn_to_lua_constructor
+  (dt : CF.Ctype.union_tag)
+  (sym : CF.Ctype.union_tag)
+  (args : lua_expressions)
+  : lua_expression
+=
+  let ail_to_lua_sym sym = LuaS.Symbol(Sym.pp_string sym) in
+  LuaS.Call(Pp_lua.pp_expr (LuaS.Field(ail_to_lua_sym dt, ail_to_lua_sym sym)), args)
 
 let cn_to_lua_member_shift 
   (struct_expr : lua_expression)

@@ -25,5 +25,6 @@ and stmt =
   | FunctionCall of ident * expr list              (* assert(false) *)
   | Return of expr                                 (* return false *)
   | LocalTable of expr * expr list                 (* local x = { a = 5, b = 7 } *)
+  | IfElse of expr * stmt list * stmt list         (* if(cond) then ... else ... *)
   | SExpr of expr                                  (* used to carry an expression as a statement (similar to A.AilSexpr) *)
   | Empty

@@ -595,7 +595,7 @@ let generate_c_functions
       (prog5 : _ Mucore.file)
       (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
   =
-  let ail_funs_and_records =
+  let ail_and_lua_funcs =
     List.map
       (fun cn_f ->
          Cn_to_ail.cn_to_ail_function
@@ -607,14 +607,32 @@ let generate_c_functions
            sigm.cn_functions)
       prog5.logical_predicates
   in
-  let ail_funs, _ = List.split ail_funs_and_records in
-  let locs_and_decls, defs = List.split ail_funs in
-  let locs, decls = List.split locs_and_decls in
-  let defs = List.filter_map Fun.id defs in
-  let decl_str_comment = "\n/* CN FUNCTIONS */\n\n" in
-  let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
-  (doc_to_pretty_string defs_doc, decl_str_comment ^ doc_to_pretty_string decls_doc, locs)
+  let ail_func_option, lua_func_options = List.split ail_and_lua_funcs in
 
+  match RC.get_runtime() with
+    | RC.C ->
+      let ail_func_group = 
+        List.map
+        (fun option -> 
+          match option with
+            | Some(x) -> x
+            | None -> exit 2
+        )
+        ail_func_option
+      in
+      let ail_funs, _ = List.split ail_func_group in
+      let locs_and_decls, defs = List.split ail_funs in
+      let locs, decls = List.split locs_and_decls in
+
+      let defs = List.filter_map Fun.id defs in
+      let decl_str_comment = "\n/* CN FUNCTIONS */\n\n" in
+      let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
+      (doc_to_pretty_string defs_doc, decl_str_comment ^ doc_to_pretty_string decls_doc, locs, [])
+    | RC.Lua ->
+      let lua_funcs = List.filter_map (fun x -> x) lua_func_options in
+      let open Lua.Pp_lua in
+      let lua_func_strs = List.map pp_stmt lua_funcs in
+      ("", "", [], lua_func_strs)
 
 let[@warning "-32" (* unused-value-declaration *)] rec remove_duplicates eq_fun = function
   | [] -> []

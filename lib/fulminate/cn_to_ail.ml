@@ -1383,6 +1383,7 @@ let rec cn_to_ail_expr_aux
   | RecordUpdate ((_t1, _m), _t2) -> failwith (__LOC__ ^ ": TODO RecordUpdate")
   (* Allocation *)
   | Constructor (sym, ms) ->
+
     let rec find_dt_from_constructor constr_sym dts =
       match dts with
       | [] ->
@@ -1403,84 +1404,118 @@ let rec cn_to_ail_expr_aux
           find_dt_from_constructor constr_sym dts'
     in
     let parent_dt, _members = find_dt_from_constructor sym dts in
-    let res_sym = Sym.fresh_anon () in
-    let res_ident = A.(AilEident res_sym) in
-    let ctype_ = C.(Pointer (C.no_qualifiers, mk_ctype (Struct parent_dt.cn_dt_name))) in
-    let res_binding = create_binding res_sym (mk_ctype ctype_) in
-    let fn_call =
-      A.(
-        AilEcast
-          ( C.no_qualifiers,
-            C.(mk_ctype_pointer no_qualifiers (mk_ctype (Struct parent_dt.cn_dt_name))),
-            mk_expr
-              (AilEcall
-                 ( mk_expr (AilEident alloc_sym),
-                   [ mk_expr
-                       (AilEsizeof
-                          (C.no_qualifiers, mk_ctype C.(Struct parent_dt.cn_dt_name)))
-                   ] )) ))
-    in
-    let ail_decl = A.(AilSdeclaration [ (res_sym, Some (mk_expr fn_call)) ]) in
-    let lc_constr_sym = generate_sym_with_suffix ~suffix:"" ~lowercase:true sym in
-    let here = Locations.other __LOC__ in
-    let e_ = A.(AilEmemberofptr (mk_expr res_ident, Id.make here "u")) in
-    let e_' = A.(AilEmemberof (mk_expr e_, create_id_from_sym lc_constr_sym)) in
-    let generate_ail_stat (id, it) =
-      let b, s, l, e =
-        cn_to_ail_expr_aux
-          filename
-          const_prop
-          pred_name
-          dts
-          globals
+    
+    (match RC.get_runtime() with
+      | RC.C ->
+        let res_sym = Sym.fresh_anon () in
+        let res_ident = A.(AilEident res_sym) in
+        let ctype_ = C.(Pointer (C.no_qualifiers, mk_ctype (Struct parent_dt.cn_dt_name))) in
+        let res_binding = create_binding res_sym (mk_ctype ctype_) in
+        let fn_call =
+          A.(
+            AilEcast
+              ( C.no_qualifiers,
+                C.(mk_ctype_pointer no_qualifiers (mk_ctype (Struct parent_dt.cn_dt_name))),
+                mk_expr
+                  (AilEcall
+                    ( mk_expr (AilEident alloc_sym),
+                      [ mk_expr
+                          (AilEsizeof
+                              (C.no_qualifiers, mk_ctype C.(Struct parent_dt.cn_dt_name)))
+                      ] )) ))
+        in
+        let ail_decl = A.(AilSdeclaration [ (res_sym, Some (mk_expr fn_call)) ]) in
+        let lc_constr_sym = generate_sym_with_suffix ~suffix:"" ~lowercase:true sym in
+        let here = Locations.other __LOC__ in
+        let e_ = A.(AilEmemberofptr (mk_expr res_ident, Id.make here "u")) in
+        let e_' = A.(AilEmemberof (mk_expr e_, create_id_from_sym lc_constr_sym)) in
+        let generate_ail_stat (id, it) =
+          let b, s, l, e =
+            cn_to_ail_expr_aux
+              filename
+              const_prop
+              pred_name
+              dts
+              globals
+              spec_mode_opt
+              it
+              PassBack
+          in
+          let ail_memberof =
+            if Id.equal id (Id.make here "tag") then
+              e
+            else (
+              let e_'' = A.(AilEmemberofptr (mk_expr e_', id)) in
+              mk_expr e_'')
+          in
+          let assign_stat = A.(AilSexpr (mk_expr (AilEassign (ail_memberof, e)))) in
+          (b, s, assign_stat, l)
+        in
+        let constr_alloc_call =
+          A.(
+            AilEcast
+              ( C.no_qualifiers,
+                C.(mk_ctype_pointer no_qualifiers (mk_ctype (Struct lc_constr_sym))),
+                mk_expr
+                  (AilEcall
+                    ( mk_expr (AilEident alloc_sym),
+                      [ mk_expr
+                          (AilEsizeof (C.no_qualifiers, mk_ctype C.(Struct lc_constr_sym)))
+                      ] )) ))
+        in
+        let constr_allocation_stat =
+          if List.is_empty ms then
+            []
+          else
+            [ A.(AilSexpr (mk_expr (AilEassign (mk_expr e_', mk_expr constr_alloc_call)))) ]
+        in
+        let bs, ss, assign_stats, l = list_split_four (List.map generate_ail_stat ms) in
+        let uc_constr_sym = generate_sym_with_suffix ~suffix:"" ~uppercase:true sym in
+        let tag_member_ptr = A.(AilEmemberofptr (mk_expr res_ident, Id.make here "tag")) in
+        let tag_assign =
+          A.(
+            AilSexpr
+              (mk_expr
+                (AilEassign (mk_expr tag_member_ptr, mk_expr (AilEident uc_constr_sym)))))
+        in
+        dest
+          d
           spec_mode_opt
-          it
-          PassBack
-      in
-      let ail_memberof =
-        if Id.equal id (Id.make here "tag") then
-          e
-        else (
-          let e_'' = A.(AilEmemberofptr (mk_expr e_', id)) in
-          mk_expr e_'')
-      in
-      let assign_stat = A.(AilSexpr (mk_expr (AilEassign (ail_memberof, e)))) in
-      (b, s, assign_stat, l)
-    in
-    let constr_alloc_call =
-      A.(
-        AilEcast
-          ( C.no_qualifiers,
-            C.(mk_ctype_pointer no_qualifiers (mk_ctype (Struct lc_constr_sym))),
-            mk_expr
-              (AilEcall
-                 ( mk_expr (AilEident alloc_sym),
-                   [ mk_expr
-                       (AilEsizeof (C.no_qualifiers, mk_ctype C.(Struct lc_constr_sym)))
-                   ] )) ))
-    in
-    let constr_allocation_stat =
-      if List.is_empty ms then
-        []
-      else
-        [ A.(AilSexpr (mk_expr (AilEassign (mk_expr e_', mk_expr constr_alloc_call)))) ]
-    in
-    let bs, ss, assign_stats, l = list_split_four (List.map generate_ail_stat ms) in
-    let uc_constr_sym = generate_sym_with_suffix ~suffix:"" ~uppercase:true sym in
-    let tag_member_ptr = A.(AilEmemberofptr (mk_expr res_ident, Id.make here "tag")) in
-    let tag_assign =
-      A.(
-        AilSexpr
-          (mk_expr
-             (AilEassign (mk_expr tag_member_ptr, mk_expr (AilEident uc_constr_sym)))))
-    in
-    dest
-      d
-      spec_mode_opt
-      ( List.concat bs @ [ res_binding ],
-        [ ail_decl; tag_assign ] @ List.concat ss @ constr_allocation_stat @ assign_stats,
-        CnL.concat l,
-        mk_expr res_ident)
+          ( List.concat bs @ [ res_binding ],
+            [ ail_decl; tag_assign ] @ List.concat ss @ constr_allocation_stat @ assign_stats,
+            CnL.concat l,
+            mk_expr res_ident)
+      | RC.Lua ->
+        let ctor_arg_exprs = 
+          List.map 
+          (fun (_, it) -> 
+            let _, _, l, _ =
+              cn_to_ail_expr_aux
+                filename
+                const_prop
+                pred_name
+                dts
+                globals
+                spec_mode_opt
+                it
+                PassBack
+            in
+            let _, lua_expr = CnL.pop_expr_from_exec l in
+            (lua_expr)
+          )
+          ms
+        in
+        let lua_expr = CnL.cn_to_lua_constructor parent_dt.cn_dt_name sym ctor_arg_exprs in
+        let lua_exec = CnL.push_expr_to_exec (CnL.get_empty_lua_cn_exec, lua_expr) in
+
+        dest
+          d
+          spec_mode_opt
+          ( [],
+            [],
+            lua_exec,
+            mk_expr ail_null)
+    )
   | MemberShift (it, tag, member) ->
     let bs, ss, ls, e =
       cn_to_ail_expr_aux
@@ -1699,6 +1734,7 @@ let rec cn_to_ail_expr_aux
           let ail_expr_ = A.AilEcall (f, es) in
           dest d spec_mode_opt (List.concat bs, List.concat ss, CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
         | RC.Lua ->
+
           let _, _, ls, _ = list_split_four bs_ss_ls_es in
           dest d spec_mode_opt ([], [], CnL.cn_to_lua_apply sym ls, mk_expr ail_null)
     );
@@ -3154,12 +3190,13 @@ let cn_to_ail_resource
         match spec_mode_opt with
           | Some spec_mode ->
             Sym.fresh ("cn.spec_mode." ^ spec_mode_to_str spec_mode)
-          | None -> Sym.fresh ("cn.spec_mode")
+          | None -> Sym.fresh ("spec_mode")
   in
   let it_zero_const = IT.(IT (Const (Z (Z.of_int 0)), BT.Unit, Cerb_location.unknown)) in
   let ail_zero_const_expr_ =
     A.(AilEconst (ConstantInteger (IConstant (Z.of_int 0, Decimal, None))))
   in
+  
   function
   | Request.P p ->
     let ctype, bt = calculate_resource_return_type preds loc p.name in
@@ -3226,26 +3263,50 @@ let cn_to_ail_resource
             (mk_expr ail_null, [], [], ls')
         );
       | PName pname ->
-        let bs, ss, ls, es =
-          list_split_four
-            (List.map
-               (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
-               p.iargs)
-        in
-        let loop_ownership_expr_ =
-          match loop_ownership_sym_opt with
-          | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
-          | None -> ail_zero_const_expr_
-        in
-        let fcall =
-          A.(
-            AilEcall
-              ( mk_expr (AilEident pname),
-                (e :: es) @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ]
-              ))
-        in
-        let binding = create_binding sym (bt_to_ail_ctype ~pred_sym:(Some pname) bt) in
-        (mk_expr fcall, binding :: List.concat bs, List.concat ss, CnL.concat ls)
+        (
+          match RC.get_runtime() with
+            | RC.C ->
+              let loop_ownership_expr_ =
+                match loop_ownership_sym_opt with
+                | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
+                | None -> ail_zero_const_expr_
+              in
+              let bs, ss, ls, es =
+                list_split_four
+                  (List.map
+                    (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
+                    p.iargs)
+              in
+              let fcall =
+                A.(
+                  AilEcall
+                    ( mk_expr (AilEident pname),
+                      (e :: es) @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ]
+                    ))
+              in
+              let binding = create_binding sym (bt_to_ail_ctype ~pred_sym:(Some pname) bt) in
+              (mk_expr fcall, binding :: List.concat bs, List.concat ss, CnL.concat ls)
+            | RC.Lua ->
+              let enum_sym_arg =
+                IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown))
+              in
+              let loop_ownership_arg =
+                match loop_ownership_sym_opt with
+                | Some loop_ownership_sym ->
+                  IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
+                | None -> 
+                  IT.(IT (Sym (Sym.fresh "nil"), BT.Unit, Cerb_location.unknown))
+              in
+              let completed_args = [ p.pointer ] @ p.iargs @ [ enum_sym_arg; loop_ownership_arg ] in
+              let _, _, ls, _ =
+                list_split_four
+                  (List.map
+                    (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
+                    completed_args)
+              in
+              let final_exec = CnL.generate_lua_cn_pname_resource_call pname ls in
+              (mk_expr ail_null, [], [], final_exec)
+        )
     in
 
     (
@@ -3258,7 +3319,12 @@ let cn_to_ail_resource
         in
         (b @ bs, s @ ss @ [ s_decl ], CnL.concat [ l; ls ])
       | RC.Lua ->
-        let final_exec = CnL.generate_lua_cn_resource sym ctype ls in
+        let is_local_res = match spec_mode_opt with
+          | Some(_) -> false
+          | None -> true
+        in
+
+        let final_exec = CnL.generate_lua_cn_resource sym ctype ls is_local_res in
         ([], [], final_exec)
     );
   | Request.Q q ->
@@ -3767,12 +3833,13 @@ let cn_to_ail_function
       (prog5 : _ Mucore.file)
       (cn_datatypes : A.sigma_cn_datatype list)
       (cn_functions : A.sigma_cn_function list)
-  : ((Locations.t * A.sigma_declaration)
+  : (((Locations.t * A.sigma_declaration)
     * CF.GenTypes.genTypeCategory A.sigma_function_definition option)
-    * A.sigma_tag_definition option
+    * A.sigma_tag_definition option) option
+    * CnL.lua_statement option
   =
   let ret_type = bt_to_ail_ctype ~pred_sym:(Some fn_sym) lf_def.return_bt in
-  let bs, ail_func_body_opt, _ =
+  let bs, ail_func_body_opt, lua_func_body =
     match lf_def.body with
     | Def it | Rec_Def it ->
       let bs, ss, ls =
@@ -3801,65 +3868,78 @@ let cn_to_ail_function
         ();
       exit 2
   in
-  let ail_record_opt = generate_record_opt fn_sym lf_def.return_bt in
-  let params = List.map (fun (sym, bt) -> (sym, bt_to_ail_ctype bt)) lf_def.args in
-  let param_syms, param_types = List.split params in
-  let param_types = List.map (fun t -> (C.no_qualifiers, t, false)) param_types in
+
   let matched_cn_functions =
     List.filter
       (fun (cn_fun : (A.ail_identifier, C.ctype) CF.Cn.cn_function) ->
-         Sym.equal cn_fun.cn_func_name fn_sym)
+        Sym.equal cn_fun.cn_func_name fn_sym)
       cn_functions
   in
-  (* If the function is user defined, grab its location from the cn_function associated with it.
-     Otherwise, the location is builtin *)
-  let loc =
-    (* RB: This was changed as part of the rebase for commit "Fix some error messages".
-       Is it fine as is, or do you want it to print and exit like with predicates? *)
-    match List.nth_opt matched_cn_functions 0 with
-    | Some fn -> fn.cn_func_magic_loc
-    | None -> Builtins.loc
-    (*
-       let matched_cn_function =
-    match matched_cn_functions with
-    | [] ->
-      Cerb_colour.with_colour
-        (fun () ->
-           print_endline
-             Pp.(
-               plain
-                 (Pp.item
-                    "Function not found"
-                    (Sym.pp fn_sym ^^^ !^"at" ^^^ Locations.pp lf_def.loc))))
-        ();
-      exit 2
-    | p :: _ -> p
-    *)
-  in
-  (* Generating function declaration *)
-  let decl =
-    ( fn_sym,
-      ( lf_def.loc,
-        empty_attributes,
-        A.(
-          Decl_function
-            (false, (C.no_qualifiers, ret_type), param_types, false, false, false)) ) )
-  in
-  (* Generating function definition *)
-  let def =
-    match ail_func_body_opt with
-    | Some ail_func_body ->
-      Some
+
+  match RC.get_runtime() with
+    | RC.C ->
+      let ail_record_opt = generate_record_opt fn_sym lf_def.return_bt in
+      let params = List.map (fun (sym, bt) -> (sym, bt_to_ail_ctype bt)) lf_def.args in
+      let param_syms, param_types = List.split params in
+      let param_types = List.map (fun t -> (C.no_qualifiers, t, false)) param_types in
+      (* If the function is user defined, grab its location from the cn_function associated with it.
+        Otherwise, the location is builtin *)
+      let loc =
+        (* RB: This was changed as part of the rebase for commit "Fix some error messages".
+          Is it fine as is, or do you want it to print and exit like with predicates? *)
+        match List.nth_opt matched_cn_functions 0 with
+        | Some fn -> fn.cn_func_magic_loc
+        | None -> Builtins.loc
+        (*
+          let matched_cn_function =
+        match matched_cn_functions with
+        | [] ->
+          Cerb_colour.with_colour
+            (fun () ->
+              print_endline
+                Pp.(
+                  plain
+                    (Pp.item
+                        "Function not found"
+                        (Sym.pp fn_sym ^^^ !^"at" ^^^ Locations.pp lf_def.loc))))
+            ();
+          exit 2
+        | p :: _ -> p
+        *)
+      in
+      (* Generating function declaration *)
+      let decl =
         ( fn_sym,
           ( lf_def.loc,
-            0,
             empty_attributes,
-            param_syms,
-            mk_stmt A.(AilSblock (bs, ail_func_body)) ) )
-    | None -> None
-  in
-  (((loc, decl), def), ail_record_opt)
-
+            A.(
+              Decl_function
+                (false, (C.no_qualifiers, ret_type), param_types, false, false, false)) ) )
+      in
+      (* Generating function definition *)
+      let def =
+        match ail_func_body_opt with
+        | Some ail_func_body ->
+          Some
+            ( fn_sym,
+              ( lf_def.loc,
+                0,
+                empty_attributes,
+                param_syms,
+                mk_stmt A.(AilSblock (bs, ail_func_body)) ) )
+        | None -> None
+      in
+      (Some (((loc, decl), def), ail_record_opt), None)
+    | RC.Lua ->
+      (* For lua, we only translate the user-defined functions. Anything else already exists in the 
+       * core runtime library.
+       *)
+      match List.nth_opt matched_cn_functions 0 with
+      | Some _ -> 
+        let lua_func_stmt = CnL.generate_lua_cn_function fn_sym lf_def lua_func_body in
+        (None, Some(lua_func_stmt))
+      | None ->
+        (None, None)
 
 (* only used in cn_to_ail_predicate *)
 let rec cn_to_ail_lat
@@ -4006,17 +4086,26 @@ let cn_to_ail_predicate
              PassBack
          in
          let bs'', ss'', ls'' = clause_translate cs in
-         let conversion_from_cn_bool =
-           A.(AilEcall (mk_expr (AilEident convert_from_cn_bool_sym), [ e ]))
-         in
-         let ail_if_stat =
-           A.(
-             AilSif
-               ( mk_expr conversion_from_cn_bool,
-                 mk_stmt (AilSblock (bs, List.map mk_stmt ss)),
-                 mk_stmt (AilSblock (bs'', List.map mk_stmt ss'')) ))
-         in
-         (bs', ss' @ [ ail_if_stat ], CnL.concat [ls'; ls''])
+         match RC.get_runtime() with
+          | RC.C ->
+            let conversion_from_cn_bool =
+              A.(AilEcall (mk_expr (AilEident convert_from_cn_bool_sym), [ e ]))
+            in
+            let ail_if_stat =
+              A.(
+                AilSif
+                  ( mk_expr conversion_from_cn_bool,
+                    mk_stmt (AilSblock (bs, List.map mk_stmt ss)),
+                    mk_stmt (AilSblock (bs'', List.map mk_stmt ss'')) ))
+            in
+            (bs', ss' @ [ ail_if_stat ], CnL.get_empty_lua_cn_exec)
+          | RC.Lua ->
+            let ls', if_expr = (CnL.pop_expr_from_exec ls') in
+            let if_body, _, _ = ls in
+            let else_body, _, _ = ls'' in
+            let lua_if_stmt = CnL.generate_if_else_cond if_expr if_body else_body in
+            let if_exec = ( [ lua_if_stmt ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr) in
+            ([], [], CnL.concat [ls'; if_exec])
       );
   in
   let bs, ss, ls =

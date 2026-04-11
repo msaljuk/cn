@@ -3,8 +3,16 @@ include PPrint
 
 let indent block ?(comma = false) () =
     let sep = if comma then ",\n" else "\n" in
-    List.map (fun s -> "    " ^ s) block
-    |> String.concat sep
+    let indent_line (line : string) : string =
+        if Stdlib.((=) line "") then "" else "    " ^ line
+    in
+    let process_string (s : string) : string =
+        let lines = Stdlib.String.split_on_char '\n' s in
+        let indented = Stdlib.List.map indent_line lines in
+        Stdlib.String.concat "\n" indented
+    in
+    let indented_block = Stdlib.List.map process_string block in
+    Stdlib.String.concat sep indented_block
 
 let rec pp_expr = function
     | LuaS.Nil -> "nil"
@@ -46,6 +54,14 @@ and pp_stmt = function
         pp_expr (LuaS.Call(fn, args))
     | LuaS.Return (expr) ->
         "return " ^ pp_expr (expr)
+    | LuaS.IfElse (cond, if_body, else_body) ->
+        let indented_if_body = indent (List.map pp_stmt if_body) () in
+        let indented_else_body = indent (List.map pp_stmt else_body) () in
+        "if " ^ pp_expr cond ^ " then\n" 
+            ^ indented_if_body 
+        ^ "\nelse\n" 
+            ^ indented_else_body 
+        ^ "\nend"
     | LuaS.SExpr (expr) -> pp_expr expr
     | _ -> ""
 

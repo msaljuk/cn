@@ -72,7 +72,7 @@ val generate_c_functions
   Cabs.translation_unit ->
   _ Mucore.file ->
   GenTypes.genTypeCategory AilSyntax.sigma ->
-  string * string * Cerb_location.t list
+  string * string * Cerb_location.t list * string list
 
 val generate_c_predicates
   :  string ->
