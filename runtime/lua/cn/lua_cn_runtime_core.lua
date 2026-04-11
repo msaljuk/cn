@@ -5,7 +5,7 @@ Our CN runtime state. This exists as nested tables, each corresponding
 to a main part of our CN runtime that we're implementing in Lua:
 
 - Error Stack: Stack of errors that users can push/pop to ensure helpful error messaging
-- Frames: Holds any allocations that must persist for the duration of the frame (right now, the
+- Locals: Holds any allocations that must persist for the duration of the frame (right now, the
   main usage is any CN pre condition variables that are later used during the post condition). Each
   frame is keyed to the current stack depth, meaning when the frame is popped at the end of the function,
   all frame-specific variables are easily cleaned up with GC. I initially also thought I'd use this to map
@@ -21,8 +21,7 @@ the entire thing falls under cn.
 
 local cn = {
     error_stack = {},
-    frames = {},
-    locals = {}, -- proxy table
+    locals = {},
     ghost_state = {},
     spec_mode = {
         PRE  = 1,
@@ -84,38 +83,38 @@ function cn.error_stack.dump()
 end
 
 --[[
-FRAME
+LOCALS
 --]]
 
-function cn.frames.push_function()
-    cn.frames[#cn.frames + 1] = {}
+function cn.locals.push_function()
+    cn.locals[#cn.locals + 1] = {}
     cn.c.ghost_state_depth_incr()
 end
 
-function cn.frames.pop_function()
+function cn.locals.pop_function()
     cn.c.ghost_state_depth_decr()
     cn.c.postcondition_leak_check()
-    cn.frames[#cn.frames] = nil
+    cn.locals[#cn.locals] = nil
 end
 
-function cn.frames.push_loop()
-    cn.frames[#cn.frames + 1] = {}
+function cn.locals.push_loop()
+    cn.locals[#cn.locals + 1] = {}
 end
 
-function cn.frames.pop_loop()
-    cn.frames[#cn.frames] = nil
+function cn.locals.pop_loop()
+    cn.locals[#cn.locals] = nil
 end
 
-local function get_current_frame()
-    return cn.frames[#cn.frames]
+function cn.locals.get_current_frame()
+    return cn.locals[#cn.locals]
 end
 
-function cn.frames.set_local(name, value)
-    get_current_frame()[name] = value
+function cn.locals.set_local(name, value)
+    cn.locals.get_current_frame()[name] = value
 end
 
-function cn.frames.get_local(name)
-    return get_current_frame()[name]
+function cn.locals.get_local(name)
+    return cn.locals.get_current_frame()[name]
 end
 
 --[[
@@ -168,22 +167,22 @@ setmetatable(cn, mt)
 
 --[[
 This allows us to set and get locals using cn.locals.X = Y instead of the more
-verbose function calls (i.e. cn.frames.set/get_local())
+verbose function calls (i.e. cn.locals.set/get_local())
 ]]--
 setmetatable(cn.locals, {
     -- support assignments
-    __newindex = function(_, key, value)
-        cn.frames.set_local(key, value)
+    __newindex = function(table, key, value)
+        table.set_local(key, value)
     end,
 
     -- support lookups
-    __index = function(_, key)
-        return cn.frames.get_local(key)
+    __index = function(table, key)
+        return table.get_local(key)
     end,
 
     -- support iteration over locals
-    __pairs = function(_)
-        local real_table = get_current_frame()
+    __pairs = function(table)
+        local real_table = table.get_current_frame()
         return next, real_table, nil
     end
 })
