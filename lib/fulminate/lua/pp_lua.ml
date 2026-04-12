@@ -41,6 +41,13 @@ let rec pp_expr = function
             let table_body = String.concat ", " (List.map pp_table_field members) in
             "{ " ^ table_body ^ " }"
         )
+    | LuaS.Binary (args) ->
+        let pp_binary_expr_type expr = 
+            match expr with
+                (*@saljuk TODO: Hardcoding the function call here is gross. Find a clean way to keep this in cn_lua *)
+                | LuaS.Eq(a, b) -> pp_expr (LuaS.Call("cn.equals", [ a; b ]))
+        in
+        pp_binary_expr_type args
 
 and pp_stmt = function
     | LuaS.Assign (id, e) ->
@@ -50,18 +57,38 @@ and pp_stmt = function
 
     | LuaS.FunctionDef (fn, args, body) ->
         pp_fn fn args body ()
+    | LuaS.LocalFunctionDef (fn, args, body) ->
+        "local " ^ pp_fn fn args body ()
     | LuaS.FunctionCall (fn, args) ->
         pp_expr (LuaS.Call(fn, args))
     | LuaS.Return (expr) ->
         "return " ^ pp_expr (expr)
-    | LuaS.IfElse (cond, if_body, else_body) ->
-        let indented_if_body = indent (List.map pp_stmt if_body) () in
-        let indented_else_body = indent (List.map pp_stmt else_body) () in
-        "if " ^ pp_expr cond ^ " then\n" 
-            ^ indented_if_body 
-        ^ "\nelse\n" 
-            ^ indented_else_body 
-        ^ "\nend"
+    | LuaS.IfElse (cases) ->
+        let pp_if_statement cases =
+            let render_body b = indent (List.map pp_stmt b) () in
+
+            match cases with
+                | [] -> failwith "Syntax Error: Must provide at least one valid case"
+                (* If *)
+                | (Some cond, if_body) :: rest ->
+                    let head_str = "if " ^ pp_expr cond ^ " then\n" ^ render_body if_body in
+
+                    let rec build_cases = function
+                        | [] -> "\nend"
+                        (* Else *)
+                        | [(None, else_body)] -> 
+                            "\nelse\n" ^ render_body else_body ^ "\nend"
+                        (* Else if *)
+                        | [(Some c, b)] -> 
+                            "\nelseif " ^ pp_expr c ^ " then\n" ^ render_body b ^ "\nend"
+                        | (Some c, b) :: next -> 
+                            "\nelseif " ^ pp_expr c ^ " then\n" ^ render_body b ^ build_cases next
+                        | (None, _) :: _ -> failwith "Syntax Error: 'else' must be the last case."
+                    in
+                    head_str ^ build_cases rest
+                | (None, _) :: _ -> failwith "Syntax Error: 'if' statement must start with a condition."
+        in
+        pp_if_statement cases
     | LuaS.SExpr (expr) -> pp_expr expr
     | _ -> ""
 

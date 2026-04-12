@@ -864,13 +864,20 @@ let generate_lua_env_req
   (* _ENV = cn.env *)
   = (LuaS.Assign("_ENV", cn_env_sym))
 
-let generate_if_else_cond
-  (condition : lua_expression)
-  (if_block : lua_statement list)
-  (else_block : lua_statement list)
+let generate_lua_cn_conditional
+  (cases : (lua_expression option * lua_statements) list)
   : LuaS.stmt
 =
-  LuaS.IfElse(condition, if_block, else_block)
+  LuaS.IfElse(cases)
+
+let generate_lua_cn_match_case_equality
+  ((subject, case) : lua_expression * string)
+  : lua_expression
+=
+  let tag_sym = LuaS.Symbol("tag") in
+  let subject_field = LuaS.Field(subject, tag_sym) in
+  let case_str = LuaS.String(case) in
+  LuaS.Binary(LuaS.Eq(subject_field, case_str))
 
 let generate_lua_push_frame_fn
   (lua_fn_name : string)
@@ -1085,7 +1092,7 @@ let generate_lua_cn_function
       (fn_def.args)
   in
   let stmts, _, _ = fn_exec in
-  LuaS.FunctionDef(Sym.pp_string fn_sym, params, stmts)
+  LuaS.LocalFunctionDef(Sym.pp_string fn_sym, params, stmts)
 
 let generate_lua_cn_predicate 
   (pred_sym : CF.Ctype.union_tag)
@@ -1103,7 +1110,7 @@ let generate_lua_cn_predicate
     initial @ [ cn_spec_mode_var_sym; cn_loop_ownership_var_sym ]
   in
   let stmts, _, _ = pred_exec in
-  LuaS.FunctionDef(Sym.pp_string pred_sym, params, stmts)
+  LuaS.LocalFunctionDef(Sym.pp_string pred_sym, params, stmts)
 
 (* ---------------------------------- *)
 (*         Cn-to-Lua Terms            *)
@@ -1144,7 +1151,9 @@ let cn_to_lua_binop (expr_a, expr_b, binop)
 =
   let lua_expression =
     match binop with
-    | IT.EQ | _ -> LuaS.Call("cn.equals", [ expr_a; expr_b ])
+    | IT.EQ
+       -> LuaS.Call("cn.equals", [ expr_a; expr_b ])
+    | _ -> LuaS.Call("BINOP_NOT_IMPLEMENTED", [ expr_a; expr_b ])
   in
   (lua_expression)
 
@@ -1190,3 +1199,11 @@ let cn_to_lua_apply sym in_execs
   let merged_execs = concat execs in
   let final_exec = push_expr_to_exec (merged_execs, apply_expr) in
   (final_exec)
+
+let cn_to_lua_let
+  (var : CF.Ctype.union_tag)
+  (val_expr : lua_expression)
+  : lua_cn_exec
+=
+  let stmt = LuaS.LocalAssign(Sym.pp_string var, val_expr) in
+  ([stmt], [], get_empty_lua_expr)

@@ -209,11 +209,19 @@ val generate_lua_env_req : LuaS.stmt
 (*
 Utility used to generate an if-else block in Lua
 *)
-val generate_if_else_cond :
-    lua_expression ->
-    lua_statement list ->
-    lua_statement list ->
+val generate_lua_cn_conditional :
+    (lua_expression option * lua_statements) list ->
     lua_statement
+
+(*
+Utility used to generate x.tag == y type statement
+to correspond to a match case in 
+match x
+ | y -> 
+*)
+val generate_lua_cn_match_case_equality :
+    (lua_expression * string) ->
+    lua_expression
 
 (*
 Utility used to generate a Lua function that pushes a bunch of 
@@ -333,3 +341,8 @@ val cn_to_lua_apply
     : CF.Ctype.union_tag ->
     lua_cn_exec list ->
     (lua_cn_exec)
+
+val cn_to_lua_let
+    : CF.Ctype.union_tag ->
+    lua_expression ->
+    lua_cn_exec
