@@ -325,6 +325,15 @@ val cn_to_lua_struct_member
     Id.t ->
     lua_cn_exec
 
+val cn_to_lua_record_member
+    : lua_cn_exec ->
+    Id.t ->
+    lua_cn_exec
+
+val cn_to_lua_record
+    : (Id.t * lua_cn_exec) list ->
+    lua_cn_exec
+
 val cn_to_lua_constructor
     : CF.Ctype.union_tag ->
     CF.Ctype.union_tag ->

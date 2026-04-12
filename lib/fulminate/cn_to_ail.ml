@@ -1266,7 +1266,14 @@ let rec cn_to_ail_expr_aux
         t
         PassBack
     in
-    dest d spec_mode_opt (b, s, l, mk_expr A.(AilEmemberofptr (e, m)))
+    (
+      match RC.get_runtime() with
+        | RC.C ->
+            dest d spec_mode_opt (b, s, l, mk_expr A.(AilEmemberofptr (e, m)))
+        | RC.Lua ->
+          let l' = CnL.cn_to_lua_record_member l m in
+          dest d spec_mode_opt ([], [], l', mk_expr ail_null)
+    )
   | StructMember (t, m) ->
     let b, s, l, e =
       cn_to_ail_expr_aux
@@ -1374,7 +1381,7 @@ let rec cn_to_ail_expr_aux
       in
       let ail_memberof = A.(AilEmemberofptr (mk_expr res_ident, id)) in
       let assign_stat = A.(AilSexpr (mk_expr (AilEassign (mk_expr ail_memberof, e)))) in
-      (b, s, assign_stat, l)
+      (b, s, assign_stat, (id, l))
     in
     let transformed_ms = List.map (fun (id, it) -> (id, IT.get_bt it)) ms in
     let sym_name = lookup_records_map_with_default (BT.Record transformed_ms) in
@@ -1383,11 +1390,21 @@ let rec cn_to_ail_expr_aux
     let fn_call = mk_alloc_expr (Struct sym_name) in
     let alloc_stat = A.(AilSdeclaration [ (res_sym, Some fn_call) ]) in
     let b, s = ([ res_binding ], [ alloc_stat ]) in
-    let bs, ss, assign_stats, l = list_split_four (List.map generate_ail_stat ms) in
-    dest
-      d
-      spec_mode_opt
-      (List.concat bs @ b, List.concat ss @ s @ assign_stats, CnL.concat l, mk_expr res_ident)
+    let bs, ss, assign_stats, lua_record_data = list_split_four (List.map generate_ail_stat ms) in
+
+    (match RC.get_runtime() with
+      | RC.C ->
+        dest
+          d
+          spec_mode_opt
+          (List.concat bs @ b, List.concat ss @ s @ assign_stats, CnL.get_empty_lua_cn_exec, mk_expr res_ident)
+      | RC.Lua ->
+        let final_exec = CnL.cn_to_lua_record lua_record_data in
+        dest
+          d
+          spec_mode_opt
+          ([], [], final_exec, mk_expr ail_null)
+    )
   | RecordUpdate ((_t1, _m), _t2) -> failwith (__LOC__ ^ ": TODO RecordUpdate")
   (* Allocation *)
   | Constructor (sym, ms) ->

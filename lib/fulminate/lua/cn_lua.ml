@@ -1169,6 +1169,35 @@ let cn_to_lua_struct_member
   let struct_member_expr = LuaS.Field(struct_expr, LuaS.Symbol(member_term_string)) in
   push_expr_to_exec (exec, struct_member_expr)
 
+let cn_to_lua_record_member
+  (in_exec : lua_cn_exec)
+  (member_term : Id.t)
+  : lua_cn_exec
+=
+  (*@saljuk NOTE: For now, record and struct members are exactly alike so we're reusing.
+  Change if need be.
+  *)
+  cn_to_lua_struct_member in_exec member_term
+
+let cn_to_lua_record
+    (record_data : ((Id.t * lua_cn_exec) list))
+  : lua_cn_exec
+=
+  let exec_and_table_data
+  =
+    List.map
+    (fun (id, in_exec) -> 
+      let exec, expr = pop_expr_from_exec in_exec in
+      let id_str = (CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier id)) in 
+      (exec, LuaS.Named(id_str, expr))
+    )
+    record_data
+  in
+  let execs, table_datas = List.split exec_and_table_data in
+  let table_expr = LuaS.Table(table_datas, false) in
+  let (merged_execs : lua_cn_exec) = concat execs in
+  (push_expr_to_exec (merged_execs, table_expr))
+
 let cn_to_lua_constructor
   (dt : CF.Ctype.union_tag)
   (sym : CF.Ctype.union_tag)
