@@ -21,8 +21,8 @@ the entire thing falls under cn.
 
 local cn = {
     error_stack = {},
+    locals = {}, -- Proxy table
     frames = {},
-    locals = {}, -- proxy table
     ghost_state = {},
     spec_mode = {
         PRE  = 1,
@@ -84,7 +84,7 @@ function cn.error_stack.dump()
 end
 
 --[[
-FRAME
+FRAMES
 --]]
 
 function cn.frames.push_function()
@@ -106,16 +106,16 @@ function cn.frames.pop_loop()
     cn.frames[#cn.frames] = nil
 end
 
-local function get_current_frame()
+function cn.frames.get_current_frame()
     return cn.frames[#cn.frames]
 end
 
 function cn.frames.set_local(name, value)
-    get_current_frame()[name] = value
+    cn.frames.get_current_frame()[name] = value
 end
 
 function cn.frames.get_local(name)
-    return get_current_frame()[name]
+    return cn.frames.get_current_frame()[name]
 end
 
 --[[
@@ -168,7 +168,7 @@ setmetatable(cn, mt)
 
 --[[
 This allows us to set and get locals using cn.locals.X = Y instead of the more
-verbose function calls (i.e. cn.frames.set/get_local())
+verbose function calls (i.e. cn.locals.set/get_local())
 ]]--
 setmetatable(cn.locals, {
     -- support assignments
@@ -183,9 +183,24 @@ setmetatable(cn.locals, {
 
     -- support iteration over locals
     __pairs = function(_)
-        local real_table = get_current_frame()
+        local real_table = cn.frames.get_current_frame()
         return next, real_table, nil
     end
+})
+
+--[[ 
+Setup an environment where builtins can be easily used 'globally'
+
+@saljuk TODO Consider porting over more things to the environment paradigm
+so that we can just call error_stack.push() instead of cn.error_stack.push()
+]] --
+local builtins = {
+    is_null = function(p) return (p == nil or p == 0) end
+}
+cn.env = setmetatable({}, {
+    __index = function(_, k) 
+        return builtins[k] or _G[k] 
+    end 
 })
 
 return cn
