@@ -42,7 +42,7 @@ val generate_c_records
 
 val generate_c_datatypes
   :  GenTypes.genTypeCategory AilSyntax.sigma ->
-  (Cerb_location.t * string) list
+  ((Cerb_location.t * string) list * (string list))
 
 val generate_ghost_enum : unit Mucore.file -> string
 
@@ -72,7 +72,7 @@ val generate_c_functions
   Cabs.translation_unit ->
   _ Mucore.file ->
   GenTypes.genTypeCategory AilSyntax.sigma ->
-  string * string * Cerb_location.t list
+  string * string * Cerb_location.t list * string list
 
 val generate_c_predicates
   :  string ->
@@ -80,7 +80,7 @@ val generate_c_predicates
   Cabs.translation_unit ->
   _ Mucore.file ->
   GenTypes.genTypeCategory AilSyntax.sigma ->
-  string * string * Cerb_location.t list
+  string * string * Cerb_location.t list * string list
 
 val generate_c_lemmas
   :  string ->

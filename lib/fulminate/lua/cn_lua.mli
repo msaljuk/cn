@@ -201,6 +201,28 @@ Utility used to generate the return for the Lua core runtime.
 *)
 val generate_lua_runtime_return : LuaS.stmt
 
+(* 
+Utility used to generate the environment setting for the instrumented Lua file
+*)
+val generate_lua_env_req : LuaS.stmt
+
+(*
+Utility used to generate an if-else block in Lua
+*)
+val generate_lua_cn_conditional :
+    (lua_expression option * lua_statements) list ->
+    lua_statement
+
+(*
+Utility used to generate x.tag == y type statement
+to correspond to a match case in 
+match x
+ | y -> 
+*)
+val generate_lua_cn_match_case_equality :
+    (lua_expression * string) ->
+    lua_expression
+
 (*
 Utility used to generate a Lua function that pushes a bunch of 
 C arguments onto the Lua CN frame at the start of the frame. Takes
@@ -246,11 +268,33 @@ val generate_lua_cn_return
     : lua_expression -> bool ->
     LuaS.stmt
 
+val generate_lua_cn_pname_resource_call
+    : CF.Ctype.union_tag ->
+    lua_cn_exec list ->
+    lua_cn_exec
+
 val generate_lua_cn_resource
     : CF.Ctype.union_tag ->
     CF.Ctype.ctype ->
     lua_cn_exec ->
+    bool ->
     lua_cn_exec
+
+val generate_lua_cn_datatype
+    : A.ail_identifier CF.Cn.cn_datatype ->
+    lua_statement
+
+val generate_lua_cn_function
+    : CF.Ctype.union_tag ->
+    Definition.Function.t ->
+    lua_cn_exec ->
+    lua_statement
+
+val generate_lua_cn_predicate
+    : CF.Ctype.union_tag ->
+    Definition.Predicate.t ->
+    lua_cn_exec ->
+    lua_statement
 
 (* ---------------------------------- *)
 (*          Cn-to-Lua Terms           *)
@@ -281,6 +325,21 @@ val cn_to_lua_struct_member
     Id.t ->
     lua_cn_exec
 
+val cn_to_lua_record_member
+    : lua_cn_exec ->
+    Id.t ->
+    lua_cn_exec
+
+val cn_to_lua_record
+    : (Id.t * lua_cn_exec) list ->
+    lua_cn_exec
+
+val cn_to_lua_constructor
+    : CF.Ctype.union_tag ->
+    CF.Ctype.union_tag ->
+    lua_expressions ->
+    lua_expression
+
 val cn_to_lua_member_shift
     : lua_expression ->
     CF.Ctype.union_tag ->
@@ -291,3 +350,8 @@ val cn_to_lua_apply
     : CF.Ctype.union_tag ->
     lua_cn_exec list ->
     (lua_cn_exec)
+
+val cn_to_lua_let
+    : CF.Ctype.union_tag ->
+    lua_expression ->
+    lua_cn_exec

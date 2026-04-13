@@ -541,25 +541,32 @@ let generate_str_from_ail_structs ail_structs =
 
 
 let generate_c_datatypes (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =
-  let ail_datatypes =
+  let ail_datatypes, lua_datatypes =
     match sigm.cn_datatypes with
-    | [] -> []
+    | [] -> ([], [])
     | d :: ds ->
-      let ail_dt1 = Cn_to_ail.cn_to_ail_datatype ~first:true d in
-      let ail_dts = List.map Cn_to_ail.cn_to_ail_datatype ds in
-      ail_dt1 :: ail_dts
+      let ail_dt1, lua_dt1 = Cn_to_ail.cn_to_ail_datatype ~first:true d in
+      let ail_and_lua_dts = List.map Cn_to_ail.cn_to_ail_datatype ds in
+      let ail_dts, lua_dts = List.split ail_and_lua_dts in
+      (ail_dt1 :: ail_dts, lua_dt1 :: lua_dts)
   in
-  let locs_and_struct_strs =
-    List.map
-      (fun (loc, structs) ->
-         let doc =
-           Utils.concat_map_newline (List.map generate_doc_from_ail_struct structs)
-         in
-         (loc, doc_to_pretty_string doc))
-      ail_datatypes
-  in
-  locs_and_struct_strs
 
+  match RC.get_runtime() with
+    | RC.C ->
+      let locs_and_struct_strs =
+        List.map
+          (fun (loc, structs) ->
+            let doc =
+              Utils.concat_map_newline (List.map generate_doc_from_ail_struct structs)
+            in
+            (loc, doc_to_pretty_string doc))
+          ail_datatypes
+      in
+      (locs_and_struct_strs, [])
+    | RC.Lua ->
+      let open Lua.Pp_lua in
+      let lua_datatypes_str = List.map pp_stmt lua_datatypes in
+      ([], lua_datatypes_str)
 
 let generate_ghost_enum prog5 =
   let args_and_body_list = Extract.args_and_body_list_of_mucore prog5 in
@@ -594,7 +601,7 @@ let generate_c_functions
       (prog5 : _ Mucore.file)
       (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
   =
-  let ail_funs_and_records =
+  let ail_and_lua_funcs =
     List.map
       (fun cn_f ->
          Cn_to_ail.cn_to_ail_function
@@ -606,14 +613,32 @@ let generate_c_functions
            sigm.cn_functions)
       prog5.logical_predicates
   in
-  let ail_funs, _ = List.split ail_funs_and_records in
-  let locs_and_decls, defs = List.split ail_funs in
-  let locs, decls = List.split locs_and_decls in
-  let defs = List.filter_map Fun.id defs in
-  let decl_str_comment = "\n/* CN FUNCTIONS */\n\n" in
-  let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
-  (doc_to_pretty_string defs_doc, decl_str_comment ^ doc_to_pretty_string decls_doc, locs)
+  let ail_func_option, lua_func_options = List.split ail_and_lua_funcs in
 
+  match RC.get_runtime() with
+    | RC.C ->
+      let ail_func_group = 
+        List.map
+        (fun option -> 
+          match option with
+            | Some(x) -> x
+            | None -> exit 2
+        )
+        ail_func_option
+      in
+      let ail_funs, _ = List.split ail_func_group in
+      let locs_and_decls, defs = List.split ail_funs in
+      let locs, decls = List.split locs_and_decls in
+
+      let defs = List.filter_map Fun.id defs in
+      let decl_str_comment = "\n/* CN FUNCTIONS */\n\n" in
+      let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
+      (doc_to_pretty_string defs_doc, decl_str_comment ^ doc_to_pretty_string decls_doc, locs, [])
+    | RC.Lua ->
+      let lua_funcs = List.filter_map (fun x -> x) lua_func_options in
+      let open Lua.Pp_lua in
+      let lua_func_strs = List.map pp_stmt lua_funcs in
+      ("", "", [], lua_func_strs)
 
 let[@warning "-32" (* unused-value-declaration *)] rec remove_duplicates eq_fun = function
   | [] -> []
@@ -631,7 +656,7 @@ let generate_c_predicates
       (prog5 : _ Mucore.file)
       (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
   =
-  let ail_funs, _ =
+  let ail_funs, _, lua_funcs =
     Cn_to_ail.cn_to_ail_predicates
       prog5.resource_predicates
       filename
@@ -640,13 +665,20 @@ let generate_c_predicates
       sigm.cn_predicates
       without_ownership_checking
   in
-  let locs_and_decls, defs = List.split ail_funs in
-  let locs, decls = List.split locs_and_decls in
-  let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
-  ( "\n/* CN PREDICATES */\n\n" ^ doc_to_pretty_string defs_doc,
-    doc_to_pretty_string decls_doc,
-    locs )
 
+  match RC.get_runtime() with
+    | RC.C ->
+      let locs_and_decls, defs = List.split ail_funs in
+      let locs, decls = List.split locs_and_decls in
+      let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
+      ( "\n/* CN PREDICATES */\n\n" ^ doc_to_pretty_string defs_doc,
+        doc_to_pretty_string decls_doc,
+        locs, 
+        [] )
+    | RC.Lua ->
+      let open Lua.Pp_lua in
+      let lua_pred_strs = List.map pp_stmt lua_funcs in
+      ("", "", [], lua_pred_strs)
 
 let generate_c_lemmas
       filename

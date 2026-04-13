@@ -191,7 +191,7 @@ val cn_to_ail_struct
 val cn_to_ail_datatype
   :  ?first:bool ->
   AilSyntax.sigma_cn_datatype ->
-  Locations.t * AilSyntax.sigma_tag_definition list
+  ((Locations.t * AilSyntax.sigma_tag_definition list) * CnL.lua_statement)
 
 val cn_to_ail_records
   :  (MembersKey.t * AilSyntax.ail_identifier) list ->
@@ -204,9 +204,10 @@ val cn_to_ail_function
   _ Mucore.file ->
   AilSyntax.sigma_cn_datatype list ->
   AilSyntax.sigma_cn_function list ->
-  ((Locations.t * AilSyntax.sigma_declaration)
+  (((Locations.t * AilSyntax.sigma_declaration)
   * GenTypes.genTypeCategory AilSyntax.sigma_function_definition option)
-  * AilSyntax.sigma_tag_definition option
+  * AilSyntax.sigma_tag_definition option) option
+  * CnL.lua_statement option
 
 val cn_to_ail_predicates
   :  (Sym.t * Definition.Predicate.t) list ->
@@ -219,6 +220,7 @@ val cn_to_ail_predicates
   * GenTypes.genTypeCategory AilSyntax.sigma_function_definition)
     list
   * AilSyntax.sigma_tag_definition option list
+  * CnL.lua_statements
 
 val cn_to_ail_lemmas
   :  string ->
