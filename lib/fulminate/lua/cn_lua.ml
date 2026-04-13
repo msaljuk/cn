@@ -20,6 +20,9 @@ let push_type_prefix = "push_"
 
 let cn_sym = LuaS.Symbol( "cn" )
 let cn_spec_mode_sym = LuaS.Symbol( "cn.spec_mode" )
+let cn_spec_mode_var_sym = LuaS.Symbol("spec_mode")
+let cn_loop_ownership_var_sym = LuaS.Symbol("loop_ownership")
+let cn_env_sym = LuaS.Symbol("cn.env")
 let cn_assert_sym = LuaS.Symbol( "cn.assert" )
 let cn_asserts_sym = LuaS.Symbol( "cn.asserts" )
 let cn_error_stack_push_sym = LuaS.Symbol( "cn.error_stack.push" )
@@ -857,6 +860,25 @@ let generate_lua_runtime_return
   (* return cn *)
   = (LuaS.Return(cn_sym))
 
+let generate_lua_env_req
+  (* _ENV = cn.env *)
+  = (LuaS.Assign("_ENV", cn_env_sym))
+
+let generate_lua_cn_conditional
+  (cases : (lua_expression option * lua_statements) list)
+  : LuaS.stmt
+=
+  LuaS.IfElse(cases)
+
+let generate_lua_cn_match_case_equality
+  ((subject, case) : lua_expression * string)
+  : lua_expression
+=
+  let tag_sym = LuaS.Symbol("tag") in
+  let subject_field = LuaS.Field(subject, tag_sym) in
+  let case_str = LuaS.String(case) in
+  LuaS.Binary(LuaS.Eq(subject_field, case_str))
+
 let generate_lua_push_frame_fn
   (lua_fn_name : string)
   (c_fn_args : (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list)
@@ -989,11 +1011,25 @@ let generate_lua_cn_assert
 let generate_lua_cn_return (expr : lua_expression) (is_unit : bool)
   : LuaS.stmt
 =
-  if is_unit then (
-    LuaS.Return(expr)
-  ) else ( LuaS.Return(LuaS.Nil) )
+  LuaS.Return(if is_unit then LuaS.Nil else expr)
 
-let generate_lua_cn_resource sym ctype in_exec
+let generate_lua_cn_pname_resource_call
+  (pname : CF.Ctype.union_tag)
+  (args : lua_cn_exec list)
+  : lua_cn_exec
+=
+  let execs_and_exprs =
+    List.map
+    (fun x -> 
+      pop_expr_from_exec x
+    )
+    args
+  in
+  let execs, exprs = List.split execs_and_exprs in
+  let final_expr = (LuaS.Call(Sym.pp_string pname, exprs)) in
+  (push_expr_to_exec (concat execs, final_expr))
+
+let generate_lua_cn_resource sym ctype in_exec is_local_res
   : lua_cn_exec
 =
   let exec, expr = pop_expr_from_exec in_exec in
@@ -1001,10 +1037,80 @@ let generate_lua_cn_resource sym ctype in_exec
   let stmt = match rm_ctype ctype with
     | CF.Ctype.Void -> LuaS.SExpr(expr)
     | _ -> 
-      LuaS.Assign(Sym.pp_string sym, expr)
+      let sym_str = Sym.pp_string sym in
+
+      if is_local_res then 
+        LuaS.LocalAssign(sym_str, expr)
+      else 
+        LuaS.Assign(Sym.pp_string sym, expr)
   in
 
   (push_stmts_to_exec (exec, [ stmt ]))
+
+let generate_lua_cn_datatype (cn_datatype : A.ail_identifier CF.Cn.cn_datatype)
+  : lua_statement
+=
+  let sym_str sym = (CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier sym)) in
+
+  let dt_name = Sym.pp_string(cn_datatype.cn_dt_name) in
+
+  let dt_table_members = 
+    List.map
+    (fun (sym, args) -> 
+      (
+        let tbl_member_name = Sym.pp_string sym in
+        (*@saljuk NOTE: For some reason, args are in reverse order. Doing this here so that we match spec *)
+        let args = List.rev args in
+        let arg_names = List.map (fun (id, _) -> sym_str id) args in
+        let tbl_member_fn_args = List.map (fun x -> LuaS.Symbol(x)) arg_names in
+        let arg_tbl_fields = 
+          let gen_arg_fields = List.map (fun x -> LuaS.Named(x, LuaS.Symbol(x))) arg_names in
+          let tag_arg_field = LuaS.Named("tag", LuaS.String(String.uppercase_ascii tbl_member_name)) in
+          [ tag_arg_field ] @ gen_arg_fields
+        in
+        let tbl_member_fn_body = LuaS.Return(LuaS.Table(arg_tbl_fields, false)) in
+
+        LuaS.Named(tbl_member_name, LuaS.Function(tbl_member_fn_args, [ tbl_member_fn_body ], false))
+      )
+    )
+    cn_datatype.cn_dt_cases
+  in
+
+  let dt_table = LuaS.Table(dt_table_members, true) in
+  
+  LuaS.LocalAssign(dt_name, dt_table)
+
+let generate_lua_cn_function
+  (fn_sym : CF.Ctype.union_tag)
+  (fn_def : Definition.Function.t)
+  (fn_exec : lua_cn_exec)
+=
+  let params =
+    List.map
+      (fun (sym, _) -> 
+        LuaS.Symbol(Sym.pp_string sym))
+      (fn_def.args)
+  in
+  let stmts, _, _ = fn_exec in
+  LuaS.LocalFunctionDef(Sym.pp_string fn_sym, params, stmts)
+
+let generate_lua_cn_predicate 
+  (pred_sym : CF.Ctype.union_tag)
+  (pred_def : Definition.Predicate.t)
+  (pred_exec : lua_cn_exec)
+=
+  let params =
+    let initial =
+      List.map
+        (fun (sym, _) -> 
+          LuaS.Symbol(Sym.pp_string sym))
+        ((pred_def.pointer, BT.(Loc ())) :: pred_def.iargs)
+    in
+    (* Every predicate gets a spec mode and loop ownership arg *)
+    initial @ [ cn_spec_mode_var_sym; cn_loop_ownership_var_sym ]
+  in
+  let stmts, _, _ = pred_exec in
+  LuaS.LocalFunctionDef(Sym.pp_string pred_sym, params, stmts)
 
 (* ---------------------------------- *)
 (*         Cn-to-Lua Terms            *)
@@ -1045,7 +1151,9 @@ let cn_to_lua_binop (expr_a, expr_b, binop)
 =
   let lua_expression =
     match binop with
-    | IT.EQ | _ -> LuaS.Call("cn.equals", [ expr_a; expr_b ])
+    | IT.EQ
+       -> LuaS.Call("cn.equals", [ expr_a; expr_b ])
+    | _ -> LuaS.Call("BINOP_NOT_IMPLEMENTED", [ expr_a; expr_b ])
   in
   (lua_expression)
 
@@ -1060,6 +1168,44 @@ let cn_to_lua_struct_member
   in
   let struct_member_expr = LuaS.Field(struct_expr, LuaS.Symbol(member_term_string)) in
   push_expr_to_exec (exec, struct_member_expr)
+
+let cn_to_lua_record_member
+  (in_exec : lua_cn_exec)
+  (member_term : Id.t)
+  : lua_cn_exec
+=
+  (*@saljuk NOTE: For now, record and struct members are exactly alike so we're reusing.
+  Change if need be.
+  *)
+  cn_to_lua_struct_member in_exec member_term
+
+let cn_to_lua_record
+    (record_data : ((Id.t * lua_cn_exec) list))
+  : lua_cn_exec
+=
+  let exec_and_table_data
+  =
+    List.map
+    (fun (id, in_exec) -> 
+      let exec, expr = pop_expr_from_exec in_exec in
+      let id_str = (CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier id)) in 
+      (exec, LuaS.Named(id_str, expr))
+    )
+    record_data
+  in
+  let execs, table_datas = List.split exec_and_table_data in
+  let table_expr = LuaS.Table(table_datas, false) in
+  let (merged_execs : lua_cn_exec) = concat execs in
+  (push_expr_to_exec (merged_execs, table_expr))
+
+let cn_to_lua_constructor
+  (dt : CF.Ctype.union_tag)
+  (sym : CF.Ctype.union_tag)
+  (args : lua_expressions)
+  : lua_expression
+=
+  let ail_to_lua_sym sym = LuaS.Symbol(Sym.pp_string sym) in
+  LuaS.Call(Pp_lua.pp_expr (LuaS.Field(ail_to_lua_sym dt, ail_to_lua_sym sym)), args)
 
 let cn_to_lua_member_shift 
   (struct_expr : lua_expression)
@@ -1082,3 +1228,11 @@ let cn_to_lua_apply sym in_execs
   let merged_execs = concat execs in
   let final_exec = push_expr_to_exec (merged_execs, apply_expr) in
   (final_exec)
+
+let cn_to_lua_let
+  (var : CF.Ctype.union_tag)
+  (val_expr : lua_expression)
+  : lua_cn_exec
+=
+  let stmt = LuaS.LocalAssign(Sym.pp_string var, val_expr) in
+  ([stmt], [], get_empty_lua_expr)
