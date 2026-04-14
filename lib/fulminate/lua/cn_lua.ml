@@ -160,7 +160,7 @@ let generate_c_inline_fn_wrapper_call
   =
   let args_expr = 
     List.map
-    (fun (sym, _) -> mk_expr (AilEunary (Address, mk_expr (AilEident sym))))
+    (fun (sym, _) -> mk_expr (AilEident sym))
     args
   in
   (A.(AilSexpr (

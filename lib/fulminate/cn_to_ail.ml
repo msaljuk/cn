@@ -4462,38 +4462,51 @@ let rec cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mod
           else
             ((b1 @ (binding :: b2), s @ (ail_stat_ :: ss), CnL.concat [l1; l2]), false, None)
         | RC.Lua ->
-          let _, _, l1, _ = cn_to_ail_expr filename dts globals spec_mode_opt pointer PassBack in
-          (* Build a reader wrapper version of the expression we've found *)
-          let l1', expr = CnL.pop_expr_from_exec l1 in
-          let ctype = Sctypes.to_ctype ct in
           let name_str = Sym.pp_string name in
-          let expr_str = CnL.expr_to_string expr in
-          let reader_str =
-            let reader_expr = CnL.generate_lua_ctype_get ctype in
-            CnL.expr_to_string reader_expr
-          in
-          let expr_term =
-            IT.(IT (Sym (Sym.fresh expr_str), BT.Unit, Cerb_location.unknown))
-          in
-          let fn_call_it =
-            IT.IT
-              ( Apply (Sym.fresh reader_str, [ expr_term ]),
-                BT.Unit,
-                Cerb_location.unknown )
-          in
-          let _, _, l1'', _ =
-            cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
-          in
-          let _, expr_w_reader = CnL.pop_expr_from_exec l1'' in
-          let lua_assign_stmt = CnL.generate_lua_cn_local_assignment name_str expr_w_reader in
-          let l1''' = CnL.push_stmts_to_exec (l1', [ lua_assign_stmt ]) in
 
-          (* Update the let map to add this new k,v pair *)
+          let _, _, l1, _ = cn_to_ail_expr filename dts globals spec_mode_opt pointer PassBack in
+          let l1', expr = CnL.pop_expr_from_exec l1 in
+          let expr_str = CnL.expr_to_string expr in
+          let ctype = Sctypes.to_ctype ct in
           let let_map =
             match (let_map_opt: 'a StringMap.t option) with
               | Some x -> x
               | None -> failwith "Sym Map must be passed!"
           in
+          let final_expr =
+            (* 
+            The 'root' expr (i.e. the c parameter) gets used as is.
+            The remaining parameters have to be wrapped with a reader call.
+            We determine if this is a root by checking if we've encountered it before
+            or not (if yes, not root, otherwise root)  
+            *)
+            if StringMap.mem expr_str let_map then
+              let reader_str =
+                let reader_expr = CnL.generate_lua_ctype_get ctype in
+                CnL.expr_to_string reader_expr
+              in
+              let expr_term =
+                IT.(IT (Sym (Sym.fresh expr_str), BT.Unit, Cerb_location.unknown))
+              in
+              let fn_call_it =
+                IT.IT
+                  ( Apply (Sym.fresh reader_str, [ expr_term ]),
+                    BT.Unit,
+                    Cerb_location.unknown )
+              in
+              let _, _, l1'', _ =
+                cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
+              in
+              let _, expr_w_reader = CnL.pop_expr_from_exec l1'' in
+              (expr_w_reader)
+            else
+              (expr)
+          in
+          
+          let lua_assign_stmt = CnL.generate_lua_cn_local_assignment name_str final_expr in
+          let l1''' = CnL.push_stmts_to_exec (l1', [ lua_assign_stmt ]) in
+
+          (* Update the let map to add this new k,v pair *)
           let new_let_map = StringMap.add name_str (expr_str, ctype) let_map in
 
           let (_, _, l2), no_op, new_let_map_opt =
@@ -4572,7 +4585,7 @@ let cn_to_ail_cnprog ~without_lemma_checks filename dts globals spec_mode_opt cn
         List.map
         (fun (name, ctype) -> 
           (Sym.fresh name, 
-          (CF.Ctype.no_qualifiers, CF.Ctype.Ctype([], Pointer (CF.Ctype.no_qualifiers, ctype)), false)))
+          (CF.Ctype.no_qualifiers, ctype, false)))
         sym_type_list
       in
 
