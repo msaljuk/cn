@@ -60,6 +60,10 @@ local cn = {
         -- c loop checks
         initialise_loop_ownership_state = {},
         loop_put_back_ownership = {},
+
+        -- c builtins
+        fls = {},
+        flsl = {}
     }
 }
 

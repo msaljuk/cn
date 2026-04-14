@@ -32,7 +32,7 @@ local function create_number_type(bits, signed)
         signed = signed,
         mask   = mask,
 
-        new = wrap,
+        make = wrap,
         min_val = function() return min_val end,
         max_val = function() return max_val end,
 
@@ -63,6 +63,7 @@ local function create_number_type(bits, signed)
             end
             return wrap(r)
         end,
+        neg = function (v) return wrap(-v) end,
         -- Can't use ^ for exp since Lua implicitly converts to floats for that
         -- and that reduces our range. Use manual multiplication
         exp = function(a, b)
@@ -82,10 +83,10 @@ local function create_number_type(bits, signed)
         end,
 
         -- Bitwise Ops
-        bw_and = function(a, b) return wrap(a & b) end,
-        bw_or  = function(a, b) return wrap(a | b) end,
-        bw_xor = function(a, b) return wrap(a ~ b) end,
-        bw_not = function(a)    return wrap(~a) end,
+        bw_and   = function(a, b) return wrap(a & b) end,
+        bw_or    = function(a, b) return wrap(a | b) end,
+        bw_xor   = function(a, b) return wrap(a ~ b) end,
+        bw_compl = function(a)    return wrap(~a) end,
         
         -- Shifts
         shl = function(a, n) return wrap(a << n) end,

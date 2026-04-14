@@ -14,7 +14,14 @@ let indent block ?(comma = false) () =
     let indented_block = Stdlib.List.map process_string block in
     Stdlib.String.concat sep indented_block
 
-let rec pp_expr = function
+let rec pp_expr =     
+    let lua_c_type_prefix = "c_num" in
+    let get_c_type t = LuaS.Field(LuaS.Symbol(lua_c_type_prefix), LuaS.Symbol(t)) in
+    let c_type_op t o args 
+        = LuaS.Call(pp_expr (LuaS.Field(get_c_type t, LuaS.Symbol(o))), args)
+    in
+    
+    function
     | LuaS.Nil -> "nil"
     | LuaS.Bool b -> string_of_bool b
     | LuaS.Number_Int (z : Z.t) -> Z.to_string z
@@ -42,12 +49,6 @@ let rec pp_expr = function
             "{ " ^ table_body ^ " }"
         )
     | LuaS.Binary (args) ->
-        let lua_c_type_prefix = "c_num" in
-        let get_c_type t = LuaS.Field(LuaS.Symbol(lua_c_type_prefix), LuaS.Symbol(t)) in
-        let c_type_op t o args 
-            = LuaS.Call(pp_expr (LuaS.Field(get_c_type t, LuaS.Symbol(o))), args)
-        in
-
         let pp_binary_expr_type expr = 
             match expr with
                 | LuaS.Or(a, b) -> pp_expr (LuaS.Call("bool_or", [ a; b ]))
@@ -72,6 +73,20 @@ let rec pp_expr = function
                 | LuaS.Eq(a, b) -> pp_expr (LuaS.Call("equals", [ a; b ]))
         in
         pp_binary_expr_type args
+    | LuaS.Unary (args) ->
+        let pp_unary_expr_type args =
+            let call_c_func name args =
+                LuaS.Call(pp_expr (LuaS.Field(LuaS.Symbol("c"), LuaS.Symbol(name))), args)
+            in 
+
+            match args with
+                | LuaS.Not(v) -> "not " ^ pp_expr v
+                | LuaS.Negate(v, t) -> pp_expr (c_type_op t "neg" [ v ])
+                | LuaS.BW_FLS(v) -> pp_expr (call_c_func "fls" [ v ])
+                | LuaS.BW_FLSL(v) -> pp_expr (call_c_func "flsl" [ v ])
+                | LuaS.BW_Complement(v, t) -> pp_expr (c_type_op t "bw_compl" [ v ])
+        in
+        pp_unary_expr_type args
 
 and pp_stmt = function
     | LuaS.Assign (id, e) ->

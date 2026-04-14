@@ -1045,24 +1045,13 @@ let rec cn_to_ail_expr_aux
         in
         dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr ail_expr_)
       | RC.Lua ->
-        let get_lua_c_int_type_str bt1 bt2 =
-          match (bt1, bt2) with
-          | BT.Loc (), BT.Integer | BT.Loc (), BT.Bits _ -> "i64"
-          | BT.Integer, BT.Integer -> "i64"
-          | _, BT.Bits (sign, size) | BT.Bits (sign, size), _ ->
-            str_of_bt_bitvector_type sign size
-          | _, _ ->
-            "incompatible"
-        in
-        let lua_c_int_type_str = get_lua_c_int_type_str (IT.get_bt t1) (IT.get_bt t2) in
-
         let l1', lua_cn_expr_1 = CnL.pop_expr_from_exec l1 in
         let l2', lua_cn_expr_2 = CnL.pop_expr_from_exec l2 in
 
         let l3 = CnL.concat [ l1'; l2' ] in
         let l4 = CnL.push_expr_to_exec (
           l3, 
-          CnL.cn_to_lua_binop (lua_cn_expr_1, lua_cn_expr_2, bop, lua_c_int_type_str)) in
+          CnL.cn_to_lua_binop (lua_cn_expr_1, lua_cn_expr_2, IT.get_bt t1, IT.get_bt t2, bop)) in
 
         dest d spec_mode_opt (b1 @ b2, s1 @ s2, l4, mk_expr ail_null)
     );
@@ -1078,14 +1067,26 @@ let rec cn_to_ail_expr_aux
         t
         PassBack
     in
-    let annot = cn_to_ail_unop (IT.get_bt t) unop in
-    let str =
-      match annot with
-      | Some str -> str
-      | None -> failwith (__LOC__ ^ ": No CN unop function found")
-    in
-    let ail_expr_ = A.(AilEcall (mk_expr (AilEident (Sym.fresh str)), [ e ])) in
-    dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+
+    (match RC.get_runtime() with
+      | RC.C ->
+        let annot = cn_to_ail_unop (IT.get_bt t) unop in
+        let str =
+          match annot with
+          | Some str -> str
+          | None -> failwith (__LOC__ ^ ": No CN unop function found")
+        in
+        let ail_expr_ = A.(AilEcall (mk_expr (AilEident (Sym.fresh str)), [ e ])) in
+        dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+      | RC.Lua ->
+        let l', lua_cn_expr = CnL.pop_expr_from_exec l in
+
+        let l'' = CnL.push_expr_to_exec (
+          l', 
+          CnL.cn_to_lua_unop (lua_cn_expr, IT.get_bt t, unop)) in
+
+        dest d spec_mode_opt ([], [], l'' , mk_expr ail_null)
+    );
   | SizeOf sct ->
     let ail_expr_ = A.(AilEsizeof (C.no_qualifiers, Sctypes.to_ctype sct)) in
     let ail_call_ = wrap_with_convert_to ~sct ail_expr_ basetype in

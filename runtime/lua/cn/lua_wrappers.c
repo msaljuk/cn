@@ -146,6 +146,18 @@ static int c_loop_put_back_ownership() {
     return 0;
 }
 
+static int c_fls() {
+    uint32_t val = (uint32_t)luaL_checkinteger(lua_state, 1);
+    lua_pushinteger(lua_state, cn_fls(val));
+    return 1;
+}
+
+static int c_flsl() {
+    uint64_t val = (uint64_t)luaL_checkinteger(lua_state, 1);
+    lua_pushinteger(lua_state, cn_flsl(val));
+    return 1;
+}
+
 void push_cn_c_tables() {
     lua_rawgeti(lua_state, LUA_REGISTRYINDEX, lua_cn_runtime_ref);
     lua_getfield(lua_state, -1, "c");
@@ -208,6 +220,10 @@ void bind_cn_c_functions() {
     // C loop checks
     lua_cn_register_c_func("initialise_loop_ownership_state", c_initialise_loop_ownership_state);
     lua_cn_register_c_func("loop_put_back_ownership", c_loop_put_back_ownership);
+
+    // C built-ins (or dependents)
+    lua_cn_register_c_func("fls", c_fls);
+    lua_cn_register_c_func("flsl", c_flsl);
 }
 
 void lua_cn_load_runtime(

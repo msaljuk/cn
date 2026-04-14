@@ -13,6 +13,7 @@ type expr =
   | Function of expr list * stmt list * bool                (* function(a, b) ... end - anonymous function *)
   | Table of table_field_type list * bool
   | Binary of binary_expr_type
+  | Unary of unary_expr_type
 
 and table_field_type =
   | Named of ident * expr                                   (* { a = 5 } *)
@@ -39,6 +40,13 @@ and binary_expr_type =
   | LeftShift of expr * expr * string
   | RightShift of expr * expr * string
   | Eq of expr * expr
+
+and unary_expr_type =
+  | Not of expr
+  | Negate of expr * string
+  | BW_FLS of expr
+  | BW_FLSL of expr
+  | BW_Complement of expr * string
 
 (* Lua Statements *)
 and stmt =
