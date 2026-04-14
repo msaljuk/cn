@@ -334,7 +334,7 @@ val cn_to_lua_sym
     (lua_expression)
 
 val cn_to_lua_binop
-    : (lua_expression * lua_expression * IT.binop) ->
+    : (lua_expression * lua_expression * IT.binop * string) ->
     lua_expression
 
 val cn_to_lua_struct_member

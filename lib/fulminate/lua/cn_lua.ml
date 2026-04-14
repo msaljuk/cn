@@ -1131,43 +1131,29 @@ let cn_to_lua_sym (c_sym : CF.Ctype.union_tag)
 =
   LuaS.Symbol(Sym.pp_string c_sym)
 
-let cn_to_lua_binop (expr_a, expr_b, binop)
+let cn_to_lua_binop (expr_a, expr_b, binop, lua_c_type)
   : (lua_expression)
 =
   let lua_expression =
     match binop with
     | IT.And -> LuaS.Binary(LuaS.And(expr_a, expr_b))
     | IT.Or -> LuaS.Binary(LuaS.Or(expr_a, expr_b))
-    | Add ->
-      (*@saljuk TODO: See if need to implement *)
-      (*
-      let bt2_str =
-        if BT.equal bt1 BT.(Loc ()) then (
-          match bt2 with
-          | BT.Integer -> "_cn_integer"
-          | BT.Bits (sign, size) -> "_cn_bits_" ^ str_of_bt_bitvector_type sign size
-          | _ -> "")
-        else
-          ""
-      in
-      Some (get_cn_int_type_str bt1 bt2 ^ "_add" ^ bt2_str)*)
-      LuaS.Binary(LuaS.Add(expr_a, expr_b))
-    | Sub ->  LuaS.Binary(LuaS.Subtract(expr_a, expr_b))
-    | Mul | MulNoSMT -> LuaS.Binary(LuaS.Multiply(expr_a, expr_b))
-    (*@saljuk TODO: Fix based on type *)
-    | Div | DivNoSMT -> LuaS.Binary(LuaS.IntegerDivide(expr_a, expr_b))
-    | Exp | ExpNoSMT -> LuaS.Binary(LuaS.Exp(expr_a, expr_b))
-    | Rem | RemNoSMT -> LuaS.Binary(LuaS.Remainder(expr_a, expr_b))
-    | Mod | ModNoSMT -> LuaS.Binary(LuaS.Modulo(expr_a, expr_b))
-    | BW_Xor -> LuaS.Binary(LuaS.BW_Xor(expr_a, expr_b))
-    | BW_And -> LuaS.Binary(LuaS.BW_And(expr_a, expr_b))
-    | BW_Or -> LuaS.Binary(LuaS.BW_Or(expr_a, expr_b))
-    | ShiftLeft -> LuaS.Binary(LuaS.LeftShift(expr_a, expr_b))
-    | ShiftRight -> LuaS.Binary(LuaS.RightShift(expr_a, expr_b))
-    | LT | LTPointer -> LuaS.Binary(LuaS.LessThan(expr_a, expr_b))
-    | LE | LEPointer -> LuaS.Binary(LuaS.LessThanOrEqTo(expr_a, expr_b))
-    | Min -> LuaS.Binary(LuaS.Min(expr_a, expr_b))
-    | Max -> LuaS.Binary(LuaS.Max(expr_a, expr_b))
+    | Add -> LuaS.Binary(LuaS.Add(expr_a, expr_b, lua_c_type))
+    | Sub ->  LuaS.Binary(LuaS.Subtract(expr_a, expr_b, lua_c_type))
+    | Mul | MulNoSMT -> LuaS.Binary(LuaS.Multiply(expr_a, expr_b, lua_c_type))
+    | Div | DivNoSMT -> LuaS.Binary(LuaS.IntegerDivide(expr_a, expr_b, lua_c_type))
+    | Exp | ExpNoSMT -> LuaS.Binary(LuaS.Exp(expr_a, expr_b, lua_c_type))
+    | Rem | RemNoSMT -> LuaS.Binary(LuaS.Remainder(expr_a, expr_b, lua_c_type))
+    | Mod | ModNoSMT -> LuaS.Binary(LuaS.Modulo(expr_a, expr_b, lua_c_type))
+    | BW_Xor -> LuaS.Binary(LuaS.BW_Xor(expr_a, expr_b, lua_c_type))
+    | BW_And -> LuaS.Binary(LuaS.BW_And(expr_a, expr_b, lua_c_type))
+    | BW_Or -> LuaS.Binary(LuaS.BW_Or(expr_a, expr_b, lua_c_type))
+    | ShiftLeft -> LuaS.Binary(LuaS.LeftShift(expr_a, expr_b, lua_c_type))
+    | ShiftRight -> LuaS.Binary(LuaS.RightShift(expr_a, expr_b, lua_c_type))
+    | LT | LTPointer -> LuaS.Binary(LuaS.LessThan(expr_a, expr_b, lua_c_type))
+    | LE | LEPointer -> LuaS.Binary(LuaS.LessThanOrEqTo(expr_a, expr_b, lua_c_type))
+    | Min -> LuaS.Binary(LuaS.Min(expr_a, expr_b, lua_c_type))
+    | Max -> LuaS.Binary(LuaS.Max(expr_a, expr_b, lua_c_type))
     | EQ -> LuaS.Binary(LuaS.Eq(expr_a, expr_b))
     | Implies -> LuaS.Call("implies", [ expr_a; expr_b ])
     | SetUnion -> failwith (__LOC__ ^ ": TODO SetUnion")

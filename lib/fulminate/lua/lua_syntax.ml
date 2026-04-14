@@ -21,26 +21,24 @@ and table_field_type =
 and binary_expr_type =
   | And of expr * expr
   | Or of expr * expr
-  | Add of expr * expr
-  | Subtract of expr * expr
-  | Multiply of expr * expr
-  | IntegerDivide of expr * expr
+  | Add of expr * expr * string
+  | Subtract of expr * expr * string
+  | Multiply of expr * expr * string
+  | IntegerDivide of expr * expr * string
   | FloatDivide of expr * expr
-  | Exp of expr * expr
-  | Remainder of expr * expr
-  | Modulo of expr * expr
-  | BW_Xor of expr * expr
-  | BW_Or of expr * expr
-  | BW_And of expr * expr
-  | LeftShift of expr * expr
-  | RightShift of expr * expr
+  | Exp of expr * expr * string
+  | Remainder of expr * expr * string
+  | Modulo of expr * expr * string
+  | LessThan of expr * expr * string
+  | LessThanOrEqTo of expr * expr * string
+  | Min of expr * expr * string
+  | Max of expr * expr * string
+  | BW_Xor of expr * expr * string
+  | BW_Or of expr * expr * string
+  | BW_And of expr * expr * string
+  | LeftShift of expr * expr * string
+  | RightShift of expr * expr * string
   | Eq of expr * expr
-  | LessThan of expr * expr
-  | LessThanOrEqTo of expr * expr
-  | GreaterThan of expr * expr
-  | GreaterThanOrEqTo of expr * expr
-  | Min of expr * expr
-  | Max of expr * expr
 
 (* Lua Statements *)
 and stmt =

@@ -1,3 +1,4 @@
+local c_num = require("c_number_types")
 local deep_compare = require("fast_deep_compare")
 
 --[[
@@ -195,8 +196,9 @@ so that we can just call error_stack.push() instead of cn.error_stack.push()
 ]] --
 local is_c_true = function(val) return (val ~= 0 and val ~= nil and val ~= false) end
 local core = {
-    is_null = function(p) return (p == nil or p == 0) end,
+    c_num = c_num,
     equals = deep_compare,
+    is_null = function(p) return (p == nil or p == 0) end,
     bool_and = 
         function(a, b) 
             local a_ctrue = is_c_true(a)
