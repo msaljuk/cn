@@ -18,15 +18,17 @@ enum CN_GHOST_ENUM ghost_call_site;
 /* HELPER FUNCTION DECLARATIONS */
 static void lua_cn_arrow_access_1_push_frame();
 static void lua_cn_arrow_access_1_precondition();
-static void lua_cn_inline_instance0(struct s*);
-static void lua_cn_inline_instance1(struct s**);
-static void lua_cn_inline_instance2(struct s**);
-static void lua_cn_inline_instance3(struct s**);
-static void lua_cn_inline_instance4(struct s**, struct s**);
+static void lua_cn_inline_instance0(struct s);
+static void lua_cn_inline_instance1(struct s*);
+static void lua_cn_inline_instance2(struct s*);
+static void lua_cn_inline_instance3(struct s*);
+static void lua_cn_inline_instance4(struct s*, struct s*);
+static void lua_cn_inline_instance5(struct s, struct s*, struct s*);
+static void lua_cn_inline_instance6(struct s, struct s*);
 static void lua_cn_arrow_access_1_postcondition();
 static void lua_cn_arrow_access_2_push_frame(struct s*);
 static void lua_cn_arrow_access_2_precondition();
-static void lua_cn_inline_instance5(struct s**);
+static void lua_cn_inline_instance7(struct s*);
 static void lua_cn_arrow_access_2_postcondition();
 static void lua_cn_main_push_frame();
 static void lua_cn_main_precondition();
@@ -77,7 +79,7 @@ void arrow_access_1()
   struct s origin = { .x = 0, .y = 0 };
 lua_cn_ghost_add((&origin), sizeof(struct s), lua_cn_get_stack_depth());
 
-  lua_cn_inline_instance0((&origin));
+  lua_cn_inline_instance0(origin);
  // -- member
   struct s *p = &origin;
 lua_cn_ghost_add((&p), sizeof(struct s*), lua_cn_get_stack_depth());
@@ -86,14 +88,22 @@ lua_cn_ghost_add((&p), sizeof(struct s*), lua_cn_get_stack_depth());
 lua_cn_ghost_add((&q), sizeof(struct s*), lua_cn_get_stack_depth());
 
 
-  lua_cn_inline_instance1((&p));
+  struct s new = { .x = 0, .y = 7 };
+lua_cn_ghost_add((&new), sizeof(struct s), lua_cn_get_stack_depth());
+
+
+  lua_cn_inline_instance1(p);
  // Arrow access
-  lua_cn_inline_instance2((&p));
+  lua_cn_inline_instance2(p);
  // ... desugared as this
   CN_STORE((*CN_LOAD(p)).y, 7);
-  lua_cn_inline_instance3((&q));
+  lua_cn_inline_instance3(q);
 
-  lua_cn_inline_instance4((&p), (&q));
+  lua_cn_inline_instance4(p, q);
+
+  lua_cn_inline_instance5(new, p, q);
+
+  lua_cn_inline_instance6(new, q);
 
 
 lua_cn_ghost_remove((&origin), sizeof(struct s));
@@ -103,6 +113,9 @@ lua_cn_ghost_remove((&p), sizeof(struct s*));
 
 
 lua_cn_ghost_remove((&q), sizeof(struct s*));
+
+
+lua_cn_ghost_remove((&new), sizeof(struct s));
 
 /* EXECUTABLE CN POSTCONDITION */
 __cn_epilogue:
@@ -132,7 +145,7 @@ ensures
   lua_cn_ghost_add((&origin), sizeof(struct s*), lua_cn_get_stack_depth());
   
   CN_STORE(CN_LOAD(origin)->y, 7);
-  lua_cn_inline_instance5((&origin));
+  lua_cn_inline_instance7(origin);
 
 
 /* EXECUTABLE CN POSTCONDITION */
@@ -212,17 +225,17 @@ static void lua_cn_arrow_access_1_precondition()
   lua_pcall(L, 0, 0, 0);
   lua_pop(L, 1);
 }
-static void lua_cn_inline_instance0(struct s* origin)
+static void lua_cn_inline_instance0(struct s origin)
 {
   struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "inline");
   lua_getfield(L, -1, "instance0");
-  lua_pushinteger(L, lua_convert_ptr_to_int(origin));
+  lua_cn_push_s((&origin));
   lua_pcall(L, 1, 0, 0);
   lua_pop(L, 1);
 }
-static void lua_cn_inline_instance1(struct s** p)
+static void lua_cn_inline_instance1(struct s* p)
 {
   struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
@@ -232,7 +245,7 @@ static void lua_cn_inline_instance1(struct s** p)
   lua_pcall(L, 1, 0, 0);
   lua_pop(L, 1);
 }
-static void lua_cn_inline_instance2(struct s** p)
+static void lua_cn_inline_instance2(struct s* p)
 {
   struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
@@ -242,7 +255,7 @@ static void lua_cn_inline_instance2(struct s** p)
   lua_pcall(L, 1, 0, 0);
   lua_pop(L, 1);
 }
-static void lua_cn_inline_instance3(struct s** q)
+static void lua_cn_inline_instance3(struct s* q)
 {
   struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
@@ -252,13 +265,36 @@ static void lua_cn_inline_instance3(struct s** q)
   lua_pcall(L, 1, 0, 0);
   lua_pop(L, 1);
 }
-static void lua_cn_inline_instance4(struct s** p, struct s** q)
+static void lua_cn_inline_instance4(struct s* p, struct s* q)
 {
   struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "inline");
   lua_getfield(L, -1, "instance4");
   lua_pushinteger(L, lua_convert_ptr_to_int(p));
+  lua_pushinteger(L, lua_convert_ptr_to_int(q));
+  lua_pcall(L, 2, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_inline_instance5(struct s new, struct s* p, struct s* q)
+{
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "inline");
+  lua_getfield(L, -1, "instance5");
+  lua_cn_push_s((&new));
+  lua_pushinteger(L, lua_convert_ptr_to_int(p));
+  lua_pushinteger(L, lua_convert_ptr_to_int(q));
+  lua_pcall(L, 3, 0, 0);
+  lua_pop(L, 1);
+}
+static void lua_cn_inline_instance6(struct s new, struct s* q)
+{
+  struct lua_State* L = lua_get_state();
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
+  lua_getfield(L, -1, "inline");
+  lua_getfield(L, -1, "instance6");
+  lua_cn_push_s((&new));
   lua_pushinteger(L, lua_convert_ptr_to_int(q));
   lua_pcall(L, 2, 0, 0);
   lua_pop(L, 1);
@@ -291,12 +327,12 @@ static void lua_cn_arrow_access_2_precondition()
   lua_pcall(L, 0, 0, 0);
   lua_pop(L, 1);
 }
-static void lua_cn_inline_instance5(struct s** origin)
+static void lua_cn_inline_instance7(struct s* origin)
 {
   struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
   lua_getfield(L, -1, "inline");
-  lua_getfield(L, -1, "instance5");
+  lua_getfield(L, -1, "instance7");
   lua_pushinteger(L, lua_convert_ptr_to_int(origin));
   lua_pcall(L, 1, 0, 0);
   lua_pop(L, 1);
