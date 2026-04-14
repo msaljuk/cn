@@ -333,8 +333,12 @@ val cn_to_lua_sym
     : CF.Ctype.union_tag ->
     (lua_expression)
 
+val cn_to_lua_unop
+    : (lua_expression * BT.t * IT.unop) ->
+    lua_expression
+
 val cn_to_lua_binop
-    : (lua_expression * lua_expression * IT.binop) ->
+    : (lua_expression * lua_expression * BT.t * BT.t * IT.binop) ->
     lua_expression
 
 val cn_to_lua_struct_member
