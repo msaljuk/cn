@@ -44,8 +44,31 @@ let rec pp_expr = function
     | LuaS.Binary (args) ->
         let pp_binary_expr_type expr = 
             match expr with
-                (*@saljuk TODO: Hardcoding the function call here is gross. Find a clean way to keep this in cn_lua *)
-                | LuaS.Eq(a, b) -> pp_expr (LuaS.Call("cn.equals", [ a; b ]))
+                | LuaS.Or(a, b) -> pp_expr (LuaS.Call("bool_or", [ a; b ]))
+                | LuaS.And(a, b) -> pp_expr (LuaS.Call("bool_and", [ a; b ]))
+                | LuaS.Add(a, b) -> pp_expr a ^ " + " ^ pp_expr b
+                | LuaS.Subtract(a, b) -> pp_expr a ^ " - " ^ pp_expr b
+                | LuaS.Multiply(a, b) -> pp_expr a ^ " * " ^ pp_expr b
+                | LuaS.IntegerDivide(a, b) -> pp_expr a ^ " // " ^ pp_expr b
+                | LuaS.FloatDivide(a, b) -> pp_expr a ^ " / " ^ pp_expr b
+                | LuaS.Exp(a, b) -> pp_expr a ^ " ^ " ^ pp_expr b
+                | LuaS.Remainder(a, b) -> pp_expr (LuaS.Call("rem", [ a; b ]))
+                | LuaS.Modulo(a, b) -> pp_expr a ^ " % " ^ pp_expr b
+                (*@saljuk TODO: For these BW operators, probably need to add integer type specific functions
+                * since promotion to 64-bit integers might lead to discrepancies.
+                *)
+                | LuaS.BW_Xor(a, b) -> pp_expr a ^ " ~ " ^ pp_expr b
+                | LuaS.BW_And(a, b) -> pp_expr a ^ " & " ^ pp_expr b
+                | LuaS.BW_Or(a, b) -> pp_expr a ^ " | " ^ pp_expr b
+                | LuaS.LeftShift(a, b) -> pp_expr a ^ " << " ^ pp_expr b
+                | LuaS.RightShift(a, b) -> pp_expr a ^ " >> " ^ pp_expr b
+                | LuaS.Eq(a, b) -> pp_expr (LuaS.Call("equals", [ a; b ]))
+                | LuaS.LessThan(a, b) -> pp_expr a ^ " < " ^ pp_expr b
+                | LuaS.LessThanOrEqTo(a, b) -> pp_expr a ^ " <= " ^ pp_expr b
+                | LuaS.GreaterThan(a, b) -> pp_expr a ^ " > " ^ pp_expr b
+                | LuaS.GreaterThanOrEqTo(a, b) -> pp_expr a ^ " >= " ^ pp_expr b
+                | LuaS.Min(a, b) -> pp_expr (LuaS.Call("math.min", [ a; b ]))
+                | LuaS.Max(a, b) -> pp_expr (LuaS.Call("math.max", [ a; b ]))
         in
         pp_binary_expr_type args
 

@@ -32,7 +32,6 @@ local cn = {
         C_ACCESS = 5,
         NON_SPEC = 6
     },
-    equals = deep_compare,
     c = {
         -- c asserts
         assert = {},
@@ -189,17 +188,37 @@ setmetatable(cn.locals, {
 })
 
 --[[ 
-Setup an environment where builtins can be easily used 'globally'
+Setup an environment where core functions can be easily used 'globally'
 
 @saljuk TODO Consider porting over more things to the environment paradigm
 so that we can just call error_stack.push() instead of cn.error_stack.push()
 ]] --
-local builtins = {
-    is_null = function(p) return (p == nil or p == 0) end
+local is_c_true = function(val) return (val ~= 0 and val ~= nil and val ~= false) end
+local core = {
+    is_null = function(p) return (p == nil or p == 0) end,
+    equals = deep_compare,
+    bool_and = 
+        function(a, b) 
+            local a_ctrue = is_c_true(a)
+            local b_ctrue = is_c_true(b)
+            return (a_ctrue and b_ctrue)
+        end,
+    bool_or = 
+        function(a, b) 
+            local a_ctrue = is_c_true(a)
+            local b_ctrue = is_c_true(b)
+            return (a_ctrue or b_ctrue)
+        end,
+    implies =
+        function(a, b) 
+            local a_ctrue = is_c_true(a)
+            local b_ctrue = is_c_true(b)
+            return ((not a_ctrue) or b_ctrue)
+        end,
 }
 cn.env = setmetatable({}, {
     __index = function(_, k) 
-        return builtins[k] or _G[k] 
+        return core[k] or _G[k] 
     end 
 })
 
