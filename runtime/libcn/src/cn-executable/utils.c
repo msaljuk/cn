@@ -806,12 +806,8 @@ void cn_pop_msg_info(void) {
   fulm_free(old, &fulm_default_alloc);
 }
 
-static uint32_t cn_fls(uint32_t x) {
-  return x ? sizeof(x) * 8 - __builtin_clz(x) : 0;
-}
-
-static uint64_t cn_flsl(uint64_t x) {
-  return x ? sizeof(x) * 8 - __builtin_clzl(x) : 0;
+void cn_dump_error_msgs(void) {
+  print_error_msg_info(global_error_msg_info);
 }
 
 cn_bits_u32* cn_bits_u32_fls(cn_bits_u32* i1) {
