@@ -1051,7 +1051,7 @@ let rec cn_to_ail_expr_aux
         let l3 = CnL.concat [ l1'; l2' ] in
         let l4 = CnL.push_expr_to_exec (
           l3, 
-          CnL.cn_to_lua_binop (lua_cn_expr_1, lua_cn_expr_2, bop)) in
+          CnL.cn_to_lua_binop (lua_cn_expr_1, lua_cn_expr_2, IT.get_bt t1, IT.get_bt t2, bop)) in
 
         dest d spec_mode_opt (b1 @ b2, s1 @ s2, l4, mk_expr ail_null)
     );
@@ -1067,14 +1067,26 @@ let rec cn_to_ail_expr_aux
         t
         PassBack
     in
-    let annot = cn_to_ail_unop (IT.get_bt t) unop in
-    let str =
-      match annot with
-      | Some str -> str
-      | None -> failwith (__LOC__ ^ ": No CN unop function found")
-    in
-    let ail_expr_ = A.(AilEcall (mk_expr (AilEident (Sym.fresh str)), [ e ])) in
-    dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+
+    (match RC.get_runtime() with
+      | RC.C ->
+        let annot = cn_to_ail_unop (IT.get_bt t) unop in
+        let str =
+          match annot with
+          | Some str -> str
+          | None -> failwith (__LOC__ ^ ": No CN unop function found")
+        in
+        let ail_expr_ = A.(AilEcall (mk_expr (AilEident (Sym.fresh str)), [ e ])) in
+        dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+      | RC.Lua ->
+        let l', lua_cn_expr = CnL.pop_expr_from_exec l in
+
+        let l'' = CnL.push_expr_to_exec (
+          l', 
+          CnL.cn_to_lua_unop (lua_cn_expr, IT.get_bt t, unop)) in
+
+        dest d spec_mode_opt ([], [], l'' , mk_expr ail_null)
+    );
   | SizeOf sct ->
     let ail_expr_ = A.(AilEsizeof (C.no_qualifiers, Sctypes.to_ctype sct)) in
     let ail_call_ = wrap_with_convert_to ~sct ail_expr_ basetype in
