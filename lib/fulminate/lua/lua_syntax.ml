@@ -19,7 +19,28 @@ and table_field_type =
   | List of expr                                            (* { 5, 6, 7 } *)
 
 and binary_expr_type =
+  | And of expr * expr
+  | Or of expr * expr
+  | Add of expr * expr
+  | Subtract of expr * expr
+  | Multiply of expr * expr
+  | IntegerDivide of expr * expr
+  | FloatDivide of expr * expr
+  | Exp of expr * expr
+  | Remainder of expr * expr
+  | Modulo of expr * expr
+  | BW_Xor of expr * expr
+  | BW_Or of expr * expr
+  | BW_And of expr * expr
+  | LeftShift of expr * expr
+  | RightShift of expr * expr
   | Eq of expr * expr
+  | LessThan of expr * expr
+  | LessThanOrEqTo of expr * expr
+  | GreaterThan of expr * expr
+  | GreaterThanOrEqTo of expr * expr
+  | Min of expr * expr
+  | Max of expr * expr
 
 (* Lua Statements *)
 and stmt =
