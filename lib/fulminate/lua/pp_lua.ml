@@ -49,12 +49,6 @@ let rec pp_expr =
             "{ " ^ table_body ^ " }"
         )
     | LuaS.Binary (args) ->
-        let lua_c_type_prefix = "c_num" in
-        let get_c_type t = LuaS.Field(LuaS.Symbol(lua_c_type_prefix), LuaS.Symbol(t)) in
-        let c_type_op t o args 
-            = LuaS.Call(pp_expr (LuaS.Field(get_c_type t, LuaS.Symbol(o))), args)
-        in
-
         let pp_binary_expr_type expr = 
             match expr with
                 | LuaS.Or(a, b) -> pp_expr (LuaS.Call("bool_or", [ a; b ]))
