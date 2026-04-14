@@ -382,6 +382,14 @@ cn_bool* cn_pointer_gt(cn_pointer* i1, cn_pointer* i2);
     return res;                                                                          \
   }
 
+static inline uint32_t cn_fls(uint32_t x) {
+  return x ? sizeof(x) * 8 - __builtin_clz(x) : 0;
+}
+
+static inline uint64_t cn_flsl(uint64_t x) {
+  return x ? sizeof(x) * 8 - __builtin_clzl(x) : 0;
+}
+
 cn_bits_u32* cn_bits_u32_fls(cn_bits_u32* i1);
 cn_bits_u64* cn_bits_u64_flsl(cn_bits_u64* i1);
 
