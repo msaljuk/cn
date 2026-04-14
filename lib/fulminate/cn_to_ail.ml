@@ -103,6 +103,7 @@ module MembersKey = struct
 end
 
 module RecordMap = Map.Make (MembersKey)
+module StringMap = Map.Make(String)
 
 let records = ref RecordMap.empty
 
@@ -762,10 +763,10 @@ let dest_with_unit_check
           let err_msg = gather_error_message_from_loc loc in
           let spec_mode = sym_of_spec_mode_opt spec_mode_opt in
 
-          let c_wrapper_calls, exec_with_assert 
+          let exec_with_assert 
             = CnL.generate_lua_cn_assert err_msg l spec_mode
           in
-          ([], c_wrapper_calls, exec_with_assert )
+          ([], [], exec_with_assert )
       );
   | Return ->
     (match RC.get_runtime() with
@@ -4365,7 +4366,7 @@ let rec cn_to_ail_post_aux
         (b1 @ b2, ss @ s2, CnL.get_empty_lua_cn_exec)
       | RC.Lua ->
         let error_message = gather_error_message_from_loc loc in
-        let _, exec_with_assert = 
+        let exec_with_assert = 
           CnL.generate_lua_cn_assert error_message l1 (sym_of_spec_mode_opt spec_mode_opt)
         in
         ([], [], CnL.concat [ exec_with_assert; l2 ])
@@ -4427,37 +4428,82 @@ let cn_to_ail_cnstatement
   | Print _t -> (default_res_for_dest, true)
 
 
-let rec cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mode_opt
+let rec cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mode_opt (let_map_opt : 'a StringMap.t option)
   = function
   | Cnprog.Let (_loc, (name, { ct; pointer }), prog) ->
-    let b1, s, l1, e = cn_to_ail_expr filename dts globals spec_mode_opt pointer PassBack in
-    let cn_ptr_deref_sym = Sym.fresh "cn_pointer_deref" in
-    let ctype_sym =
-      Sym.fresh
-        (Pp.plain
-           CF.Pp_ail.(
-             with_executable_spec (pp_ctype C.no_qualifiers) (Sctypes.to_ctype ct)))
-    in
-    let cn_ptr_deref_fcall =
-      A.(
-        AilEcall
-          (mk_expr (AilEident cn_ptr_deref_sym), [ e; mk_expr (AilEident ctype_sym) ]))
-    in
-    let bt = BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type ct in
-    let ctype = bt_to_ail_ctype bt in
-    let binding = create_binding name ctype in
-    let ail_stat_ =
-      A.(
-        AilSdeclaration
-          [ (name, Some (mk_expr (wrap_with_convert_to cn_ptr_deref_fcall bt))) ])
-    in
-    let (b2, ss, l2), no_op =
-      cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mode_opt prog
-    in
-    if no_op then
-      (([], [], CnL.get_empty_lua_cn_exec), true)
-    else
-      ((b1 @ (binding :: b2), s @ (ail_stat_ :: ss), CnL.concat [l1; l2]), false)
+      (match RC.get_runtime() with
+        | RC.C ->
+          let b1, s, l1, e = cn_to_ail_expr filename dts globals spec_mode_opt pointer PassBack in
+          let cn_ptr_deref_sym = Sym.fresh "cn_pointer_deref" in
+          let ctype_sym =
+            Sym.fresh
+              (Pp.plain
+                CF.Pp_ail.(
+                  with_executable_spec (pp_ctype C.no_qualifiers) (Sctypes.to_ctype ct)))
+          in
+          let cn_ptr_deref_fcall =
+            A.(
+              AilEcall
+                (mk_expr (AilEident cn_ptr_deref_sym), [ e; mk_expr (AilEident ctype_sym) ]))
+          in
+          let bt = BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type ct in
+          let ctype = bt_to_ail_ctype bt in
+          let binding = create_binding name ctype in
+          let ail_stat_ =
+            A.(
+              AilSdeclaration
+                [ (name, Some (mk_expr (wrap_with_convert_to cn_ptr_deref_fcall bt))) ])
+          in
+          let (b2, ss, l2), no_op, _ =
+            cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mode_opt None prog
+          in
+          if no_op then
+            (([], [], CnL.get_empty_lua_cn_exec), true, None)
+          else
+            ((b1 @ (binding :: b2), s @ (ail_stat_ :: ss), CnL.concat [l1; l2]), false, None)
+        | RC.Lua ->
+          let _, _, l1, _ = cn_to_ail_expr filename dts globals spec_mode_opt pointer PassBack in
+          (* Build a reader wrapper version of the expression we've found *)
+          let l1', expr = CnL.pop_expr_from_exec l1 in
+          let ctype = Sctypes.to_ctype ct in
+          let name_str = Sym.pp_string name in
+          let expr_str = CnL.expr_to_string expr in
+          let reader_str =
+            let reader_expr = CnL.generate_lua_ctype_get ctype in
+            CnL.expr_to_string reader_expr
+          in
+          let expr_term =
+            IT.(IT (Sym (Sym.fresh expr_str), BT.Unit, Cerb_location.unknown))
+          in
+          let fn_call_it =
+            IT.IT
+              ( Apply (Sym.fresh reader_str, [ expr_term ]),
+                BT.Unit,
+                Cerb_location.unknown )
+          in
+          let _, _, l1'', _ =
+            cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
+          in
+          let _, expr_w_reader = CnL.pop_expr_from_exec l1'' in
+          let lua_assign_stmt = CnL.generate_lua_cn_local_assignment name_str expr_w_reader in
+          let l1''' = CnL.push_stmts_to_exec (l1', [ lua_assign_stmt ]) in
+
+          (* Update the let map to add this new k,v pair *)
+          let let_map =
+            match (let_map_opt: 'a StringMap.t option) with
+              | Some x -> x
+              | None -> failwith "Sym Map must be passed!"
+          in
+          let new_let_map = StringMap.add name_str (expr_str, ctype) let_map in
+
+          let (_, _, l2), no_op, new_let_map_opt =
+            cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mode_opt (Some new_let_map) prog
+          in
+
+          if no_op then
+            (([], [], CnL.get_empty_lua_cn_exec), true, new_let_map_opt)
+          else
+            (([], [], CnL.concat [l1'''; l2]), false, new_let_map_opt))
   | Pure (loc, stmt) ->
     let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
     let pop_s = generate_cn_pop_msg_info in
@@ -4473,7 +4519,7 @@ let rec cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mod
            PassBack
            stmt
        in
-       ((bs, upd_s @ ss @ [ A.AilSexpr e ] @ pop_s, ls), no_op)
+       ((bs, upd_s @ ss @ [ A.AilSexpr e ] @ pop_s, ls), no_op, let_map_opt)
      | _ ->
        let (bs, ss, ls), no_op =
          cn_to_ail_cnstatement
@@ -4485,15 +4531,67 @@ let rec cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mod
            (Assert loc)
            stmt
        in
-       ((bs, upd_s @ ss @ pop_s, ls), no_op))
+       ((bs, upd_s @ ss @ pop_s, ls), no_op, let_map_opt))
 
 
 let cn_to_ail_cnprog ~without_lemma_checks filename dts globals spec_mode_opt cn_prog =
-  let (bs, ss, ls), _ =
-    cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mode_opt cn_prog
-  in
-  (bs, ss, ls)
+  match RC.get_runtime() with
+    | RC.C -> 
+      let (bs, ss, _), _, _ =
+        cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mode_opt None cn_prog
+      in
+      (bs, ss, CnL.get_empty_lua_cn_exec)
+    | RC.Lua ->      
+      (*
+      Use to print the ast for the cn statement
+      print_endline (Pp.plain (CF.Pp_ast.pp_doc_tree (Cnprog.dtree Cnstatement.dtree cn_prog)));
+      *)
 
+      let empty_let_map_opt = Some (StringMap.empty) in
+      let (_, _, ls), _, completed_let_map_opt =
+        cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mode_opt empty_let_map_opt cn_prog
+      in
+
+      (* We now have a map of each let binding i.e.
+       * { deref_read_q00 -> read_q0, read_q0 -> q }
+       * Traverse it to find the value that is not bound to anything - that is 
+       * our 'root' c parameter that we must push into Lua
+       *)
+      let get_inline_stmt_args (map : (String.t * CF.Ctype.ctype) StringMap.t) =
+        let all_values = StringMap.fold (fun _key value acc -> value :: acc) map [] in
+        let roots = List.filter (fun (parent_sym, _ctype) ->
+          not (StringMap.mem parent_sym map)
+        ) all_values in
+        (* Deduplicate to avoid redundant args *)
+        List.sort_uniq (fun (s1, _) (s2, _) -> String.compare s1 s2) roots
+      in
+      let inline_stmt_args = 
+        let sym_type_list = 
+          get_inline_stmt_args (Option.value ~default:StringMap.empty completed_let_map_opt) 
+        in
+        List.map
+        (fun (name, ctype) -> 
+          (Sym.fresh name, 
+          (CF.Ctype.no_qualifiers, CF.Ctype.Ctype([], Pointer (CF.Ctype.no_qualifiers, ctype)), false)))
+        sym_type_list
+      in
+
+      let func_id = Sym.fresh_make_uniq "instance" in
+      let c_wrapper_func_name = CnL.generate_c_inline_fn_wrapper_name func_id in
+      let lua_func_name = CnL.generate_lua_inline_fn_name func_id in
+
+      let c_wrapper_dec_and_def, c_wrapper_call
+        = 
+        CnL.generate_c_fn_wrapper_def lua_func_name c_wrapper_func_name inline_stmt_args,
+        CnL.generate_c_inline_fn_wrapper_call c_wrapper_func_name inline_stmt_args
+      in
+
+      let (lua_fn_body, _, _) = ls in
+      let lua_fn = CnL.generate_lua_inline_fn lua_func_name inline_stmt_args lua_fn_body in
+
+      let final_lua_exec = ([ lua_fn ], [ c_wrapper_dec_and_def ], CnL.get_empty_lua_expr) in
+      
+      ([], [ c_wrapper_call ], final_lua_exec)
 
 (* GHOST ARGUMENTS *)
 let rec cn_to_ail_cnprog_ghost_arg filename dts globals spec_mode_opt i = function
@@ -4651,11 +4749,7 @@ let cn_to_ail_statements
 
   match RC.get_runtime() with
     | RC.C -> (loc, (List.concat bs, upd_s @ List.concat ss @ pop_s, CnL.concat ls))
-    (*
-    @saljuk TODO: For now, not exporting any ail statements and bindings to avoid clutter.
-    Remove this once all inline statements have been ported over to Lua
-    *)
-    | RC.Lua -> (loc, ([], [], CnL.concat ls))
+    | RC.Lua -> (loc, (List.concat bs, List.concat ss, CnL.concat ls))
 
 let rec cn_to_ail_lat_internal_loop
           ~without_lemma_checks
@@ -5145,7 +5239,7 @@ let rec cn_to_ail_lat_2
 
         let _, _, l, _ = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
 
-        let _, exec_with_assert = 
+        let exec_with_assert = 
           CnL.generate_lua_cn_assert error_message l (sym_of_spec_mode_opt spec_mode_opt)
         in
 
