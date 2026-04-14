@@ -88,9 +88,12 @@ Utility used to generate a C function call to pop the most recent function frame
 *)
 val generate_c_pop_frame_fn_wrapper_call : CF.GenTypes.genTypeCategory A.statement_
 
-val generate_c_assert_fn_wrapper_name : int -> string
+val generate_c_inline_fn_wrapper_name : Sym.t -> string
 
-val generate_c_assert_fn_wrapper_call : string -> CF.GenTypes.genTypeCategory A.statement_
+val generate_c_inline_fn_wrapper_call : 
+    string -> 
+    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->  
+    CF.GenTypes.genTypeCategory A.statement_
 
 (* 
 Utility used to generate the definition of any wrapper C function
@@ -187,7 +190,13 @@ of C arguments onto the Lua CN frame at the start of a frame.
 *)
 val generate_lua_push_frame_fn_name : Sym.t -> string
 
-val generate_lua_assert_fn_name : int -> string
+val generate_lua_inline_fn_name : Sym.t -> string
+
+val generate_lua_inline_fn 
+    : string -> 
+    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
+    (lua_statements) ->
+    lua_statement
 
 val generate_lua_owned_fn_name : string
 
@@ -211,6 +220,14 @@ Utility used to generate an if-else block in Lua
 *)
 val generate_lua_cn_conditional :
     (lua_expression option * lua_statements) list ->
+    lua_statement
+
+(*
+Utility used to generate a local assignment in Lua
+*)
+val generate_lua_cn_local_assignment :
+    string ->
+    lua_expression ->
     lua_statement
 
 (*
@@ -262,7 +279,7 @@ val generate_lua_cn_assert
     : string ->
     lua_cn_exec ->
     CF.Ctype.union_tag ->
-    (CF.GenTypes.genTypeCategory A.statement_ list * lua_cn_exec)
+    (lua_cn_exec)
 
 val generate_lua_cn_return
     : lua_expression -> bool ->
