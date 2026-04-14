@@ -24,7 +24,7 @@ let cn_spec_mode_var_sym = LuaS.Symbol("spec_mode")
 let cn_loop_ownership_var_sym = LuaS.Symbol("loop_ownership")
 let cn_env_sym = LuaS.Symbol("cn.env")
 let cn_assert_sym = LuaS.Symbol( "cn.assert" )
-let cn_asserts_sym = LuaS.Symbol( "cn.asserts" )
+let cn_inline_sym = LuaS.Symbol("cn.inline")
 let cn_error_stack_push_sym = LuaS.Symbol( "cn.error_stack.push" )
 let cn_error_stack_pop_sym  = LuaS.Symbol( "cn.error_stack.pop" )
 let cn_frames_push_fn_sym = LuaS.Symbol( "cn.frames.push_function" )
@@ -148,18 +148,24 @@ let generate_c_pop_frame_fn_wrapper_call
     mk_expr (A.(AilEcall (
       mk_expr (AilEident (Sym.fresh "lua_cn_frame_pop_function")), []))))))
 
-let generate_c_assert_fn_wrapper_name (func_id : int)
+let generate_c_inline_fn_wrapper_name (func_id : Sym.t)
   : string
   =
-  let c_assert_sym = Sym.fresh "assert" in
-  (generate_c_fn_wrapper_prefix c_assert_sym) ^ (string_of_int func_id)
+  generate_c_fn_wrapper_prefix (Sym.fresh "inline") ^ (Sym.pp_string func_id)
 
-let generate_c_assert_fn_wrapper_call (c_func_name : string)
+let generate_c_inline_fn_wrapper_call 
+  (c_func_name : string)
+  (args : (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list)
   : (CF.GenTypes.genTypeCategory A.statement_)
   =
+  let args_expr = 
+    List.map
+    (fun (sym, _) -> mk_expr (AilEunary (Address, mk_expr (AilEident sym))))
+    args
+  in
   (A.(AilSexpr (
       mk_expr (A.(AilEcall (
-        mk_expr (AilEident (Sym.fresh c_func_name)), []))))))
+        mk_expr (AilEident (Sym.fresh c_func_name)), args_expr))))))
 
 let mk_binding sym ty
   : A.ail_identifier 
@@ -843,8 +849,20 @@ let generate_lua_postcondition_fn_name (c_fn_name : Sym.t)
 let generate_lua_push_frame_fn_name (c_fn_name : Sym.t)
   = (generate_lua_fn_prefix c_fn_name) ^ ("push_frame")
 
-let generate_lua_assert_fn_name (func_id : int)
-  = Pp_lua.pp_expr (LuaS.Field(cn_asserts_sym, LuaS.Symbol("inst" ^ string_of_int func_id)))
+let generate_lua_inline_fn_name (func_id : Sym.t)
+  = Pp_lua.pp_expr (LuaS.Field(cn_inline_sym, LuaS.Symbol(Sym.pp_string func_id)))
+
+let generate_lua_inline_fn 
+  (fn_name : string)
+  (fn_args : (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list)
+  (fn_body : lua_statements)
+  = 
+  let args_exprs =
+    List.map
+    (fun (sym, _) -> LuaS.Symbol(Sym.pp_string sym))
+    fn_args
+  in
+  LuaS.FunctionDef(fn_name, args_exprs, fn_body)
 
 let generate_lua_owned_fn_name
   = Pp_lua.pp_expr (cn_owned_sym)
@@ -869,6 +887,13 @@ let generate_lua_cn_conditional
   : LuaS.stmt
 =
   LuaS.IfElse(cases)
+
+let generate_lua_cn_local_assignment
+  (var : string)
+  (value : lua_expression)
+  : lua_statement
+=
+  LuaS.LocalAssign(var, value)
 
 let generate_lua_cn_match_case_equality
   ((subject, case) : lua_expression * string)
@@ -931,34 +956,8 @@ let generate_lua_cn_assert
   (error_msg : string)
   (in_exec : lua_cn_exec)
   (spec_mode : CF.Ctype.union_tag)
-  : (CF.GenTypes.genTypeCategory A.statement_ list * lua_cn_exec)
+  : (lua_cn_exec)
   = 
-  (*
-    @saljuk TODO Don't have func name here yet (will have to plumb down). For
-    now, just generated a random value - BAD
-  *)
-  let func_id = Random.int 100 in
-  (*
-    @saljuk TODO: Don't hardcode this. Pull type spec_mode into a common file that we
-    can include here
-  *)
-  let spec_mode_str = (Sym.pp_string spec_mode) in
-  let inline_spec_mode = "STATEMENT" in 
-  let is_inline = String.equal spec_mode_str inline_spec_mode in
-
-  let c_wrapper_func_name = generate_c_assert_fn_wrapper_name func_id in
-  let lua_func_name = generate_lua_assert_fn_name func_id in
-
-  let c_wrapper_dec_and_def, c_wrapper_call
-    = 
-    if is_inline then (
-      (
-        [ generate_c_fn_wrapper_def lua_func_name c_wrapper_func_name [] ],
-        [ generate_c_assert_fn_wrapper_call c_wrapper_func_name ]
-      )
-    ) else ([], [])
-  in
-  
   let exec', assert_expr = pop_expr_from_exec in_exec in
 
   (* Skip asserts if it's an assert(true) or a nil *)
@@ -979,7 +978,7 @@ let generate_lua_cn_assert
       LuaS.FunctionCall(Pp_lua.pp_expr cn_assert_sym, [ assert_expr; spec_mode_field ]) 
     in
 
-    let ls_initial =
+    let stmts =
       [
         push_err_stmt;
         core_stmt;
@@ -987,25 +986,11 @@ let generate_lua_cn_assert
       ]
     in
 
-    let ls_final =
-      if is_inline then (
-        [ LuaS.FunctionDef(
-          lua_func_name,
-          [],
-          ls_initial
-        ) ]
-      ) else (
-        ls_initial
-      )
-    in
+    let (cn_exec_for_assert : lua_cn_exec) = push_stmts_to_exec (exec', stmts) in
 
-    let (cn_exec_for_assert : lua_cn_exec) 
-      = ( ls_final, c_wrapper_dec_and_def, get_empty_lua_expr ) 
-    in
-
-    ( c_wrapper_call, concat [ exec'; cn_exec_for_assert; ])
+    ( cn_exec_for_assert )
   ) else (
-    ([ ], exec')
+    ( get_empty_lua_cn_exec )
   )
 
 let generate_lua_cn_return (expr : lua_expression) (is_unit : bool)
