@@ -708,27 +708,21 @@ let main
               [ cn_ghost_enum ];
             ]
             @
-            (if List.is_empty helper_decs then 
-              ([]) 
-            else List.concat (
-              [
-                [ "/* HELPER FUNCTION DECLARATIONS */\n" ];
-                helper_decs;
-                struct_wrapper_decs;
-              ]
-            ))
+            List.concat 
+            [
+              [ "/* HELPER FUNCTION DECLARATIONS */\n" ];
+              helper_decs;
+              struct_wrapper_decs;
+            ]
           in
 
           let defs =
-            (if List.is_empty helper_defs then 
-              ([]) 
-            else List.concat (
-              [
-                [ "/* HELPER FUNCTION DEFINITIONS */\n" ];
-                helper_defs;
-                struct_wrapper_defs;
-              ]
-            ))
+            List.concat
+            [
+              [ "/* HELPER FUNCTION DEFINITIONS */\n" ];
+              helper_defs;
+              struct_wrapper_defs;
+            ]
           in
 
           let enclose_with_newlines str_list = 
