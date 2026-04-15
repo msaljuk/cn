@@ -5,6 +5,7 @@ type expr =
   | Nil
   | Bool of bool
   | Number_Int of expr * string
+  | Number_IntLimit of string * string
   | Number_Float of Q.t
   | String of string
   | Symbol of ident

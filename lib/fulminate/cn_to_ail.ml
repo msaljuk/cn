@@ -758,7 +758,7 @@ let dest_with_unit_check
           (b, s @ additional_ss, l)
         | RC.Lua -> 
           let err_msg = gather_error_message_from_loc loc in
-          let spec_mode = sym_of_spec_mode_opt spec_mode_opt in
+          let spec_mode = lua_sym_of_spec_mode_opt spec_mode_opt in
 
           let exec_with_assert 
             = CnL.generate_lua_cn_assert err_msg l spec_mode
@@ -1836,9 +1836,21 @@ let rec cn_to_ail_expr_aux
           let ail_expr_ = A.AilEcall (f, es) in
           dest d spec_mode_opt (List.concat bs, List.concat ss, CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
         | RC.Lua ->
+          (* Need to replace MIN/MAXi/u8/16/32/64 *)
+          let sym_str = Sym.pp_string sym in
+          let pattern = Str.regexp "^\\(MIN\\|MAX\\)\\(\\(i\\|u\\)\\(8\\|16\\|32\\|64\\)\\)$" in
+          let new_sym = 
+            if Str.string_match pattern sym_str 0 then
+              let limit = Str.matched_group 1 sym_str in
+              let scalar_type = Str.matched_group 2 sym_str in
+              let fn_name = CnL.generate_lua_cn_number_limit_fn_name limit scalar_type in
+              (Sym.fresh fn_name)
+            else
+              sym
+          in
 
           let _, _, ls, _ = list_split_four bs_ss_ls_es in
-          dest d spec_mode_opt ([], [], CnL.cn_to_lua_apply sym ls, mk_expr ail_null)
+          dest d spec_mode_opt ([], [], CnL.cn_to_lua_apply new_sym ls, mk_expr ail_null)
     );
   | Let ((var, t1), body) ->
     let b1, s1, l1, e1 =

@@ -299,6 +299,11 @@ val generate_lua_cn_pname_resource_call
     lua_cn_exec list ->
     lua_cn_exec
 
+val generate_lua_cn_number_limit_fn_name
+    : string -> 
+    string ->
+    string
+
 val generate_lua_cn_resource
     : CF.Ctype.union_tag ->
     CF.Ctype.ctype ->
