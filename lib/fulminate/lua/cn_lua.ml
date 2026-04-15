@@ -871,7 +871,7 @@ let generate_lua_runtime_core_req
   (* local cn = require("lua_cn_runtime_core") *)
   = (LuaS.LocalAssign(
         get_expr_str cn_sym,
-        LuaS.Call( "require", [ LuaS.String("lua_cn_runtime_core") ] )
+        Some (LuaS.Call( "require", [ LuaS.String("lua_cn_runtime_core") ] ))
       ))
 
 let generate_lua_runtime_return
@@ -880,7 +880,7 @@ let generate_lua_runtime_return
 
 let generate_lua_env_req
   (* _ENV = cn.env *)
-  = (LuaS.Assign("_ENV", cn_env_sym))
+  = (LuaS.Assign("_ENV", Some cn_env_sym))
 
 let generate_lua_cn_conditional
   (cases : (lua_expression option * lua_statements) list)
@@ -890,10 +890,17 @@ let generate_lua_cn_conditional
 
 let generate_lua_cn_local_assignment
   (var : string)
-  (value : lua_expression)
+  (value : lua_expression option)
   : lua_statement
 =
   LuaS.LocalAssign(var, value)
+
+let generate_lua_cn_assignment
+  (var : string)
+  (value : lua_expression option)
+  : lua_statement
+=
+  LuaS.Assign(var, value)
 
 let generate_lua_cn_match_case_equality
   ((subject, case) : lua_expression * string)
@@ -919,7 +926,7 @@ let generate_lua_push_frame_fn
 
       LuaS.Assign(
         Pp_lua.pp_expr (LuaS.Field(cn_locals_sym, c_sym_as_lua_expr)),
-        c_sym_as_lua_expr
+        Some c_sym_as_lua_expr
       )
     ))
     c_fn_args
@@ -1025,9 +1032,9 @@ let generate_lua_cn_resource sym ctype in_exec is_local_res
       let sym_str = Sym.pp_string sym in
 
       if is_local_res then 
-        LuaS.LocalAssign(sym_str, expr)
+        LuaS.LocalAssign(sym_str, Some expr)
       else 
-        LuaS.Assign(Sym.pp_string sym, expr)
+        LuaS.Assign(Sym.pp_string sym, Some expr)
   in
 
   (push_stmts_to_exec (exec, [ stmt ]))
@@ -1063,7 +1070,7 @@ let generate_lua_cn_datatype (cn_datatype : A.ail_identifier CF.Cn.cn_datatype)
 
   let dt_table = LuaS.Table(dt_table_members, true) in
   
-  LuaS.LocalAssign(dt_name, dt_table)
+  LuaS.LocalAssign(dt_name, Some dt_table)
 
 let generate_lua_cn_function
   (fn_sym : CF.Ctype.union_tag)
@@ -1257,6 +1264,29 @@ let cn_to_lua_struct_member
   let struct_member_expr = LuaS.Field(struct_expr, LuaS.Symbol(member_term_string)) in
   push_expr_to_exec (exec, struct_member_expr)
 
+let cn_to_lua_ite
+  (result_sym : CF.Ctype.union_tag)
+  (l1 : lua_cn_exec)
+  (l2 : lua_cn_exec)
+  (l3 : lua_cn_exec)
+  : lua_cn_exec
+=
+  let result_str = Sym.pp_string result_sym in
+  let lua_result_decl = generate_lua_cn_local_assignment result_str None in
+  let lua_result_sym = LuaS.Symbol(result_str) in
+  let l', if_expr = pop_expr_from_exec l1 in
+  let if_stmts, _, _ = l2 in
+  let else_stmts, _, _ = l3 in
+  let cond_stmt = generate_lua_cn_conditional 
+    [
+      (Some if_expr, if_stmts);
+      (None, else_stmts)
+    ] 
+  in
+  let l'' = push_stmts_to_exec (l', [ lua_result_decl; cond_stmt ]) in
+  let l''' = push_expr_to_exec (l'', lua_result_sym) in
+  (l''')
+
 let cn_to_lua_record_member
   (in_exec : lua_cn_exec)
   (member_term : Id.t)
@@ -1306,6 +1336,11 @@ let offsets_field_expr = cn_to_lua_offsetof struct_tag member_tag_str in
 
 LuaS.Call(Pp_lua.pp_expr cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
 
+let cn_to_lua_good 
+  : lua_expression
+=
+  LuaS.Bool(true)
+
 let cn_to_lua_apply sym in_execs
   : (lua_cn_exec)
 = 
@@ -1321,5 +1356,5 @@ let cn_to_lua_let
   (val_expr : lua_expression)
   : lua_cn_exec
 =
-  let stmt = LuaS.LocalAssign(Sym.pp_string var, val_expr) in
+  let stmt = LuaS.LocalAssign(Sym.pp_string var, Some val_expr) in
   ([stmt], [], get_empty_lua_expr)

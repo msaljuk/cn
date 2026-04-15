@@ -90,11 +90,16 @@ let rec pp_expr =
         pp_unary_expr_type args
 
 and pp_stmt = function
-    | LuaS.Assign (id, e) ->
-      id ^ " = " ^ (pp_expr e)
-    | LuaS.LocalAssign (id, e) -> 
-        "local " ^ id ^ " = " ^ (pp_expr e)
-
+    | LuaS.Assign (id, e_opt) ->
+        (match e_opt with
+            | Some x -> id ^ " = " ^ (pp_expr x)
+            | None -> id
+        )
+    | LuaS.LocalAssign (id, e_opt) -> 
+        (match e_opt with
+            | Some x -> "local " ^ id ^ " = " ^ (pp_expr x)
+            | None -> "local " ^ id
+        )
     | LuaS.FunctionDef (fn, args, body) ->
         pp_fn fn args body ()
     | LuaS.LocalFunctionDef (fn, args, body) ->

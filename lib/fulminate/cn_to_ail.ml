@@ -770,8 +770,15 @@ let dest_with_unit_check
         let l'' = CnL.push_stmts_to_exec (l', [ return_stmt ]) in
         (b, s, l''))
   | AssignVar x ->
-    let assign_stmt = A.(AilSexpr (mk_expr (AilEassign (mk_expr (AilEident x), e)))) in
-    (b, s @ [ assign_stmt ], l)
+    (match RC.get_runtime() with
+      | RC.C -> 
+        let assign_stmt = A.(AilSexpr (mk_expr (AilEassign (mk_expr (AilEident x), e)))) in
+        (b, s @ [ assign_stmt ], l)
+      | RC.Lua ->
+        let l', expr = CnL.pop_expr_from_exec l in
+        let assign_stmt = CnL.generate_lua_cn_assignment (Sym.pp_string x) (Some expr) in
+        let l'' = CnL.push_stmts_to_exec (l', [ assign_stmt ]) in
+        (b, s, l''))
   | PassBack -> (b, s, l, e)
 
 let dest
@@ -1079,10 +1086,17 @@ let rec cn_to_ail_expr_aux
         dest d spec_mode_opt ([], [], l'' , mk_expr ail_null)
     );
   | SizeOf sct ->
-    print_endline("SIZE OF");
-    let ail_expr_ = A.(AilEsizeof (C.no_qualifiers, Sctypes.to_ctype sct)) in
-    let ail_call_ = wrap_with_convert_to ~sct ail_expr_ basetype in
-    dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_call_)
+    (
+      match RC.get_runtime() with
+        | RC.C ->
+          let ail_expr_ = A.(AilEsizeof (C.no_qualifiers, Sctypes.to_ctype sct)) in
+          let ail_call_ = wrap_with_convert_to ~sct ail_expr_ basetype in
+          dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_call_)
+        | RC.Lua ->
+          let sizeof_expr = CnL.generate_lua_ctype_sizeof (Sctypes.to_ctype sct) in
+          let exec = ([], [], sizeof_expr) in
+          dest d spec_mode_opt ([], [], exec, mk_expr ail_null)
+    )
   | OffsetOf (tag, member) ->
     (match RC.get_runtime() with
       | RC.C ->
@@ -1098,11 +1112,9 @@ let rec cn_to_ail_expr_aux
         let lua_exec = ([], [], lua_expr) in
         dest d spec_mode_opt ([], [], lua_exec, mk_expr ail_null))
   | ITE (t1, t2, t3) ->
-    print_endline("ITE");
     let result_sym = Sym.fresh_anon () in
     let result_ident = A.(AilEident result_sym) in
-    let result_binding = create_binding result_sym (bt_to_ail_ctype (IT.get_bt t2)) in
-    let result_decl = A.(AilSdeclaration [ (result_sym, None) ]) in
+
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
         filename
@@ -1114,10 +1126,7 @@ let rec cn_to_ail_expr_aux
         t1
         PassBack
     in
-    let wrapped_cond =
-      A.(AilEcall (mk_expr (AilEident (Sym.fresh "convert_from_cn_bool")), [ e1 ]))
-    in
-    let b2, s2, _ =
+    let b2, s2, l2 =
       cn_to_ail_expr_aux
         filename
         const_prop
@@ -1128,7 +1137,7 @@ let rec cn_to_ail_expr_aux
         t2
         (AssignVar result_sym)
     in
-    let b3, s3, _ =
+    let b3, s3, l3 =
       cn_to_ail_expr_aux
         filename
         const_prop
@@ -1139,17 +1148,31 @@ let rec cn_to_ail_expr_aux
         t3
         (AssignVar result_sym)
     in
-    let ite_stat =
-      A.(
-        AilSif
-          ( mk_expr wrapped_cond,
-            mk_stmt (AilSblock (b2, List.map mk_stmt s2)),
-            mk_stmt (AilSblock (b3, List.map mk_stmt s3)) ))
-    in
-    dest
-      d
-      spec_mode_opt
-      (result_binding :: b1, (result_decl :: s1) @ [ ite_stat ], l1, mk_expr result_ident)
+
+    (
+      match RC.get_runtime() with
+        | RC.C ->
+          let result_binding = create_binding result_sym (bt_to_ail_ctype (IT.get_bt t2)) in
+          let result_decl = A.(AilSdeclaration [ (result_sym, None) ]) in
+          let wrapped_cond =
+            A.(AilEcall (mk_expr (AilEident (Sym.fresh "convert_from_cn_bool")), [ e1 ]))
+          in
+
+          let ite_stat =
+            A.(
+              AilSif
+                ( mk_expr wrapped_cond,
+                  mk_stmt (AilSblock (b2, List.map mk_stmt s2)),
+                  mk_stmt (AilSblock (b3, List.map mk_stmt s3)) ))
+          in
+          dest
+            d
+            spec_mode_opt
+            (result_binding :: b1, (result_decl :: s1) @ [ ite_stat ], l1, mk_expr result_ident)
+        | RC.Lua ->
+          let exec = CnL.cn_to_lua_ite result_sym l1 l2 l3 in
+          dest d spec_mode_opt ([], [], exec, mk_expr ail_null)     
+    )
   | EachI ((r_start, (sym, bt'), r_end), t) ->
     (*
        Input:
@@ -1644,11 +1667,15 @@ let rec cn_to_ail_expr_aux
   | Tail _xs -> failwith (__LOC__ ^ ": TODO Tail")
   | Representable (_ct, _t) -> failwith (__LOC__ ^ ": TODO Representable")
   | Good (_ct, _t) -> 
-    print_endline("GOOD");
-    dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, cn_bool_true_expr)
+    (match RC.get_runtime() with
+      | RC.C ->
+        dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, cn_bool_true_expr)
+      | RC.Lua ->
+        let lua_expr = CnL.cn_to_lua_good in
+        let lua_exec = ([], [], lua_expr) in
+        dest d spec_mode_opt ([], [], lua_exec, mk_expr ail_null))
   | Aligned _t_and_align -> failwith (__LOC__ ^ ": TODO Aligned")
   | WrapI (_ct, t) ->
-    print_endline("WRAPI");
     cn_to_ail_expr_aux filename const_prop pred_name dts globals spec_mode_opt t d
   | MapConst (_bt, _t) -> failwith (__LOC__ ^ ": TODO MapConst")
   | MapSet (m, key, value) ->
@@ -4295,8 +4322,6 @@ let rec cn_to_ail_post_aux
     let new_lrt =
       LogicalReturnTypes.subst (ESE.sym_subst (name, IT.get_bt it, new_name)) t
     in
-    let binding = create_binding new_name (bt_to_ail_ctype (IT.get_bt it)) in
-    let decl = A.(AilSdeclaration [ (new_name, None) ]) in
     let b1, s1, l1 =
       cn_to_ail_expr filename dts globals spec_mode_opt it (AssignVar new_name)
     in
@@ -4310,6 +4335,8 @@ let rec cn_to_ail_post_aux
         without_ownership_checking
         new_lrt
     in
+    let binding = create_binding new_name (bt_to_ail_ctype (IT.get_bt it)) in
+    let decl = A.(AilSdeclaration [ (new_name, None) ]) in
     (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, CnL.concat [l1; l2])
   | LRT.Resource ((name, (re, bt)), (loc, _str_opt), t) ->
     let free_vars_in_rest = LRT.free_vars t in
@@ -4529,7 +4556,7 @@ let rec cn_to_ail_cnprog_aux ~without_lemma_checks filename dts globals spec_mod
               (expr)
           in
           
-          let lua_assign_stmt = CnL.generate_lua_cn_local_assignment name_str final_expr in
+          let lua_assign_stmt = CnL.generate_lua_cn_local_assignment name_str (Some final_expr) in
           let l1''' = CnL.push_stmts_to_exec (l1', [ lua_assign_stmt ]) in
 
           (* Update the let map to add this new k,v pair *)
