@@ -194,7 +194,7 @@ local core = {
     c_num = c_num,
     equals = deep_compare,
     is_null = function(p) return (p == nil or p == 0) end,
-
+    ptr_eq = function(a, b) return (a == b) end,
     owned = function(mode, base_addr, size, loop_ownership, reader)
         cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
         return reader(base_addr)

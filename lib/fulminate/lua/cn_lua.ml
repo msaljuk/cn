@@ -19,7 +19,6 @@ let get_type_prefix = "get_"
 let push_type_prefix = "push_"
 
 let cn_sym = LuaS.Symbol( "cn" )
-let cn_spec_mode_sym = LuaS.Symbol( "cn.spec_mode" )
 let cn_spec_mode_var_sym = LuaS.Symbol("spec_mode")
 let cn_loop_ownership_var_sym = LuaS.Symbol("loop_ownership")
 let cn_env_sym = LuaS.Symbol("cn.env")
@@ -981,7 +980,7 @@ let generate_lua_cn_assert
     let push_err_stmt = generate_lua_cn_error_stack_push error_msg in
     let pop_err_stmt = generate_lua_cn_error_stack_pop in
 
-    let spec_mode_field = LuaS.Field(cn_spec_mode_sym, LuaS.Symbol(Sym.pp_string spec_mode)) in
+    let spec_mode_field = LuaS.Symbol(Sym.pp_string spec_mode) in
 
     let core_stmt = 
       LuaS.FunctionCall(Pp_lua.pp_expr cn_assert_sym, [ assert_expr; spec_mode_field ]) 
