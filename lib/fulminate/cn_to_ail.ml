@@ -4157,11 +4157,13 @@ let rec cn_to_ail_lat
         | RC.Lua ->
           let upd_l = CnL.generate_lua_cn_error_stack_push (gather_error_message_from_loc loc) in
           let pop_l = CnL.generate_lua_cn_error_stack_pop in
-          let merged_ls = 
+          (*@saljuk TODO: For now, not inserting any error stack pushes for predicates. It's
+           messing up the order of statements. Deal with it later.*)
+          let _merged_ls = 
             [ [ upd_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] 
             @ [ l1; l2 ] 
             @ [ [ pop_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] in
-          ([], [], CnL.concat merged_ls)
+          ([], [], CnL.concat [ l1; l2 ])
     )
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->
     let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
@@ -4468,7 +4470,7 @@ let rec cn_to_ail_post_aux
       | RC.Lua ->
         let error_message = gather_error_message_from_loc loc in
         let exec_with_assert = 
-          CnL.generate_lua_cn_assert error_message l1 (sym_of_spec_mode_opt spec_mode_opt)
+          CnL.generate_lua_cn_assert error_message l1 (lua_sym_of_spec_mode_opt spec_mode_opt)
         in
         ([], [], CnL.concat [ exec_with_assert; l2 ])
       end
@@ -5230,6 +5232,7 @@ let rec cn_to_ail_lat_2
     in
     prepend_to_precondition ail_executable_spec (binding :: b1, decl :: s1, l1)
   | LAT.Resource ((name, (ret, bt)), (loc, _str_opt), lat) ->
+    print_endline(Sym.pp_string name);
     let free_vars_in_rest =
       LAT.free_vars
         (fun (post, (stats, loops)) ->
