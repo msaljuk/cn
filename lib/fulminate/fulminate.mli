@@ -19,11 +19,13 @@ val main
   correct_missing_ownership_mode:bool ->
   experimental_ownership_stack_mode:bool ->
   experimental_curly_braces:bool ->
+  experimental_lua_runtime:bool ->
   with_testing:bool ->
   skip_and_only:string list * string list ->
   disable_ghost_arg_failure:bool ->
   ?max_bump_blocks:int ->
   ?bump_block_size:int ->
+  String.t ->
   String.t ->
   String.t ->
   String.t ->
