@@ -29,8 +29,9 @@ let cn_error_stack_push_sym = LuaS.Symbol( "cn.error_stack.push" )
 let cn_error_stack_pop_sym  = LuaS.Symbol( "cn.error_stack.pop" )
 let cn_frames_push_fn_sym = LuaS.Symbol( "cn.frames.push_function" )
 let cn_locals_sym = LuaS.Symbol("cn.locals")
-let cn_owned_sym = LuaS.Symbol("cn.owned")
-let cn_member_shift_sym = LuaS.Symbol("cn.member_shift")
+let cn_owned_sym = LuaS.Symbol("owned")
+let cn_member_shift_sym = LuaS.Symbol("member_shift")
+let cn_array_shift_sym = LuaS.Symbol("array_shift")
 let cn_sizeof_field_sym = LuaS.Symbol("cn.c.sizeof")
 let cn_offsets_field_sym = LuaS.Symbol("cn.c.offsets")
 let cn_get_field_prefix_sym = LuaS.Symbol("cn.c.get_")
@@ -1335,6 +1336,21 @@ let member_tag_str = Sym.pp_string member_tag in
 let offsets_field_expr = cn_to_lua_offsetof struct_tag member_tag_str in
 
 LuaS.Call(Pp_lua.pp_expr cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
+
+let cn_to_lua_array_shift 
+  (ptr_exec : lua_cn_exec)
+  (offset_exec : lua_cn_exec)
+  (ctype : CF.Ctype.ctype)
+  : lua_cn_exec
+=
+  let l1, ptr_expr = pop_expr_from_exec ptr_exec in
+  let l2, offset_expr = pop_expr_from_exec offset_exec in
+  let sizeof_expr = generate_lua_ctype_sizeof ctype in
+  let array_shift_expr = 
+    LuaS.Call(Pp_lua.pp_expr cn_array_shift_sym, [ ptr_expr; offset_expr; sizeof_expr ])
+  in
+  
+  push_expr_to_exec (concat [ l1; l2 ], array_shift_expr)
 
 let cn_to_lua_good 
   : lua_expression

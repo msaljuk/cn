@@ -388,6 +388,12 @@ val cn_to_lua_member_shift
     CF.Ctype.union_tag ->
     lua_expression
 
+val cn_to_lua_array_shift 
+    : lua_cn_exec ->
+    lua_cn_exec ->
+    CF.Ctype.ctype ->
+    lua_cn_exec
+
 val cn_to_lua_good : lua_expression
 
 val cn_to_lua_apply

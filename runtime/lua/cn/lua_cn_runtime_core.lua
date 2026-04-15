@@ -146,15 +146,6 @@ function cn.ghost_state.postcondition_leak_check()
     cn.c.postcondition_leak_check();
 end
 
-function cn.owned(mode, base_addr, size, loop_ownership, reader)
-    cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
-    return reader(base_addr)
-end
-
-function cn.member_shift(base_addr, offset)
-    return (base_addr + offset)
-end
-
 --[[
 @Saljuk TODO: Get rid of this. This makes it easy for us
 to generate Lua functions within nested tables since we don't have 
@@ -203,6 +194,20 @@ local core = {
     c_num = c_num,
     equals = deep_compare,
     is_null = function(p) return (p == nil or p == 0) end,
+
+    owned = function(mode, base_addr, size, loop_ownership, reader)
+        cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
+        return reader(base_addr)
+    end,
+
+    member_shift = function(base_addr, offset)
+        return (base_addr + offset)
+    end,
+      
+    array_shift = function(base_addr, offset, size)
+        return (base_addr + (offset * size))
+    end,
+
     bool_and = 
         function(a, b) 
             local a_ctrue = is_c_true(a)
