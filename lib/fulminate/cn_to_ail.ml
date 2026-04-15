@@ -680,18 +680,9 @@ let cn_to_ail_const const basetype
         | Default bt -> cn_to_ail_default bt
       in
       let is_unit = const == Unit in
-      (*
-      @saljuk REMOVE
-      Pp.debug 0 (lazy (CF.Pp_ail.pp_expression (mk_expr ail_const)));
-      *)
       (ail_const, CnL.get_empty_lua_cn_exec, is_unit)
     | RC.Lua ->
       let lua_expression, is_unit = CnL.cn_to_lua_const const basetype in
-      (*
-      @saljuk REMOVE
-      let open Lua.Pp_lua in
-      print_endline (pp_expr lua_expression);
-      *)
       let lua_exec = CnL.push_expr_to_exec (CnL.get_empty_lua_cn_exec, lua_expression) in
       (ail_null, lua_exec, is_unit)
 
@@ -1088,15 +1079,26 @@ let rec cn_to_ail_expr_aux
         dest d spec_mode_opt ([], [], l'' , mk_expr ail_null)
     );
   | SizeOf sct ->
+    print_endline("SIZE OF");
     let ail_expr_ = A.(AilEsizeof (C.no_qualifiers, Sctypes.to_ctype sct)) in
     let ail_call_ = wrap_with_convert_to ~sct ail_expr_ basetype in
     dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_call_)
   | OffsetOf (tag, member) ->
-    let ail_struct_type = mk_ctype (Struct tag) in
-    let ail_expr_ = A.(AilEoffsetof (ail_struct_type, member)) in
-    let ail_call_ = wrap_with_convert_to ail_expr_ basetype in
-    dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_call_)
+    (match RC.get_runtime() with
+      | RC.C ->
+        let ail_struct_type = mk_ctype (Struct tag) in
+        let ail_expr_ = A.(AilEoffsetof (ail_struct_type, member)) in
+        let ail_call_ = wrap_with_convert_to ail_expr_ basetype in
+        dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, mk_expr ail_call_)
+      | RC.Lua ->
+        let member_str = 
+          (CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier member))  
+        in
+        let lua_expr = CnL.cn_to_lua_offsetof tag member_str in
+        let lua_exec = ([], [], lua_expr) in
+        dest d spec_mode_opt ([], [], lua_exec, mk_expr ail_null))
   | ITE (t1, t2, t3) ->
+    print_endline("ITE");
     let result_sym = Sym.fresh_anon () in
     let result_ident = A.(AilEident result_sym) in
     let result_binding = create_binding result_sym (bt_to_ail_ctype (IT.get_bt t2)) in
@@ -1170,6 +1172,7 @@ let rec cn_to_ail_expr_aux
     
     assign/return/assert/passback b
     *)
+    print_endline("EACHI");
     let mk_int_const n = IT.(IT (Const (Z (Z.of_int n)), bt', Cerb_location.unknown)) in
     let start_const_it = mk_int_const r_start in
     let end_const_it = mk_int_const r_end in
@@ -1237,6 +1240,7 @@ let rec cn_to_ail_expr_aux
   | Tuple _ts -> failwith (__LOC__ ^ ": TODO Tuple")
   | NthTuple (_i, _t) -> failwith (__LOC__ ^ ": TODO NthTuple")
   | Struct (tag, ms) ->
+    print_endline("STRUCT");
     let res_sym = Sym.fresh_anon () in
     let res_ident = A.(AilEident res_sym) in
     let cn_struct_tag = generate_sym_with_suffix ~suffix:"_cn" tag in
@@ -1309,6 +1313,7 @@ let rec cn_to_ail_expr_aux
           dest d spec_mode_opt ([], [], l', mk_expr ail_null)
     )
   | StructUpdate ((struct_term, m), new_val) ->
+    print_endline("STRUCT UPDATE");
     let struct_tag =
       match IT.get_bt struct_term with
       | BT.Struct tag -> tag
@@ -1586,6 +1591,7 @@ let rec cn_to_ail_expr_aux
         dest d spec_mode_opt (bs, ss, ls'', mk_expr ail_null)
     );
   | ArrayShift { base; ct; index } ->
+    print_endline("ARRAY SHIFT");
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
         filename
@@ -1620,6 +1626,7 @@ let rec cn_to_ail_expr_aux
   | Nil _bt -> failwith (__LOC__ ^ ": TODO Nil")
   | Cons (_x, _xs) -> failwith (__LOC__ ^ ": TODO Cons")
   | Head xs ->
+    print_endline("HEAD");
     let b, s, l, e =
       cn_to_ail_expr_aux
         filename
@@ -1636,12 +1643,16 @@ let rec cn_to_ail_expr_aux
     dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
   | Tail _xs -> failwith (__LOC__ ^ ": TODO Tail")
   | Representable (_ct, _t) -> failwith (__LOC__ ^ ": TODO Representable")
-  | Good (_ct, _t) -> dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, cn_bool_true_expr)
+  | Good (_ct, _t) -> 
+    print_endline("GOOD");
+    dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, cn_bool_true_expr)
   | Aligned _t_and_align -> failwith (__LOC__ ^ ": TODO Aligned")
   | WrapI (_ct, t) ->
+    print_endline("WRAPI");
     cn_to_ail_expr_aux filename const_prop pred_name dts globals spec_mode_opt t d
   | MapConst (_bt, _t) -> failwith (__LOC__ ^ ": TODO MapConst")
   | MapSet (m, key, value) ->
+    print_endline("MapSet");
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
         filename
@@ -1703,6 +1714,7 @@ let rec cn_to_ail_expr_aux
         CnL.concat [ l1; l2; l3 ],
         mk_expr map_set_fcall)
   | MapGet (m, key) ->
+    print_endline("MapGet");
     (* Only works when index is a cn_integer *)
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
@@ -2062,6 +2074,7 @@ let rec cn_to_ail_expr_aux
     let ps' = List.map (fun (p, t) -> ([ p ], t)) ps in
     translate_real [ t ] ps' d
   | Cast (bt, t) ->
+    print_endline("CAST");
     let ail_expr_, b, s, l =
       match bt with
       | BT.Alloc_id ->
@@ -2093,6 +2106,7 @@ let rec cn_to_ail_expr_aux
         in
         (ail_expr_, b, s, l)
     in
+    print_endline(CF.Pp_utils.to_plain_string (CF.Pp_ail.pp_expression (mk_expr ail_expr_)));
     dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
   | CN_None _bt -> failwith (__LOC__ ^ ": TODO CN_None")
   | CN_Some _ -> failwith (__LOC__ ^ ": TODO CN_Some")

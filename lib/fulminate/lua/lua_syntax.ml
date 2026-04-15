@@ -4,7 +4,7 @@ type ident = string
 type expr =
   | Nil
   | Bool of bool
-  | Number_Int of Z.t
+  | Number_Int of expr * string
   | Number_Float of Q.t
   | String of string
   | Symbol of ident

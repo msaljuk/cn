@@ -1106,16 +1106,37 @@ let cn_to_lua_const
     (_baseType : BT.t)
     : (lua_expression * bool)
 =
+  let default_int_type = "i64" in
+  let z_sym z = LuaS.Symbol(Z.to_string z) in
+
   let lua_expression =
     match constant with
-    | IT.Z z -> LuaS.Number_Int(z)
+    | IT.Z z -> LuaS.Number_Int(z_sym z, default_int_type)
     | MemByte { alloc_id = _; value = i } ->
-      LuaS.Number_Int(i)
-    | Bits ((_sgn, _sz), i) ->
-      LuaS.Number_Int(i)
+      LuaS.Number_Int(z_sym i, default_int_type)
+    | Bits ((sgn, sz), i) ->
+      let z_min, _ = BT.bits_range (sgn, sz) in
+      let int_type_str =
+        let sign_str = match sgn with BT.Signed -> "i" | BT.Unsigned -> "u" in
+        let size_str = string_of_int sz in
+        sign_str ^ size_str
+      in
+      let final_expr =
+        if Z.equal i z_min && BT.equal_sign sgn BT.Signed then
+          LuaS.Binary(
+            LuaS.Subtract(
+              z_sym (Z.sub z_min Z.one),
+              z_sym Z.one,
+              int_type_str
+            )
+          )
+        else
+          LuaS.Number_Int(z_sym i, int_type_str)
+      in
+      (final_expr)
     | Q q -> LuaS.Number_Float(q)
     | Pointer { alloc_id = _; addr = a } ->
-      LuaS.Number_Int(a)
+      LuaS.Number_Int(z_sym a, default_int_type)
     | Alloc_id _ -> failwith (__LOC__ ^ ": TODO Alloc_id")
     | Bool b -> LuaS.Bool(b)
     | Unit -> LuaS.Nil
@@ -1167,6 +1188,16 @@ let cn_to_lua_unop (expr, bt, unop)
     | BW_Compl -> LuaS.Unary(LuaS.BW_Complement(expr, lua_c_int_type))
     | BW_CLZ_NoSMT | BW_CTZ_NoSMT | BW_FFS_NoSMT ->
       failwith (__LOC__ ^ ": Failure in trying to translate SMT-only unop from C source")
+
+let cn_to_lua_offsetof 
+  (struct_tag : CF.Ctype.union_tag)
+  (member_tag_str : string)
+  : lua_expression
+= 
+  let struct_tag_str = Sym.pp_string struct_tag in
+  LuaS.Field(
+    cn_offsets_field_sym, 
+    LuaS.Field(LuaS.Symbol(struct_tag_str), LuaS.Symbol(member_tag_str)))
 
 let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop)
   : (lua_expression)
@@ -1270,9 +1301,8 @@ let cn_to_lua_member_shift
   (member_tag : CF.Ctype.union_tag)
   : lua_expression
 =
-let struct_tag_sym = LuaS.Symbol (Sym.pp_string struct_tag) in
-let member_tag_sym = LuaS.Symbol (Sym.pp_string member_tag) in
-let offsets_field_expr = LuaS.Field(cn_offsets_field_sym, LuaS.Field(struct_tag_sym, member_tag_sym)) in
+let member_tag_str = Sym.pp_string member_tag in
+let offsets_field_expr = cn_to_lua_offsetof struct_tag member_tag_str in
 
 LuaS.Call(Pp_lua.pp_expr cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
 

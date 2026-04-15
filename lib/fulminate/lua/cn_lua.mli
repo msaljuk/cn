@@ -337,6 +337,11 @@ val cn_to_lua_unop
     : (lua_expression * BT.t * IT.unop) ->
     lua_expression
 
+val cn_to_lua_offsetof
+    : CF.Ctype.union_tag ->
+    string ->
+    lua_expression
+
 val cn_to_lua_binop
     : (lua_expression * lua_expression * BT.t * BT.t * IT.binop) ->
     lua_expression
