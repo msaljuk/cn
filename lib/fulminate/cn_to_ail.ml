@@ -57,6 +57,12 @@ let sym_of_spec_mode_opt = function
     Sym.fresh (spec_mode_to_str spec_mode) (* Called from top-level spec *)
   | None -> spec_mode_sym
 
+let lua_sym_of_spec_mode_opt spec_mode_opt
+  =
+  match spec_mode_opt with
+    | Some spec_mode ->
+      Sym.fresh ("cn.spec_mode." ^ spec_mode_to_str spec_mode)
+    | None -> Sym.fresh ("spec_mode")
 
 (* Not called from top-level - nested in some function/predicate definition *)
 
@@ -3326,10 +3332,7 @@ let cn_to_ail_resource
       | RC.C ->
         sym_of_spec_mode_opt spec_mode_opt
       | RC.Lua ->
-        match spec_mode_opt with
-          | Some spec_mode ->
-            Sym.fresh ("cn.spec_mode." ^ spec_mode_to_str spec_mode)
-          | None -> Sym.fresh ("spec_mode")
+        lua_sym_of_spec_mode_opt spec_mode_opt
   in
   let it_zero_const = IT.(IT (Const (Z (Z.of_int 0)), BT.Unit, Cerb_location.unknown)) in
   let ail_zero_const_expr_ =
@@ -4117,8 +4120,6 @@ let rec cn_to_ail_lat
     in
     (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, CnL.concat [l1; l2])
   | LAT.Resource ((name, (ret, _bt)), (loc, _str_opt), lat) ->
-    let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
-    let pop_s = generate_cn_pop_msg_info in
     let free_vars_in_rest = LAT.free_vars IT.free_vars lat in
     let is_used = Sym.Set.mem name free_vars_in_rest in
     let b1, s1, l1 =
@@ -4146,19 +4147,24 @@ let rec cn_to_ail_lat
         without_ownership_checking
         lat
     in
-    (b1 @ b2, upd_s @ s1 @ pop_s @ s2, CnL.concat [l1; l2])
+
+    (
+      match RC.get_runtime() with
+        | RC.C ->
+          let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
+          let pop_s = generate_cn_pop_msg_info in
+          (b1 @ b2, upd_s @ s1 @ pop_s @ s2, CnL.get_empty_lua_cn_exec)
+        | RC.Lua ->
+          let upd_l = CnL.generate_lua_cn_error_stack_push (gather_error_message_from_loc loc) in
+          let pop_l = CnL.generate_lua_cn_error_stack_pop in
+          let merged_ls = 
+            [ [ upd_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] 
+            @ [ l1; l2 ] 
+            @ [ [ pop_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] in
+          ([], [], CnL.concat merged_ls)
+    )
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->
     let b1, s, l1, e = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
-    let ss =
-      match generate_cn_assert e spec_mode_opt with
-      | Some assert_stmt ->
-        let upd_s =
-          generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
-        in
-        let pop_s = generate_cn_pop_msg_info in
-        upd_s @ s @ (assert_stmt :: pop_s)
-      | None -> s
-    in
     let b2, s2, l2 =
       cn_to_ail_lat
         filename
@@ -4170,7 +4176,30 @@ let rec cn_to_ail_lat
         without_ownership_checking
         lat
     in
-    (b1 @ b2, ss @ s2, CnL.concat [l1; l2])
+
+    (
+      match RC.get_runtime() with
+        | RC.C ->
+          let ss =
+            match generate_cn_assert e spec_mode_opt with
+            | Some assert_stmt ->
+              let upd_s =
+                generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) ()
+              in
+              let pop_s = generate_cn_pop_msg_info in
+              upd_s @ s @ (assert_stmt :: pop_s)
+            | None -> s
+          in
+          (b1 @ b2, ss @ s2, CnL.get_empty_lua_cn_exec)
+        | RC.Lua ->
+          let error_message = gather_error_message_from_loc loc in
+
+          let l1' = 
+            CnL.generate_lua_cn_assert error_message l1 (lua_sym_of_spec_mode_opt spec_mode_opt)
+          in
+
+          ([], [], CnL.concat [ l1'; l2 ])
+    )
   | LAT.I it ->
     let bs, ss, ls =
       cn_to_ail_expr_with_pred_name
