@@ -1679,7 +1679,6 @@ let rec cn_to_ail_expr_aux
     cn_to_ail_expr_aux filename const_prop pred_name dts globals spec_mode_opt t d
   | MapConst (_bt, _t) -> failwith (__LOC__ ^ ": TODO MapConst")
   | MapSet (m, key, value) ->
-    print_endline("MapSet");
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
         filename
@@ -1719,27 +1718,40 @@ let rec cn_to_ail_expr_aux
         value
         PassBack
     in
-    let new_map_sym = Sym.fresh_anon () in
-    let new_map_binding = create_binding new_map_sym (bt_to_ail_ctype (IT.get_bt m)) in
-    let map_deep_copy_fcall =
-      A.(AilEcall (mk_expr (AilEident (Sym.fresh "cn_map_deep_copy")), [ e1 ]))
-    in
-    let new_map_decl =
-      A.(AilSdeclaration [ (new_map_sym, Some (mk_expr map_deep_copy_fcall)) ])
-    in
-    let map_set_fcall =
-      A.(
-        AilEcall
-          ( mk_expr (AilEident (Sym.fresh "cn_map_set")),
-            [ mk_expr A.(AilEident new_map_sym); e2; e3 ] ))
-    in
-    dest
-      d
-      spec_mode_opt
-      ( b1 @ b2 @ b3 @ [ new_map_binding ],
-        s1 @ s2 @ s3 @ [ new_map_decl ],
-        CnL.concat [ l1; l2; l3 ],
-        mk_expr map_set_fcall)
+
+    (match RC.get_runtime() with
+      | RC.C ->
+        let new_map_sym = Sym.fresh_anon () in
+        let new_map_binding = create_binding new_map_sym (bt_to_ail_ctype (IT.get_bt m)) in
+        let map_deep_copy_fcall =
+          A.(AilEcall (mk_expr (AilEident (Sym.fresh "cn_map_deep_copy")), [ e1 ]))
+        in
+        let new_map_decl =
+          A.(AilSdeclaration [ (new_map_sym, Some (mk_expr map_deep_copy_fcall)) ])
+        in
+        let map_set_fcall =
+          A.(
+            AilEcall
+              ( mk_expr (AilEident (Sym.fresh "cn_map_set")),
+                [ mk_expr A.(AilEident new_map_sym); e2; e3 ] ))
+        in
+        dest
+          d
+          spec_mode_opt
+          ( b1 @ b2 @ b3 @ [ new_map_binding ],
+            s1 @ s2 @ s3 @ [ new_map_decl ],
+            CnL.concat [ l1; l2; l3 ],
+            mk_expr map_set_fcall)
+      | RC.Lua ->
+        let final_exec = CnL.cn_to_lua_map_set l1 l2 l3 in
+        dest
+          d
+          spec_mode_opt
+          ( [],
+            [],
+            final_exec,
+            mk_expr ail_null)
+    )
   | MapGet (m, key) ->
     print_endline("MapGet");
     (* Only works when index is a cn_integer *)
