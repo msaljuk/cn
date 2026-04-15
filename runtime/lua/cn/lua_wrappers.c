@@ -228,7 +228,6 @@ void bind_cn_c_functions() {
 
 void lua_cn_load_runtime(
     const char* filename, 
-    int ghost_array_size,
     int max_bump_blocks,
     int bump_block_size,
     _Bool exec_c_locs_mode,
@@ -239,7 +238,6 @@ void lua_cn_load_runtime(
     // runtime still binds to C)
     initialise_ownership_ghost_state();
     initialise_ghost_stack_depth();
-    alloc_ghost_array(ghost_array_size);
     initialise_exec_c_locs_mode(exec_c_locs_mode);
     initialise_ownership_stack_mode(ownership_stack_mode);
 
@@ -280,7 +278,7 @@ void lua_cn_unload_runtime()
     lua_cn_runtime_ref = LUA_NOREF;
 
     // C runtime stuff
-    free_ghost_array();
+    free_ghost_frame_stack();
 }
 
 int lua_cn_get_runtime_ref() { return lua_cn_runtime_ref; }

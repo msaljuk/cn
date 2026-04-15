@@ -12,7 +12,6 @@ lua_State* lua_get_state();
 // Lua CN Runtime State
 void lua_cn_load_runtime(
     const char* filename,
-    int ghost_array_size, 
     int max_bump_blocks,
     int bump_block_size,
     _Bool exec_c_locs_mode,

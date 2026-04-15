@@ -673,7 +673,6 @@ let main
                 c_lemma_decls;
                 cn_ghost_enum
               ];
-              cn_ghost_call_site_glob
             ] 
           in
 
@@ -707,7 +706,6 @@ let main
               [ "#include <cn-executable/cerb_types.h>\n"; ];
               [ c_tag_defs ];
               [ cn_ghost_enum ];
-              cn_ghost_call_site_glob;
             ]
             @
             (if List.is_empty helper_decs then 

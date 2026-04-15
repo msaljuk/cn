@@ -8,10 +8,10 @@ let subcommands ~legacy_test =
   [ Wf.cmd;
     Verify.cmd;
     (if legacy_test then Test.legacy_cmd else Test.cmd);
-    Instrument.cmd;
+    Instrument.instrument_cmd; 
+    Instrument.run_existing_cmd;
     SeqTest.cmd
   ]
-
 
 let () =
   let version_str = Cn_version.git_version ^ " [" ^ Cn_version.git_version_date ^ "]" in
