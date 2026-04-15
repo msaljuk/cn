@@ -34,6 +34,7 @@ let cn_member_shift_sym = LuaS.Symbol("cn.member_shift")
 let cn_sizeof_field_sym = LuaS.Symbol("cn.c.sizeof")
 let cn_offsets_field_sym = LuaS.Symbol("cn.c.offsets")
 let cn_get_field_prefix_sym = LuaS.Symbol("cn.c.get_")
+let cn_map_set_sym = LuaS.Symbol("map_set")
 
 
 let get_empty_lua_expr : (lua_expression)
@@ -1113,7 +1114,7 @@ let cn_to_lua_const
     (_baseType : BT.t)
     : (lua_expression * bool)
 =
-  let default_int_type = "i64" in
+  let default_int_type = "i32" in
   let z_sym z = LuaS.Symbol(Z.to_string z) in
 
   let lua_expression =
@@ -1143,7 +1144,8 @@ let cn_to_lua_const
       (final_expr)
     | Q q -> LuaS.Number_Float(q)
     | Pointer { alloc_id = _; addr = a } ->
-      LuaS.Number_Int(z_sym a, default_int_type)
+      let pointer_int_type = "i64" in
+      LuaS.Number_Int(z_sym a, pointer_int_type)
     | Alloc_id _ -> failwith (__LOC__ ^ ": TODO Alloc_id")
     | Bool b -> LuaS.Bool(b)
     | Unit -> LuaS.Nil
@@ -1340,6 +1342,23 @@ let cn_to_lua_good
   : lua_expression
 =
   LuaS.Bool(true)
+
+let cn_to_lua_map_set 
+  (map_exec : lua_cn_exec)
+  (key_exec : lua_cn_exec)
+  (val_exec : lua_cn_exec)
+  : lua_cn_exec
+=
+  let l1', e1 = pop_expr_from_exec map_exec in
+  let l2', e2 = pop_expr_from_exec key_exec in
+  let l3', e3 = pop_expr_from_exec val_exec in
+
+  let upd_stmt = LuaS.FunctionCall(Pp_lua.pp_expr cn_map_set_sym, [ e1; e2; e3 ]) in
+
+  let composed_exec = push_stmts_to_exec (concat [ l1'; l2'; l3'; ], [ upd_stmt ]) in
+  let e4 = LuaS.Symbol(Pp_lua.pp_expr e1) in
+
+  push_expr_to_exec (composed_exec, e4)
 
 let cn_to_lua_apply sym in_execs
   : (lua_cn_exec)
