@@ -227,7 +227,16 @@ Utility used to generate a local assignment in Lua
 *)
 val generate_lua_cn_local_assignment :
     string ->
-    lua_expression ->
+    lua_expression option ->
+    lua_statement
+
+
+(*
+Utility used to generate an assignment in Lua
+*)
+val generate_lua_cn_assignment :
+    string ->
+    lua_expression option ->
     lua_statement
 
 (*
@@ -337,6 +346,11 @@ val cn_to_lua_unop
     : (lua_expression * BT.t * IT.unop) ->
     lua_expression
 
+val cn_to_lua_offsetof
+    : CF.Ctype.union_tag ->
+    string ->
+    lua_expression
+
 val cn_to_lua_binop
     : (lua_expression * lua_expression * BT.t * BT.t * IT.binop) ->
     lua_expression
@@ -344,6 +358,13 @@ val cn_to_lua_binop
 val cn_to_lua_struct_member
     : lua_cn_exec ->
     Id.t ->
+    lua_cn_exec
+
+val cn_to_lua_ite
+    : CF.Ctype.union_tag ->
+    lua_cn_exec ->
+    lua_cn_exec ->
+    lua_cn_exec ->
     lua_cn_exec
 
 val cn_to_lua_record_member
@@ -366,6 +387,8 @@ val cn_to_lua_member_shift
     CF.Ctype.union_tag ->
     CF.Ctype.union_tag ->
     lua_expression
+
+val cn_to_lua_good : lua_expression
 
 val cn_to_lua_apply
     : CF.Ctype.union_tag ->

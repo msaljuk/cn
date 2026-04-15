@@ -4,7 +4,7 @@ type ident = string
 type expr =
   | Nil
   | Bool of bool
-  | Number_Int of Z.t
+  | Number_Int of expr * string
   | Number_Float of Q.t
   | String of string
   | Symbol of ident
@@ -50,8 +50,8 @@ and unary_expr_type =
 
 (* Lua Statements *)
 and stmt =
-  | Assign of ident * expr                                  (* x = 10 *)
-  | LocalAssign of ident * expr                             (* local x = 10 *)
+  | Assign of ident * expr option                           (* x = 10 *)
+  | LocalAssign of ident * expr option                      (* local x = 10 *)
   | FunctionDef of ident * expr list * stmt list            (* function x(a, b) \n body \n end *)
   | LocalFunctionDef of ident * expr list * stmt list       (* local function x(a, b) \n body \n end *)
   | FunctionCall of ident * expr list                       (* assert(false) *)
