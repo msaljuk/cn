@@ -26,6 +26,12 @@ let rec pp_expr =
     | LuaS.Bool b -> string_of_bool b
     | LuaS.Number_Int ((value, t : LuaS.expr * string)) -> 
         pp_expr (c_int_type_op t "make" [ value ])
+    | LuaS.Number_IntLimit (limit, t : string * string) ->
+        (match (String.lowercase_ascii limit) with
+            | "max" -> pp_expr (c_int_type_op t "max_val" [])
+            | "min" -> pp_expr (c_int_type_op t "min_val" [])
+            | _ -> failwith "Only support min or max for limit parameter"
+        )
     | LuaS.Number_Float (q : Q.t) -> Q.to_string q
     | LuaS.String s -> "\"" ^ s ^ "\""
     | LuaS.Symbol id -> id

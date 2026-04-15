@@ -1022,6 +1022,17 @@ let generate_lua_cn_pname_resource_call
   let final_expr = (LuaS.Call(Sym.pp_string pname, exprs)) in
   (push_expr_to_exec (concat execs, final_expr))
 
+let generate_lua_cn_number_limit_fn_name
+  (limit_str : string)
+  (integer_type_str : string)
+  : string
+=
+  let lua_expr_str = Pp_lua.pp_expr (LuaS.Number_IntLimit(limit_str, integer_type_str)) in
+  if String.ends_with ~suffix:"()" lua_expr_str then
+    String.sub lua_expr_str 0 (String.length lua_expr_str - 2)
+  else
+    failwith "Expected a function call here. Something went wrong."
+
 let generate_lua_cn_resource sym ctype in_exec is_local_res
   : lua_cn_exec
 =
@@ -1133,7 +1144,7 @@ let cn_to_lua_const
         if Z.equal i z_min && BT.equal_sign sgn BT.Signed then
           LuaS.Binary(
             LuaS.Subtract(
-              z_sym (Z.sub z_min Z.one),
+              z_sym (Z.neg (Z.sub (Z.neg i) Z.one)),
               z_sym Z.one,
               int_type_str
             )
