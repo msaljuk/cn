@@ -27,7 +27,7 @@ local function create_number_type(bits, signed)
         return a < b
     end
 
-    return {
+    local T = {
         bits   = bits,
         signed = signed,
         mask   = mask,
@@ -121,6 +121,15 @@ local function create_number_type(bits, signed)
             return _lt(a, b) and b or a
         end,
     }
+
+    return setmetatable(T, {
+        __eq = function(t1, t2)
+            return t1.bits == t2.bits and t1.signed == t2.signed
+        end,
+        __tostring = function(t)
+            return string.format("%s%d", t.signed and "i" or "u", t.bits)
+        end
+    })
 end
 
 local types = {
