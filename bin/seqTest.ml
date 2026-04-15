@@ -81,9 +81,11 @@ let run_seq_tests
              ~correct_missing_ownership_mode
              ~experimental_ownership_stack_mode
              ~experimental_curly_braces:false
+             ~experimental_lua_runtime:false
              ~with_testing:true
              ~skip_and_only:([], [])
              ~disable_ghost_arg_failure:true
+             basefile
              filename
              cc
              pp_file

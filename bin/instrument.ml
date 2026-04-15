@@ -143,6 +143,7 @@ let generate_executable_specs
       experimental_ownership_stack_mode
       experimental_unions
       experimental_curly_braces
+      experimental_lua_runtime
       mktemp
       print_steps
       max_bump_blocks
@@ -214,11 +215,13 @@ let generate_executable_specs
                 ~correct_missing_ownership_mode
                 ~experimental_ownership_stack_mode
                 ~experimental_curly_braces
+                ~experimental_lua_runtime
                 ~with_testing
                 ~skip_and_only:(skip, only)
                 ~disable_ghost_arg_failure:false
                 ?max_bump_blocks
                 ?bump_block_size
+                basefile
                 filename
                 cc
                 pp_file
@@ -233,6 +236,8 @@ let generate_executable_specs
         ();
       Or_TypeError.return
         (if run then
+           let is_handwritten = false in
+
            run_instrumented_file
              ~filename
              ~cc
@@ -411,6 +416,9 @@ module Flags = struct
     let doc = "(experimental) Insert curly braces for single-statement control flow" in
     Arg.(value & flag & info [ "insert-curly-braces" ] ~doc)
 
+  let experimental_lua_runtime =
+    let doc = "(experimental) Use Lua as the runtime environment for Fulminate" in
+    Arg.(value & flag & info [ "experimental-lua-runtime" ] ~doc)
 
   let correct_missing_ownership_mode =
     let doc =
@@ -420,56 +428,99 @@ module Flags = struct
     Arg.(value & flag & info [ "correct-missing-ownership" ] ~doc)
 end
 
-let cmd =
-  let open Term in
-  let instrument_t =
-    const generate_executable_specs
-    $ Common.Flags.file
+let run_existing
+    cc
+    print_steps
+    experimental_lua_runtime
+    filename
+  =
+  let is_handwritten = true in
+  let output_dir = "" in
+
+  run_instrumented_file
+    ~filename
+    ~cc
+    ~no_debug_info:false
+    ~output:None
+    ~output_dir
+    ~print_steps
+    ~experimental_lua_runtime
+    ~is_handwritten
+
+let run_existing_term =
+  let one_file =
+    Term.map Common.there_can_only_be_one Common.Flags.file in
+
+  Term.(
+    const run_existing
     $ Common.Flags.cc
-    $ Common.Flags.macros
-    $ Common.Flags.permissive
-    $ Common.Flags.incl_dirs
-    $ Common.Flags.incl_files
-    $ Verify.Flags.loc_pp
-    $ Common.Flags.debug_level
-    $ Common.Flags.print_level
-    $ Common.Flags.print_sym_nums
-    $ Common.Flags.no_timestamps
-    $ Flags.only
-    $ Flags.skip
-    $ Verify.Flags.diag
-    $ Common.Flags.csv_times
-    $ Common.Flags.astprints
-    $ Verify.Flags.dont_use_vip
-    $ Verify.Flags.fail_fast
-    $ Common.Flags.no_inherit_loc
-    $ Common.Flags.magic_comment_char_dollar
-    $ Common.Flags.allow_split_magic_comments
-    $ Flags.output
-    $ Flags.output_dir
-    $ Flags.without_ownership_checking
-    $ Flags.without_loop_invariants
-    $ Flags.with_loop_leak_checks
-    $ Flags.without_lemma_checks
-    $ Flags.without_inline_statements
-    $ Term.map
-        (fun (x, y) -> x || y)
-        (Term.product Flags.with_test_gen Flags.with_testing)
-    $ Flags.run
-    $ Flags.no_debug_info
-    $ Flags.exec_c_locs_mode
-    $ Flags.correct_missing_ownership_mode
-    $ Flags.experimental_ownership_stack_mode
-    $ Flags.experimental_unions
-    $ Flags.experimental_curly_braces
-    $ Flags.mktemp
     $ Flags.print_steps
-    $ Flags.max_bump_blocks
-    $ Flags.bump_block_size
+    $ Flags.experimental_lua_runtime
+    $ one_file
+  )
+
+let run_existing_cmd =
+  let doc =
+    "Run an already-instrumented CN executable C file"
   in
+  let info =
+    Cmd.info "run-existing" ~doc
+  in
+  Cmd.v info run_existing_term
+
+let instrument_term =
+  let open Term in
+  const generate_executable_specs
+  $ Common.Flags.file
+  $ Common.Flags.cc
+  $ Common.Flags.macros
+  $ Common.Flags.permissive
+  $ Common.Flags.incl_dirs
+  $ Common.Flags.incl_files
+  $ Verify.Flags.loc_pp
+  $ Common.Flags.debug_level
+  $ Common.Flags.print_level
+  $ Common.Flags.print_sym_nums
+  $ Common.Flags.no_timestamps
+  $ Flags.only
+  $ Flags.skip
+  $ Verify.Flags.diag
+  $ Common.Flags.csv_times
+  $ Common.Flags.astprints
+  $ Verify.Flags.dont_use_vip
+  $ Verify.Flags.fail_fast
+  $ Common.Flags.no_inherit_loc
+  $ Common.Flags.magic_comment_char_dollar
+  $ Common.Flags.allow_split_magic_comments
+  $ Flags.output
+  $ Flags.output_dir
+  $ Flags.without_ownership_checking
+  $ Flags.without_loop_invariants
+  $ Flags.with_loop_leak_checks
+  $ Flags.without_lemma_checks
+  $ Flags.without_inline_statements
+  $ Term.map
+      (fun (x, y) -> x || y)
+      (Term.product Flags.with_test_gen Flags.with_testing)
+  $ Flags.run
+  $ Flags.no_debug_info
+  $ Flags.exec_c_locs_mode
+  $ Flags.correct_missing_ownership_mode
+  $ Flags.experimental_ownership_stack_mode
+  $ Flags.experimental_unions
+  $ Flags.experimental_curly_braces
+  $ Flags.experimental_lua_runtime
+  $ Flags.mktemp
+  $ Flags.print_steps
+  $ Flags.max_bump_blocks
+  $ Flags.bump_block_size
+
+let instrument_cmd =
   let doc =
     "Instruments [FILE] with runtime C assertions that check the properties provided in \
      CN specifications.\n"
   in
   let info = Cmd.info "instrument" ~doc in
-  Cmd.v info instrument_t
+  Cmd.v info instrument_term
+
+let cmds = [ instrument_cmd; run_existing_cmd ]

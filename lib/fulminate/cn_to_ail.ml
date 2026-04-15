@@ -4738,7 +4738,7 @@ let rec cn_to_ail_cnprog_ghost_arg filename dts globals spec_mode_opt i = functi
   | Pure (loc, ghost_it) ->
     let upd_s = generate_error_msg_info_update_stats ~cn_source_loc_opt:(Some loc) () in
     let pop_s = generate_cn_pop_msg_info in
-    let bs, ss, e = cn_to_ail_expr filename dts globals spec_mode_opt ghost_it PassBack in
+    let bs, ss, ls, e = cn_to_ail_expr filename dts globals spec_mode_opt ghost_it PassBack in
     let add_arg_to_ghost_frame_call =
       mk_expr
         (AilEcall
@@ -4748,7 +4748,7 @@ let rec cn_to_ail_cnprog_ghost_arg filename dts globals spec_mode_opt i = functi
                e
              ] ))
     in
-    (bs, upd_s @ ss @ [ A.AilSexpr add_arg_to_ghost_frame_call ] @ pop_s)
+    (bs, upd_s @ ss @ [ A.AilSexpr add_arg_to_ghost_frame_call ] @ pop_s, ls)
 
 
 let gen_ghost_enum_member_id bts =
@@ -5263,32 +5263,69 @@ let rec cn_to_ail_lat_2
         let pop_s = generate_cn_pop_msg_info in
         let b1, s1, l1 =
           cn_to_ail_resource
-        ~is_used
-        filename
-        new_name
-        dts
-        globals
-        preds
-        None
-        spec_mode_opt
-        loc
-        without_ownership_checking
-        ret
-    in
-    let ail_executable_spec =
-      cn_to_ail_lat_2
-        without_ownership_checking
-        with_loop_leak_checks
-        without_lemma_checks
-        without_inline_statements
-        filename
-        dts
-        globals
-        preds
-        c_return_type
-        new_lat
-    in
-    prepend_to_precondition ail_executable_spec (b1, upd_s @ s1 @ pop_s, l1)
+            ~is_used
+            filename
+            new_name
+            dts
+            globals
+            preds
+            None
+            spec_mode_opt
+            loc
+            without_ownership_checking
+            ret
+          in
+        let ail_executable_spec =
+          cn_to_ail_lat_2
+            without_ownership_checking
+            with_loop_leak_checks
+            without_lemma_checks
+            without_inline_statements
+            filename
+            dts
+            globals
+            preds
+            c_return_type
+            new_lat
+        in
+        prepend_to_precondition ail_executable_spec (b1, upd_s @ s1 @ pop_s, l1)
+      | RC.Lua -> 
+          let spec_mode_opt = Some Pre in
+          let upd_l = CnL.generate_lua_cn_error_stack_push (gather_error_message_from_loc loc) in
+          let pop_l = CnL.generate_lua_cn_error_stack_pop in
+          let b1, s1, l1 =
+            cn_to_ail_resource
+              ~is_used
+              filename
+              new_name
+              dts
+              globals
+              preds
+              None
+              spec_mode_opt
+              loc
+              without_ownership_checking
+              ret
+          in
+          let ail_executable_spec =
+            cn_to_ail_lat_2
+              without_ownership_checking
+              with_loop_leak_checks
+              without_lemma_checks
+              without_inline_statements
+              filename
+              dts
+              globals
+              preds
+              c_return_type
+              new_lat
+          in
+          let merged_ls = 
+            [ [ upd_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] 
+            @ [ l1 ] 
+            @ [ [ pop_l ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr ] in
+          prepend_to_precondition ail_executable_spec (b1, s1, CnL.concat ( merged_ls ))
+    );
   | LAT.Constraint (lc, (loc, _str_opt), lat) ->
     (match RC.get_runtime() with
       | RC.C ->
@@ -5304,24 +5341,45 @@ let rec cn_to_ail_lat_2
             upd_s @ s @ (assert_stmt :: pop_s)
           | None -> s
         in
-        let pop_s = generate_cn_pop_msg_info in
-        upd_s @ s @ (assert_stmt :: pop_s)
-      | None -> s
-    in
-    let ail_executable_spec =
-      cn_to_ail_lat_2
-        without_ownership_checking
-        with_loop_leak_checks
-        without_lemma_checks
-        without_inline_statements
-        filename
-        dts
-        globals
-        preds
-        c_return_type
-        lat
-    in
-    prepend_to_precondition ail_executable_spec (b1, ss, l1)
+        let ail_executable_spec =
+          cn_to_ail_lat_2
+            without_ownership_checking
+            with_loop_leak_checks
+            without_lemma_checks
+            without_inline_statements
+            filename
+            dts
+            globals
+            preds
+            c_return_type
+            lat
+        in
+        prepend_to_precondition ail_executable_spec (b1, ss, l1)
+      | RC.Lua -> 
+        let spec_mode_opt = Some Pre in
+        let error_message = gather_error_message_from_loc loc in
+
+        let _, _, l, _ = cn_to_ail_logical_constraint filename dts globals spec_mode_opt lc in
+
+        let exec_with_assert = 
+          CnL.generate_lua_cn_assert error_message l (lua_sym_of_spec_mode_opt spec_mode_opt)
+        in
+
+        let ail_executable_spec =
+          cn_to_ail_lat_2
+            without_ownership_checking
+            with_loop_leak_checks
+            without_lemma_checks
+            without_inline_statements
+            filename
+            dts
+            globals
+            preds
+            c_return_type
+            lat
+        in
+        prepend_to_precondition ail_executable_spec ([], [], exec_with_assert)
+    );
   (* Postcondition *)
   | LAT.I (post, (stats, loops)) ->
     let return_cn_binding, return_cn_decl =
@@ -5464,10 +5522,6 @@ let rec cn_to_ail_pre_post_aux
     (ghost_bts, prepend_to_precondition ail_executable_spec ([ binding ], [ decl ], CnL.get_empty_lua_cn_exec))
   | AT.Ghost ((sym, bt), _info, at) ->
     if is_lemma then
-      (* For lemmas,
-          ghost parameters are already translated specially
-          in cn_to_ail_lemma using AT.get_ghost,
-          so we may skip them here *)
       cn_to_ail_pre_post_aux
         ~is_lemma
         disable_ghost_arg_failure
@@ -5523,7 +5577,7 @@ let rec cn_to_ail_pre_post_aux
           subst_at
       in
       ( bt :: ghost_bts,
-        prepend_to_precondition ail_executable_spec ([ binding ], [ decl ]) ))
+        prepend_to_precondition ail_executable_spec ([ binding ], [ decl ], CnL.get_empty_lua_cn_exec) ))
   | AT.L lat ->
     let ail_executable_spec =
       cn_to_ail_lat_2
@@ -5547,7 +5601,7 @@ let rec cn_to_ail_pre_post_aux
             (mk_expr
                (A.AilEcall (mk_expr (A.AilEident (Sym.fresh "pop_ghost_frame")), [])))
         in
-        prepend_to_precondition ail_executable_spec ([], [ pop_ghost_frame_decl ]))
+        prepend_to_precondition ail_executable_spec ([], [ pop_ghost_frame_decl ], CnL.get_empty_lua_cn_exec))
     in
     ([], ail_executable_spec)
 
@@ -5621,7 +5675,7 @@ let cn_to_ail_pre_post
         in
         prepend_to_precondition
           ail_executable_spec
-          ([ ghost_spec_binding ], [ ghost_spec_decl ]))
+          ([ ghost_spec_binding ], [ ghost_spec_decl ], CnL.get_empty_lua_cn_exec))
     in
 
     let ownership_stats_ =
