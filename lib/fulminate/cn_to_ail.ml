@@ -1614,7 +1614,6 @@ let rec cn_to_ail_expr_aux
         dest d spec_mode_opt (bs, ss, ls'', mk_expr ail_null)
     );
   | ArrayShift { base; ct; index } ->
-    print_endline("ARRAY SHIFT");
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
         filename
@@ -1637,13 +1636,21 @@ let rec cn_to_ail_expr_aux
         index
         PassBack
     in
-    let sizeof_expr = mk_expr A.(AilEsizeof (C.no_qualifiers, Sctypes.to_ctype ct)) in
-    let ail_expr_ =
-      A.(
-        AilEcall
-          (mk_expr (AilEident (Sym.fresh "cn_array_shift")), [ e1; sizeof_expr; e2 ]))
-    in
-    dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr ail_expr_)
+    
+    (
+      match RC.get_runtime() with
+        | RC.C ->
+          let sizeof_expr = mk_expr A.(AilEsizeof (C.no_qualifiers, Sctypes.to_ctype ct)) in
+          let ail_expr_ =
+            A.(
+              AilEcall
+                (mk_expr (AilEident (Sym.fresh "cn_array_shift")), [ e1; sizeof_expr; e2 ]))
+          in
+          dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.get_empty_lua_cn_exec, mk_expr ail_expr_)
+        | RC.Lua ->
+          let final_exec = CnL.cn_to_lua_array_shift l1 l2 (Sctypes.to_ctype ct) in
+          dest d spec_mode_opt ([], [], final_exec, mk_expr ail_null)
+    )
   | CopyAllocId _ -> failwith (__LOC__ ^ ": TODO CopyAllocId")
   | HasAllocId _ -> failwith (__LOC__ ^ ": TODO HasAllocId")
   | Nil _bt -> failwith (__LOC__ ^ ": TODO Nil")
