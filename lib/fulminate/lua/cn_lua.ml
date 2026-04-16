@@ -795,9 +795,14 @@ let generate_c_fn_push_struct_metadata
             begin match i_type with
               | CF.Ctype.Bool -> LuaS.Symbol("bool")
               | CF.Ctype.Char -> LuaS.Symbol("char")
-              | CF.Ctype.Signed (_) | CF.Ctype.Unsigned (_)
-                -> LuaS.Symbol("int")
-              | _ -> exit 2
+              (*@saljuk TODO: Flesh more of Signed/Unsigned out. *)
+              | CF.Ctype.Signed (_) -> LuaS.Symbol("int")
+              | CF.Ctype.Unsigned (y) ->
+                begin match y with
+                  | CF.Ctype.Ichar -> LuaS.Symbol("char")
+                  | _ -> LuaS.Symbol("int")
+                end
+              | _ -> failwith "Unsupported ctype. Could not get lua symbol"
             end
           | CF.Ctype.Floating (f_type) ->
             begin match f_type with
