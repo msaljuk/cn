@@ -836,22 +836,18 @@ let main
 
   output_to_oc oc cn_header_decls_list;
 
-  (match RC.get_runtime() with
-    | RC.C ->
-        output_to_oc
-          oc
-          [ "#ifndef offsetof\n";
-            "#define offsetof(st, m) ((__cerbty_size_t)((char *)&((st *)0)->m - (char *)0))\n";
-            "#endif\n"
-          ];
-        output_string oc "#pragma GCC diagnostic ignored \"-Wattributes\"\n";
-        output_string oc "\n/* GLOBAL ACCESSORS */\n";
-        output_string
-          oc
-          ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
-          ^ Globals.accessors_prototypes filename cabs_tunit prog5);
-    | _ -> ();
-  );
+  output_to_oc
+    oc
+    [ "#ifndef offsetof\n";
+      "#define offsetof(st, m) ((__cerbty_size_t)((char *)&((st *)0)->m - (char *)0))\n";
+      "#endif\n"
+    ];
+  output_string oc "#pragma GCC diagnostic ignored \"-Wattributes\"\n";
+  output_string oc "\n/* GLOBAL ACCESSORS */\n";
+  output_string
+    oc
+    ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
+    ^ Globals.accessors_prototypes filename cabs_tunit prog5);
 
   (match
      Source_injection.(
