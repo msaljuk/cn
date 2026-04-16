@@ -1165,7 +1165,7 @@ let cn_to_lua_const
     | Alloc_id _ -> failwith (__LOC__ ^ ": TODO Alloc_id")
     | Bool b -> LuaS.Bool(b)
     | Unit -> LuaS.Nil
-    | Null -> LuaS.Nil
+    | Null -> LuaS.Symbol("0")
     | CType_const _ -> failwith (__LOC__ ^ ": TODO CType_const")
     | Default _bt -> failwith (__LOC__ ^ ": TODO Default_const")
   in
