@@ -496,7 +496,8 @@ let compile_req
         pointer :: iargs
         |> List.map (compile_it filename sigma prog5)
         |> List.fold_left
-             (fun (b, s, l, es) (b', s', l', e') -> (b @ b', s @ s', CnL.concat [l; l'], es @ [ e' ]))
+             (fun (b, s, l, es) (b', s', l', e') ->
+                (b @ b', s @ s', CnL.concat [ l; l' ], es @ [ e' ]))
              ([], [], CnL.get_empty_lua_cn_exec, [])
       in
       let e = A.(mk_expr (AilEcall (mk_expr (AilEident (pred_sym name)), es))) in
@@ -549,13 +550,15 @@ let compile_req
                       @ [ e_val; e_max ] )))
           ]
       in
-      (b1 @ b_val, s1 @ s2, CnL.concat [l1; l_val], mk_expr (A.AilEident map_sym))
+      (b1 @ b_val, s1 @ s2, CnL.concat [ l1; l_val ], mk_expr (A.AilEident map_sym))
   in
   aux req
 
 
 let compile_lat
-      ?(f : 'a -> A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.lua_cn_exec =
+      ?(f :
+          'a ->
+          A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.lua_cn_exec =
         fun _ -> ([], [], CnL.get_empty_lua_cn_exec))
       filename
       (sigma : CF.GenTypes.genTypeCategory A.sigma)
@@ -570,7 +573,7 @@ let compile_lat
       let b2 = [ Utils.create_binding x (bt_to_ctype (IT.get_bt it)) ] in
       let s2 = A.[ AilSdeclaration [ (x, Some e) ] ] in
       let b3, s3, l3 = aux lat' in
-      (b1 @ b2 @ b3, s1 @ s2 @ s3, CnL.concat[l1; l3])
+      (b1 @ b2 @ b3, s1 @ s2 @ s3, CnL.concat [ l1; l3 ])
     | Resource ((x, (req, bt)), (loc, _), lat') ->
       let b1, s1, l1, e = compile_req filename sigma prog5 req loc in
       let b2 = [ Utils.create_binding x (bt_to_ctype bt) ] in
@@ -581,7 +584,7 @@ let compile_lat
           A.[ AilSdeclaration [ (x, Some e) ] ]
       in
       let b3, s3, l3 = aux lat' in
-      (b1 @ b2 @ b3, s1 @ s2 @ s3, CnL.concat[l1; l3])
+      (b1 @ b2 @ b3, s1 @ s2 @ s3, CnL.concat [ l1; l3 ])
     | Constraint (_, _, lat') -> aux lat'
     | I i -> f i
   in

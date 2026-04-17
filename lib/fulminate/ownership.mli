@@ -2,7 +2,9 @@ open Cerb_frontend
 module CnL = Lua.Cn_lua
 
 type ail_bindings_and_statements =
-  AilSyntax.bindings * GenTypes.genTypeCategory AilSyntax.statement_ list * CnL.lua_cn_exec
+  AilSyntax.bindings
+  * GenTypes.genTypeCategory AilSyntax.statement_ list
+  * CnL.lua_cn_exec
 
 type return_kind =
   | ReturnVoid

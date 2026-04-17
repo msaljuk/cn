@@ -8,95 +8,109 @@ module IT = IndexTerms
 (* CN-Lua Types and related utilities *)
 (* ---------------------------------- *)
 
-type lua_expression = (LuaS.expr)
-type lua_statement = (LuaS.stmt)
-type lua_expressions = (lua_expression list)
-type lua_statements = (lua_statement list)
-type wrapper_function = (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition)
-type wrapper_functions = (wrapper_function list)
-(* 
-Corresponds to a list of Lua statements and the wrapper C functions that call into them.
+type lua_expression = LuaS.expr
+
+type lua_statement = LuaS.stmt
+
+type lua_expressions = lua_expression list
+
+type lua_statements = lua_statement list
+
+type wrapper_function =
+  A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition
+
+type wrapper_functions = wrapper_function list
+
+(*
+   Corresponds to a list of Lua statements and the wrapper C functions that call into them.
 
 The final element in this tuple is the lua expression currently being constructed that, once
 finalized, gets added to the list of lua statements. We're choosing to pack it in this type
 to make it easy to bundle all lua data into one type instead of having to plumb multiple lua-related
 fields in cn_to_ail.
 *)
-type lua_cn_exec = (lua_statements * wrapper_functions * lua_expression)
+type lua_cn_exec = lua_statements * wrapper_functions * lua_expression
 
 val get_empty_lua_expr : lua_expression
+
 val get_empty_lua_stmt : lua_statement
+
 val get_empty_lua_exprs : lua_expressions
+
 val get_empty_lua_stmts : lua_statements
+
 val get_empty_wrapper_functions : wrapper_functions
+
 val get_empty_lua_cn_exec : lua_cn_exec
 
-(* 
-Similar to List.concat. 
+(*
+   Similar to List.concat. 
 
 Takes a list of lua_cn_execs and returns one exec 
 with the concatenated results of the input execs.
 *)
-val concat 
-    : lua_cn_exec list ->
-    lua_cn_exec
+val concat : lua_cn_exec list -> lua_cn_exec
 
 (*
-Utility used to convert an instrumented c function's args
+   Utility used to convert an instrumented c function's args
 to the arguments of the wrapper that will push them into Lua
 *)
-val convert_c_args_to_wrapper_args 
-    : (CF.Ctype.union_tag * CF.Ctype.ctype) list ->
-    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list
+val convert_c_args_to_wrapper_args
+  :  (CF.Ctype.union_tag * CF.Ctype.ctype) list ->
+  (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list
 
-val push_expr_to_exec : (lua_cn_exec * lua_expression) -> lua_cn_exec
-val pop_expr_from_exec : (lua_cn_exec) -> (lua_cn_exec * lua_expression)
-val push_stmts_to_exec : (lua_cn_exec * lua_statements) -> lua_cn_exec
+val push_expr_to_exec : lua_cn_exec * lua_expression -> lua_cn_exec
+
+val pop_expr_from_exec : lua_cn_exec -> lua_cn_exec * lua_expression
+
+val push_stmts_to_exec : lua_cn_exec * lua_statements -> lua_cn_exec
 
 val prepend_cn_local : CF.Ctype.union_tag -> string
 
 val stmt_to_string : lua_statement -> string
+
 val expr_to_string : lua_expression -> string
 
 val debug_print_stmts : lua_statements -> unit
+
 val debug_print_exprs : lua_expressions -> unit
 
 (* ---------------------------------- *)
 (*             Generators             *)
 (* ---------------------------------- *)
 
-(* 
-Utility used to generate the name of the wrapper C function
+(*
+   Utility used to generate the name of the wrapper C function
 that calls into Lua for the actual precondition check.
 *)
 val generate_c_precondition_fn_wrapper_name : Sym.t -> string
 
-(* 
-Utility used to generate the name of the wrapper C function
+(*
+   Utility used to generate the name of the wrapper C function
 that calls into Lua for the actual postcondition check.
 *)
 val generate_c_postcondition_fn_wrapper_name : Sym.t -> string
 
-(* 
-Utility used to generate the name of the wrapper C function
+(*
+   Utility used to generate the name of the wrapper C function
 that pushes a C function's args into Lua at the start of a frame.
 *)
 val generate_c_push_frame_fn_wrapper_name : Sym.t -> string
 
-(* 
-Utility used to generate a C function call to pop the most recent function frame
+(*
+   Utility used to generate a C function call to pop the most recent function frame
 *)
 val generate_c_pop_frame_fn_wrapper_call : CF.GenTypes.genTypeCategory A.statement_
 
 val generate_c_inline_fn_wrapper_name : Sym.t -> string
 
-val generate_c_inline_fn_wrapper_call : 
-    string -> 
-    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->  
-    CF.GenTypes.genTypeCategory A.statement_
+val generate_c_inline_fn_wrapper_call
+  :  string ->
+  (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
+  CF.GenTypes.genTypeCategory A.statement_
 
-(* 
-Utility used to generate the definition of any wrapper C function
+(*
+   Utility used to generate the definition of any wrapper C function
 that calls into Lua. 
 
 Takes in 
@@ -104,174 +118,153 @@ Takes in
 - the name of the corresponding Lua function,
 - the list of C args that need to be pushed into Lua.
 *)
-val generate_c_fn_wrapper_def 
-    : string -> 
-    string ->
-    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
-    wrapper_function
+val generate_c_fn_wrapper_def
+  :  string ->
+  string ->
+  (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
+  wrapper_function
 
 (*
-Utility used to generate a c function to push the size of a custom c struct onto the
+   Utility used to generate a c function to push the size of a custom c struct onto the
 sizeof table that exists in CN Lua
 *)
-val generate_c_fn_push_struct_size
-    : A.ail_identifier ->
-    wrapper_function
+val generate_c_fn_push_struct_size : A.ail_identifier -> wrapper_function
 
 (*
-Utility used to generate a c function to push the offsets of each member in a custom c struct onto the
+   Utility used to generate a c function to push the offsets of each member in a custom c struct onto the
 offsets table that exists in CN Lua
 *)
 val generate_c_fn_push_struct_offsets
-    : (A.ail_identifier *
-        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
-    wrapper_function
+  :  A.ail_identifier * (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition) ->
+  wrapper_function
 
 (*
-Utility used to generate a c function to push any custom C structs as a Lua table onto the
+   Utility used to generate a c function to push any custom C structs as a Lua table onto the
 stack.
 *)
 val generate_c_fn_push_struct
-    : (A.ail_identifier *
-        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
-    wrapper_function
+  :  A.ail_identifier * (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition) ->
+  wrapper_function
 
 (*
-Utility used to generate a c function that can be called from Lua to get a C struct as 
+   Utility used to generate a c function that can be called from Lua to get a C struct as 
 a Lua table
 *)
 val generate_c_fn_get_struct
-    : (A.ail_identifier *
-        (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition)) ->
-    (CF.GenTypes.genTypeCategory A.statement * wrapper_function)
+  :  A.ail_identifier * (Cerb_location.t * CF.Annot.attributes * CF.Ctype.tag_definition) ->
+  CF.GenTypes.genTypeCategory A.statement * wrapper_function
 
 (*
-Utility used to generate a c function that can be called to push all custom struct
+   Utility used to generate a c function that can be called to push all custom struct
 metadata to the lua cn runtime
 *)
 val generate_c_fn_push_struct_metadata
-    : CF.GenTypes.genTypeCategory A.statement list ->
-    A.sigma_declaration list ->
-    A.sigma_declaration list ->
-    wrapper_function
+  :  CF.GenTypes.genTypeCategory A.statement list ->
+  A.sigma_declaration list ->
+  A.sigma_declaration list ->
+  wrapper_function
 
-val generate_lua_ctype_sizeof
-    : CF.Ctype.ctype ->
-    lua_expression
+val generate_lua_ctype_sizeof : CF.Ctype.ctype -> lua_expression
 
-val generate_lua_ctype_get
-    : CF.Ctype.ctype ->
-    lua_expression
+val generate_lua_ctype_get : CF.Ctype.ctype -> lua_expression
 
-(* 
-Utility used to generate the filename of the Lua file (with .Lua extension)
+(*
+   Utility used to generate the filename of the Lua file (with .Lua extension)
 based on the given output directory and C filename.
 *)
-val generate_lua_filename :
-    string ->
-    string ->
-    string
+val generate_lua_filename : string -> string -> string
 
-(* 
-Utility used to generate the name of a Lua precondition function
+(*
+   Utility used to generate the name of a Lua precondition function
 based on the name of the C function where it is called.
 *)
 val generate_lua_precondition_fn_name : Sym.t -> string
 
-(* 
-Utility used to generate the name of a Lua postcondition function
+(*
+   Utility used to generate the name of a Lua postcondition function
 based on the name of the C function where it is called.
 *)
 val generate_lua_postcondition_fn_name : Sym.t -> string
 
-(* 
-Utility used to generate the name of a Lua function that pushes a bunch
+(*
+   Utility used to generate the name of a Lua function that pushes a bunch
 of C arguments onto the Lua CN frame at the start of a frame.
 *)
 val generate_lua_push_frame_fn_name : Sym.t -> string
 
 val generate_lua_inline_fn_name : Sym.t -> string
 
-val generate_lua_inline_fn 
-    : string -> 
-    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
-    (lua_statements) ->
-    lua_statement
+val generate_lua_inline_fn
+  :  string ->
+  (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
+  lua_statements ->
+  lua_statement
 
 val generate_lua_owned_fn_name : string
 
-(* 
-Utility used to generate the require for the Lua core runtime.
+(*
+   Utility used to generate the require for the Lua core runtime.
 *)
 val generate_lua_runtime_core_req : LuaS.stmt
 
-(* 
-Utility used to generate the return for the Lua core runtime.
+(*
+   Utility used to generate the return for the Lua core runtime.
 *)
 val generate_lua_runtime_return : LuaS.stmt
 
-(* 
-Utility used to generate the environment setting for the instrumented Lua file
+(*
+   Utility used to generate the environment setting for the instrumented Lua file
 *)
 val generate_lua_env_req : LuaS.stmt
 
 (*
-Utility used to generate an if-else block in Lua
+   Utility used to generate an if-else block in Lua
 *)
-val generate_lua_cn_conditional :
-    (lua_expression option * lua_statements) list ->
-    lua_statement
+val generate_lua_cn_conditional
+  :  (lua_expression option * lua_statements) list ->
+  lua_statement
 
 (*
-Utility used to generate a local assignment in Lua
+   Utility used to generate a local assignment in Lua
 *)
-val generate_lua_cn_local_assignment :
-    string ->
-    lua_expression option ->
-    lua_statement
-
+val generate_lua_cn_local_assignment : string -> lua_expression option -> lua_statement
 
 (*
-Utility used to generate an assignment in Lua
+   Utility used to generate an assignment in Lua
 *)
-val generate_lua_cn_assignment :
-    string ->
-    lua_expression option ->
-    lua_statement
+val generate_lua_cn_assignment : string -> lua_expression option -> lua_statement
 
 (*
-Utility used to generate x.tag == y type statement
+   Utility used to generate x.tag == y type statement
 to correspond to a match case in 
 match x
- | y -> 
+ | y ->
 *)
-val generate_lua_cn_match_case_equality :
-    (lua_expression * string) ->
-    lua_expression
+val generate_lua_cn_match_case_equality : lua_expression * string -> lua_expression
 
 (*
-Utility used to generate a Lua function that pushes a bunch of 
+   Utility used to generate a Lua function that pushes a bunch of 
 C arguments onto the Lua CN frame at the start of the frame. Takes
-in the name of the function and the args to push. 
+in the name of the function and the args to push.
 *)
-val generate_lua_push_frame_fn 
-    : string ->
-    (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
-    LuaS.stmt 
+val generate_lua_push_frame_fn
+  :  string ->
+  (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
+  LuaS.stmt
 
-(* 
-Utility used to generate an error stack push statement in Lua,
+(*
+   Utility used to generate an error stack push statement in Lua,
 with the provided error message.
 *)
 val generate_lua_cn_error_stack_push : string -> LuaS.stmt
 
-(* 
-Utility used to generate an error stack pop statement in Lua.
+(*
+   Utility used to generate an error stack pop statement in Lua.
 *)
 val generate_lua_cn_error_stack_pop : LuaS.stmt
 
-(* 
-Utility used to generate a lua cn assert.
+(*
+   Utility used to generate a lua cn assert.
 
 Takes in 
 - the assert error message, 
@@ -284,140 +277,94 @@ Returns:
 - The lua exec containing the generated assert 
 (includes any wrapper defs and decls if SPEC_MODE is STATEMENT)
 *)
-val generate_lua_cn_assert 
-    : string ->
-    lua_cn_exec ->
-    CF.Ctype.union_tag ->
-    (lua_cn_exec)
+val generate_lua_cn_assert : string -> lua_cn_exec -> CF.Ctype.union_tag -> lua_cn_exec
 
-val generate_lua_cn_return
-    : lua_expression -> bool ->
-    LuaS.stmt
+val generate_lua_cn_return : lua_expression -> bool -> LuaS.stmt
 
 val generate_lua_cn_pname_resource_call
-    : CF.Ctype.union_tag ->
-    lua_cn_exec list ->
-    lua_cn_exec
+  :  CF.Ctype.union_tag ->
+  lua_cn_exec list ->
+  lua_cn_exec
 
-val generate_lua_cn_number_limit_fn_name
-    : string -> 
-    string ->
-    string
+val generate_lua_cn_number_limit_fn_name : string -> string -> string
 
 val generate_lua_cn_resource
-    : CF.Ctype.union_tag ->
-    CF.Ctype.ctype ->
-    lua_cn_exec ->
-    bool ->
-    lua_cn_exec
+  :  CF.Ctype.union_tag ->
+  CF.Ctype.ctype ->
+  lua_cn_exec ->
+  bool ->
+  lua_cn_exec
 
-val generate_lua_cn_datatype
-    : A.ail_identifier CF.Cn.cn_datatype ->
-    lua_statement
+val generate_lua_cn_datatype : A.ail_identifier CF.Cn.cn_datatype -> lua_statement
 
 val generate_lua_cn_function
-    : CF.Ctype.union_tag ->
-    Definition.Function.t ->
-    lua_cn_exec ->
-    lua_statement
+  :  CF.Ctype.union_tag ->
+  Definition.Function.t ->
+  lua_cn_exec ->
+  lua_statement
 
 val generate_lua_cn_predicate
-    : CF.Ctype.union_tag ->
-    Definition.Predicate.t ->
-    lua_cn_exec ->
-    lua_statement
+  :  CF.Ctype.union_tag ->
+  Definition.Predicate.t ->
+  lua_cn_exec ->
+  lua_statement
 
 (* ---------------------------------- *)
 (*          Cn-to-Lua Terms           *)
 (* ---------------------------------- *)
 
-(* 
-Corollary to cn_to_ail_const.
+(*
+   Corollary to cn_to_ail_const.
 
 Returns:
 - a lua expression corresponding to the generated constant
 - a bool flag indicating if it's unit or not.
 *)
-val cn_to_lua_const 
-    : IT.const ->
-    BT.t ->
-    (lua_expression * bool)
+val cn_to_lua_const : IT.const -> BT.t -> lua_expression * bool
 
-val cn_to_lua_sym
-    : CF.Ctype.union_tag ->
-    (lua_expression)
+val cn_to_lua_sym : CF.Ctype.union_tag -> lua_expression
 
-val cn_to_lua_unop
-    : (lua_expression * BT.t * IT.unop) ->
-    lua_expression
+val cn_to_lua_unop : lua_expression * BT.t * IT.unop -> lua_expression
 
-val cn_to_lua_offsetof
-    : CF.Ctype.union_tag ->
-    string ->
-    lua_expression
+val cn_to_lua_offsetof : CF.Ctype.union_tag -> string -> lua_expression
 
 val cn_to_lua_binop
-    : (lua_expression * lua_expression * BT.t * BT.t * IT.binop) ->
-    lua_expression
+  :  lua_expression * lua_expression * BT.t * BT.t * IT.binop ->
+  lua_expression
 
-val cn_to_lua_struct_member
-    : lua_cn_exec ->
-    Id.t ->
-    lua_cn_exec
+val cn_to_lua_struct_member : lua_cn_exec -> Id.t -> lua_cn_exec
 
 val cn_to_lua_ite
-    : CF.Ctype.union_tag ->
-    lua_cn_exec ->
-    lua_cn_exec ->
-    lua_cn_exec ->
-    lua_cn_exec
+  :  CF.Ctype.union_tag ->
+  lua_cn_exec ->
+  lua_cn_exec ->
+  lua_cn_exec ->
+  lua_cn_exec
 
-val cn_to_lua_record_member
-    : lua_cn_exec ->
-    Id.t ->
-    lua_cn_exec
+val cn_to_lua_record_member : lua_cn_exec -> Id.t -> lua_cn_exec
 
-val cn_to_lua_record
-    : (Id.t * lua_cn_exec) list ->
-    lua_cn_exec
+val cn_to_lua_record : (Id.t * lua_cn_exec) list -> lua_cn_exec
 
 val cn_to_lua_constructor
-    : CF.Ctype.union_tag ->
-    CF.Ctype.union_tag ->
-    lua_expressions ->
-    lua_expression
+  :  CF.Ctype.union_tag ->
+  CF.Ctype.union_tag ->
+  lua_expressions ->
+  lua_expression
 
 val cn_to_lua_member_shift
-    : lua_expression ->
-    CF.Ctype.union_tag ->
-    CF.Ctype.union_tag ->
-    lua_expression
+  :  lua_expression ->
+  CF.Ctype.union_tag ->
+  CF.Ctype.union_tag ->
+  lua_expression
 
-val cn_to_lua_array_shift 
-    : lua_cn_exec ->
-    lua_cn_exec ->
-    CF.Ctype.ctype ->
-    lua_cn_exec
+val cn_to_lua_array_shift : lua_cn_exec -> lua_cn_exec -> CF.Ctype.ctype -> lua_cn_exec
 
 val cn_to_lua_good : lua_expression
 
-val cn_to_lua_map_set 
-    : lua_cn_exec ->
-    lua_cn_exec ->
-    lua_cn_exec ->
-    lua_cn_exec
+val cn_to_lua_map_set : lua_cn_exec -> lua_cn_exec -> lua_cn_exec -> lua_cn_exec
 
-val cn_to_lua_map_get
-    : lua_cn_exec ->
-    lua_cn_exec ->
-    lua_cn_exec
+val cn_to_lua_map_get : lua_cn_exec -> lua_cn_exec -> lua_cn_exec
 
-val cn_to_lua_apply
-    : CF.Ctype.union_tag ->
-    lua_cn_exec list ->
-    (lua_cn_exec)
+val cn_to_lua_apply : CF.Ctype.union_tag -> lua_cn_exec list -> lua_cn_exec
 
-val cn_to_lua_let
-    : CF.Ctype.union_tag ->
-    lua_expression ->
-    lua_cn_exec
+val cn_to_lua_let : CF.Ctype.union_tag -> lua_expression -> lua_cn_exec

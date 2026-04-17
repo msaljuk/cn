@@ -59,10 +59,11 @@ let empty_ail_str = ";" (* horrible; TODO change *)
 
 let make_fn_call (fn_decl : A.sigma_declaration)
   : CF.GenTypes.genTypeCategory A.statement_
-=
+  =
   let fn_sym, _ = fn_decl in
-  let fn_call_expr = A.(AilEcall(mk_expr (AilEident (fn_sym)), [])) in
+  let fn_call_expr = A.(AilEcall (mk_expr (AilEident fn_sym), [])) in
   A.(AilSexpr (mk_expr fn_call_expr))
+
 
 let empty_ail_expr = A.(AilEident (Sym.fresh empty_ail_str))
 
@@ -94,17 +95,20 @@ let rec list_split_three = function
     let xs, ys, zs = list_split_three rest in
     (x :: xs, y :: ys, z :: zs)
 
+
 let rec list_split_four = function
   | [] -> ([], [], [], [])
   | (w, x, y, z) :: rest ->
     let ws, xs, ys, zs = list_split_four rest in
     (w :: ws, x :: xs, y :: ys, z :: zs)
 
+
 let rec list_split_five = function
   | [] -> ([], [], [], [], [])
   | (v, w, x, y, z) :: rest ->
     let vs, ws, xs, ys, zs = list_split_five rest in
     (v :: vs, w :: ws, x :: xs, y :: ys, z :: zs)
+
 
 type[@warning "-34" (* unused-type-declaration *)] cn_dependencies = CF.Symbol.sym list
 
