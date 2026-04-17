@@ -35,6 +35,7 @@ let cn_sizeof_field_sym = LuaS.Symbol("cn.c.sizeof")
 let cn_offsets_field_sym = LuaS.Symbol("cn.c.offsets")
 let cn_get_field_prefix_sym = LuaS.Symbol("cn.c.get_")
 let cn_map_set_sym = LuaS.Symbol("map_set")
+let cn_map_get_sym = LuaS.Symbol("map_get")
 
 
 let get_empty_lua_expr : (lua_expression)
@@ -1390,6 +1391,19 @@ let cn_to_lua_map_set
   let e4 = LuaS.Symbol(Pp_lua.pp_expr e1) in
 
   push_expr_to_exec (composed_exec, e4)
+
+let cn_to_lua_map_get
+  (map_exec : lua_cn_exec)
+  (key_exec : lua_cn_exec)
+  : lua_cn_exec
+=
+  let l1, map_expr = pop_expr_from_exec map_exec in
+  let l2, key_expr = pop_expr_from_exec key_exec in
+
+  let map_get_expr = LuaS.Call(Pp_lua.pp_expr cn_map_get_sym, [ map_expr; key_expr ]) in
+  let final_exec = push_expr_to_exec (concat [ l1; l2 ], map_get_expr) in
+  
+  (final_exec)
 
 let cn_to_lua_apply sym in_execs
   : (lua_cn_exec)
