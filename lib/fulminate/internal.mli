@@ -42,7 +42,7 @@ val generate_c_records
 
 val generate_c_datatypes
   :  GenTypes.genTypeCategory AilSyntax.sigma ->
-  ((Cerb_location.t * string) list * (string list))
+  (Cerb_location.t * string) list * string list
 
 val generate_ghost_enum : unit Mucore.file -> string
 
@@ -124,6 +124,7 @@ val generate_tag_definition_injs
   (Cerb_location.t * string list) list
 
 val generate_struct_metadata
-  : (AilSyntax.ail_identifier *
-        (Cerb_location.t * Annot.attributes * Ctype.tag_definition)) list ->
-  (GenTypes.genTypeCategory AilSyntax.statement_ * (string list * string list))
+  :  (AilSyntax.ail_identifier
+     * (Cerb_location.t * Annot.attributes * Ctype.tag_definition))
+       list ->
+  GenTypes.genTypeCategory AilSyntax.statement_ * (string list * string list)

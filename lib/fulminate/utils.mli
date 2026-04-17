@@ -19,7 +19,9 @@ val rm_expr : 'a AilSyntax.expression -> 'a AilSyntax.expression_
 
 val empty_ail_expr : 'a AilSyntax.expression_
 
-val make_fn_call : AilSyntax.sigma_declaration -> GenTypes.genTypeCategory AilSyntax.statement_
+val make_fn_call
+  :  AilSyntax.sigma_declaration ->
+  GenTypes.genTypeCategory AilSyntax.statement_
 
 val generate_sym_with_suffix
   :  ?suffix:string ->
@@ -32,7 +34,9 @@ val list_split_three : ('a * 'b * 'c) list -> 'a list * 'b list * 'c list
 
 val list_split_four : ('a * 'b * 'c * 'd) list -> 'a list * 'b list * 'c list * 'd list
 
-val list_split_five : ('a * 'b * 'c * 'd * 'e) list -> 'a list * 'b list * 'c list * 'd list * 'e list
+val list_split_five
+  :  ('a * 'b * 'c * 'd * 'e) list ->
+  'a list * 'b list * 'c list * 'd list * 'e list
 
 val ifndef_wrap : string -> string -> string
 

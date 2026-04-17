@@ -4,14 +4,15 @@ open Cmdliner
    positional of a command group is resolved as a subcommand name), so legacy
    `cn test FILE` invocations are routed to a flat, deprecated `test` command
    instead of the engine-subcommand group. *)
-let subcommands ~legacy_test =
+let subcommands =
   [ Wf.cmd;
     Verify.cmd;
-    (if legacy_test then Test.legacy_cmd else Test.cmd);
-    Instrument.instrument_cmd; 
+    Test.cmd;
+    Instrument.instrument_cmd;
     Instrument.run_existing_cmd;
     SeqTest.cmd
   ]
+
 
 let () =
   let version_str = Cn_version.git_version ^ " [" ^ Cn_version.git_version_date ^ "]" in

@@ -120,7 +120,7 @@ let compile_it
       (sigma : CF.GenTypes.genTypeCategory A.sigma)
       (prog5 : unit Mucore.file)
       (it : IT.t)
-    : A.bindings
+  : A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
     * CnL.lua_cn_exec
     * CF.GenTypes.genTypeCategory A.expression
@@ -132,6 +132,7 @@ let compile_it
     None
     None
     it
+
 
 let get_parent_and_size (sct : Sctypes.t) (arg : IT.t) loc =
   let rec aux (it : IT.t) =
@@ -170,9 +171,7 @@ let owned_sct_call
   let b3, s3, l3, e3 = compile_it filename sigma prog5 size in
   let fsym = owned_sct_sym sct in
   let e4 = mk_expr A.(AilEcall (mk_expr (AilEident fsym), [ e1; e2; e3 ])) in
-
   let merged_l = CnL.concat [ l1; l2; l3 ] in
-
   (b1 @ b2 @ b3, s1 @ s2 @ s3, merged_l, e4)
 
 
@@ -197,7 +196,8 @@ let compile_req
         pointer :: iargs
         |> List.map (compile_it filename sigma prog5)
         |> List.fold_left
-             (fun (b, s, l, es) (b', s', l', e') -> (b @ b', s @ s', CnL.concat [ l; l' ], es @ [ e' ]))
+             (fun (b, s, l, es) (b', s', l', e') ->
+                (b @ b', s @ s', CnL.concat [ l; l' ], es @ [ e' ]))
              ([], [], CnL.get_empty_lua_cn_exec, [])
       in
       let e = A.(mk_expr (AilEcall (mk_expr (AilEident (pred_sym name)), es))) in
@@ -215,7 +215,7 @@ let compile_req
         let it_min, it_max = IT.Bounds.get_bounds (q_sym, q_bt) permission in
         let b1, s1, l1, e_min = compile_it filename sigma prog5 it_min in
         let b2, s2, l2, e_max = compile_it filename sigma prog5 it_max in
-        (b1 @ b2, s1 @ s2, CnL.concat [l1; l2], e_min, e_max)
+        (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], e_min, e_max)
       in
       let map_sym = Sym.fresh_anon () in
       let b_val, s_val, l_val, e_val =
@@ -250,13 +250,15 @@ let compile_req
                       @ [ e_val; e_max ] )))
           ]
       in
-      (b1 @ b_val, s1 @ s2, CnL.concat [l1; l_val], mk_expr (A.AilEident map_sym))
+      (b1 @ b_val, s1 @ s2, CnL.concat [ l1; l_val ], mk_expr (A.AilEident map_sym))
   in
   aux req
 
 
 let compile_lat
-      ?(f : 'a -> A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.lua_cn_exec =
+      ?(f :
+          'a ->
+          A.bindings * CF.GenTypes.genTypeCategory A.statement_ list * CnL.lua_cn_exec =
         fun _ -> ([], [], CnL.get_empty_lua_cn_exec))
       filename
       (sigma : CF.GenTypes.genTypeCategory A.sigma)
@@ -271,7 +273,7 @@ let compile_lat
       let b2 = [ Utils.create_binding x (CtA.bt_to_ail_ctype (IT.get_bt it)) ] in
       let s2 = A.[ AilSdeclaration [ (x, Some e) ] ] in
       let b3, s3, l3 = aux lat' in
-      (b1 @ b2 @ b3, s1 @ s2 @ s3, CnL.concat [l; l3])
+      (b1 @ b2 @ b3, s1 @ s2 @ s3, CnL.concat [ l; l3 ])
     | Resource ((x, (req, bt)), (loc, _), lat') ->
       let b1, s1, l, e = compile_req filename sigma prog5 req loc in
       let b2 = [ Utils.create_binding x (CtA.bt_to_ail_ctype bt) ] in
@@ -282,7 +284,7 @@ let compile_lat
           A.[ AilSdeclaration [ (x, Some e) ] ]
       in
       let b3, s3, l3 = aux lat' in
-      (b1 @ b2 @ b3, s1 @ s2 @ s3, CnL.concat[l; l3])
+      (b1 @ b2 @ b3, s1 @ s2 @ s3, CnL.concat [ l; l3 ])
     | Constraint (_, _, lat') -> aux lat'
     | I i -> f i
   in

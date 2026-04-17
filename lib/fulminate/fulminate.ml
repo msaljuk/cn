@@ -564,7 +564,6 @@ let main
       prog5
   =
   RC.set_runtime (if experimental_lua_runtime then RC.Lua else RC.C);
-  
   let out_filename = get_filename_with_prefix output_dir out_filename in
   (* disabled until fixed *)
   (* _gen_compile_commands_json cc output_dir out_filename; *)
@@ -597,7 +596,6 @@ let main
       sigm
       prog5
   in
-
   let c_datatype_defs, alt_file_datatypes = generate_c_datatypes sigm in
   let c_function_defs, c_function_decls, _c_function_locs, alt_file_functions =
     generate_c_functions filename cabs_tunit prog5 sigm
@@ -618,7 +616,9 @@ let main
     generate_ownership_functions without_ownership_checking !Cn_to_ail.ownership_ctypes
   in
   let ordered_ail_tag_defs = order_ail_tag_definitions sigm.tag_definitions in
-  let struct_metadata_fn_call, (struct_wrapper_decs, struct_wrapper_defs) = generate_struct_metadata ordered_ail_tag_defs in
+  let struct_metadata_fn_call, (struct_wrapper_decs, struct_wrapper_defs) =
+    generate_struct_metadata ordered_ail_tag_defs
+  in
   let c_tag_defs = generate_c_tag_def_strs ordered_ail_tag_defs in
   let cn_converted_struct_defs = generate_cn_versions_of_structs ordered_ail_tag_defs in
   let record_fun_defs, record_fun_decls = Records.generate_c_record_funs sigm in
@@ -628,114 +628,93 @@ let main
   in
   let cn_ghost_enum = generate_ghost_enum prog5 in
   (* Forward declarations and CN types *)
-  
   let generate_cn_decls_and_defs () =
-    match RC.get_runtime() with
-      | RC.C ->
-          let cn_header_decls = 
-            List.concat
-            (* TODO instead use hcat on these includes and typedefs *)
-            [ [ (* TODO need handling for the stuff in stdlib.h and stdint.h but we
+    match RC.get_runtime () with
+    | RC.C ->
+      let cn_header_decls =
+        List.concat
+          (* TODO instead use hcat on these includes and typedefs *)
+          [ [ (* TODO need handling for the stuff in stdlib.h and stdint.h but we
                   can't include them here, they'll clash in essentially unavoidable
                   ways with the stuff we already included and processed *)
-                "#include <cn-executable/cerb_types.h>\n";
-                (* TODO necessary because of the types in the struct decls. proper
+              "#include <cn-executable/cerb_types.h>\n";
+              (* TODO necessary because of the types in the struct decls. proper
                   handling would be to hoist all definitions and toposort them *)
-                (* TODO actually instead of *hoisting* types we can *lower* structs
+              (* TODO actually instead of *hoisting* types we can *lower* structs
                   etc to the highest place they're valid *)
-                "typedef __cerbty_intptr_t intptr_t;\n";
-                "typedef __cerbty_uintptr_t uintptr_t;\n";
-                "typedef __cerbty_intmax_t intmax_t;\n";
-                "typedef __cerbty_uintmax_t uintmax_t;\n";
-                (* TODO need to inject definitions for all the __cerbvars in cerberus
+              "typedef __cerbty_intptr_t intptr_t;\n";
+              "typedef __cerbty_uintptr_t uintptr_t;\n";
+              "typedef __cerbty_intmax_t intmax_t;\n";
+              "typedef __cerbty_uintmax_t uintmax_t;\n";
+              (* TODO need to inject definitions for all the __cerbvars in cerberus
                   builtins.lem. Hoisting/lowering doesn't affect needing to do this *)
-                "static const int __cerbvar_INT_MAX = 0x7fffffff;\n";
-                "static const int __cerbvar_INT_MIN = ~0x7fffffff;\n";
-                "static const unsigned long long __cerbvar_SIZE_MAX = ~(0ULL);\n";
-                "_Noreturn void abort(void);"
-              ];
-              [ c_tag_defs ];
-              [ (if not (String.equal record_defs "") then "\n/* CN RECORDS */\n\n" else "");
-                record_defs;
-                cn_converted_struct_defs
-              ];
-              (if List.is_empty c_datatype_defs then [] else [ "/* CN DATATYPES */" ]);
-              List.map snd c_datatype_defs;
-              [ "\n\n/* OWNERSHIP FUNCTIONS */\n\n";
-                ownership_function_decls;
-                "/* CONVERSION FUNCTIONS */\n";
-                conversion_function_decls;
-                "/* RECORD FUNCTIONS */\n";
-                record_fun_decls;
-                c_function_decls;
-                "\n";
-                c_predicate_decls;
-                c_lemma_decls;
-                cn_ghost_enum
-              ];
-            ] 
-          in
-
-          (* Definitions for CN helper functions *)
-          (* TODO: Topological sort *)
-          let cn_defs_list =
-            [ (* record_equality_fun_strs; *)
-              (* record_equality_fun_strs'; *)
-              "/* RECORD */\n";
-              record_fun_defs;
-              "/* CONVERSION */\n";
-              conversion_function_defs;
-              "/* OWNERSHIP FUNCTIONS */\n";
-              ownership_function_defs;
-              "/* CN FUNCTIONS */\n";
-              c_function_defs;
+              "static const int __cerbvar_INT_MAX = 0x7fffffff;\n";
+              "static const int __cerbvar_INT_MIN = ~0x7fffffff;\n";
+              "static const unsigned long long __cerbvar_SIZE_MAX = ~(0ULL);\n";
+              "_Noreturn void abort(void);"
+            ];
+            [ c_tag_defs ];
+            [ (if not (String.equal record_defs "") then "\n/* CN RECORDS */\n\n" else "");
+              record_defs;
+              cn_converted_struct_defs
+            ];
+            (if List.is_empty c_datatype_defs then [] else [ "/* CN DATATYPES */" ]);
+            List.map snd c_datatype_defs;
+            [ "\n\n/* OWNERSHIP FUNCTIONS */\n\n";
+              ownership_function_decls;
+              "/* CONVERSION FUNCTIONS */\n";
+              conversion_function_decls;
+              "/* RECORD FUNCTIONS */\n";
+              record_fun_decls;
+              c_function_decls;
               "\n";
-              c_predicate_defs;
-              c_lemma_defs;
+              c_predicate_decls;
+              c_lemma_decls;
+              cn_ghost_enum
             ]
-          in
-
-          (cn_header_decls, cn_defs_list)
-
-      | RC.Lua ->
-          let helper_decs, helper_defs = executable_spec.helpers in
-
-          let headers = 
-            List.concat
-            [ 
-              [ "#include <cn-executable/cerb_types.h>\n"; ];
-              [ c_tag_defs ];
-              [ cn_ghost_enum ];
-            ]
-            @
-            List.concat 
-            [
-              [ "/* HELPER FUNCTION DECLARATIONS */\n" ];
+          ]
+      in
+      (* Definitions for CN helper functions *)
+      (* TODO: Topological sort *)
+      let cn_defs_list =
+        [ (* record_equality_fun_strs; *)
+          (* record_equality_fun_strs'; *)
+          "/* RECORD */\n";
+          record_fun_defs;
+          "/* CONVERSION */\n";
+          conversion_function_defs;
+          "/* OWNERSHIP FUNCTIONS */\n";
+          ownership_function_defs;
+          "/* CN FUNCTIONS */\n";
+          c_function_defs;
+          "\n";
+          c_predicate_defs;
+          c_lemma_defs
+        ]
+      in
+      (cn_header_decls, cn_defs_list)
+    | RC.Lua ->
+      let helper_decs, helper_defs = executable_spec.helpers in
+      let headers =
+        List.concat
+          [ [ "#include <cn-executable/cerb_types.h>\n" ];
+            [ c_tag_defs ];
+            [ cn_ghost_enum ]
+          ]
+        @ List.concat
+            [ [ "/* HELPER FUNCTION DECLARATIONS */\n" ];
               helper_decs;
-              struct_wrapper_decs;
+              struct_wrapper_decs
             ]
-          in
-
-          let defs =
-            List.concat
-            [
-              [ "/* HELPER FUNCTION DEFINITIONS */\n" ];
-              helper_defs;
-              struct_wrapper_defs;
-            ]
-          in
-
-          let enclose_with_newlines str_list = 
-            [ "\n" ] @ str_list @ [ "\n" ]
-          in
-            
-          (enclose_with_newlines headers, enclose_with_newlines defs)
+      in
+      let defs =
+        List.concat
+          [ [ "/* HELPER FUNCTION DEFINITIONS */\n" ]; helper_defs; struct_wrapper_defs ]
+      in
+      let enclose_with_newlines str_list = [ "\n" ] @ str_list @ [ "\n" ] in
+      (enclose_with_newlines headers, enclose_with_newlines defs)
   in
-
-  let cn_header_decls_list, cn_defs_list = 
-    generate_cn_decls_and_defs() 
-  in
-
+  let cn_header_decls_list, cn_defs_list = generate_cn_decls_and_defs () in
   let c_datatype_locs = List.map fst c_datatype_defs in
   let toplevel_locs = group_toplevel_defs [] c_datatype_locs in
   let toplevel_injections = List.map (fun loc -> (loc, [ "" ])) toplevel_locs in
@@ -825,17 +804,14 @@ let main
       in
       global_ownership_init_pair @ executable_spec.pre_post)
   in
-
   (* Save things *)
   let oc = Stdlib.open_out out_filename in
-
-  output_to_oc oc 
-    (match RC.get_runtime() with
-      | RC.C -> [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ]
-      | RC.Lua -> [ "#include <lua_wrappers.h>\n" ; "#include <cn-executable/utils.h>\n"]);
-
+  output_to_oc
+    oc
+    (match RC.get_runtime () with
+     | RC.C -> [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ]
+     | RC.Lua -> [ "#include <lua_wrappers.h>\n"; "#include <cn-executable/utils.h>\n" ]);
   output_to_oc oc cn_header_decls_list;
-
   output_to_oc
     oc
     [ "#ifndef offsetof\n";
@@ -847,8 +823,7 @@ let main
   output_string
     oc
     ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
-    ^ Globals.accessors_prototypes filename cabs_tunit prog5);
-
+     ^ Globals.accessors_prototypes filename cabs_tunit prog5);
   (match
      Source_injection.(
        output_injections
@@ -871,35 +846,19 @@ let main
   output_to_oc oc [ Globals.accessors_str filename cabs_tunit prog5 ];
   output_to_oc oc cn_defs_list;
   close_out oc;
-
   (* Create any alt files needed *)
-  (match RC.get_runtime() with
-    | RC.Lua ->
-        let open Lua.Pp_lua in
-
-        let lua_filename = 
-          CnL.generate_lua_filename output_dir basefile in
-
-        let lua_oc = Stdlib.open_out lua_filename in
-
-        output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
-
-        output_to_oc lua_oc [ pp_stmt CnL.generate_lua_env_req ^ "\n\n" ];
-
-        output_to_oc lua_oc alt_file_datatypes;
-
-        output_to_oc lua_oc alt_file_functions;
-
-        output_to_oc lua_oc alt_file_predicates;
-
-        output_to_oc
-          lua_oc
-          executable_spec.alt_file;
-
-        output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_return ^ "\n" ];
-        
-        close_out lua_oc;
-    | _ -> ();
-  );
-
+  (match RC.get_runtime () with
+   | RC.Lua ->
+     let open Lua.Pp_lua in
+     let lua_filename = CnL.generate_lua_filename output_dir basefile in
+     let lua_oc = Stdlib.open_out lua_filename in
+     output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
+     output_to_oc lua_oc [ pp_stmt CnL.generate_lua_env_req ^ "\n\n" ];
+     output_to_oc lua_oc alt_file_datatypes;
+     output_to_oc lua_oc alt_file_functions;
+     output_to_oc lua_oc alt_file_predicates;
+     output_to_oc lua_oc executable_spec.alt_file;
+     output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_return ^ "\n" ];
+     close_out lua_oc
+   | _ -> ());
   Stdlib.Sys.remove in_filename
