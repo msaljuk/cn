@@ -5,24 +5,33 @@ open Cn
 let build_lua ~lua_root_dir ~print_steps =
   let src_dir = lua_root_dir ^ "/src" in
   let cn_dir = lua_root_dir ^ "/cn" in
-
   let src_cmd = Printf.sprintf "make -C %s liblua.a" src_dir in
   if print_steps then Printf.printf "Building Lua source: %s\n%!" src_cmd;
   if Sys.command src_cmd <> 0 then (
     Printf.eprintf "Failed to build Lua source in %s\n%!" src_dir;
-    exit 1
-  );
-
+    exit 1);
   let cn_cmd = Printf.sprintf "make -C %s lua_wrappers.a" cn_dir in
   if print_steps then Printf.printf "Building Lua cn wrappers: %s\n%!" cn_cmd;
   if Sys.command cn_cmd <> 0 then (
     Printf.eprintf "Failed to build Lua cn wrappers in %s\n%!" cn_dir;
-    exit 1
-  )
+    exit 1)
 
-let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~print_steps ~experimental_lua_runtime ~is_handwritten =
-  let instrumented_filename = if is_handwritten then filename else
-    Option.value ~default:(Fulminate.get_instrumented_filename filename) output
+
+let run_instrumented_file
+      ~filename
+      ~cc
+      ~no_debug_info
+      ~output
+      ~output_dir
+      ~print_steps
+      ~experimental_lua_runtime
+      ~is_handwritten
+  =
+  let instrumented_filename =
+    if is_handwritten then
+      filename
+    else
+      Option.value ~default:(Fulminate.get_instrumented_filename filename) output
   in
   let in_folder ?ext fn =
     Filename.concat
@@ -31,27 +40,21 @@ let run_instrumented_file ~filename ~cc ~no_debug_info ~output ~output_dir ~prin
   in
   let opam_switch_prefix = Sys.getenv "OPAM_SWITCH_PREFIX" in
   let runtime_prefix = opam_switch_prefix ^ "/lib/cn/runtime" in
-
   let lua_root_dir, lua_inc_flags, lua_link_flags =
-    if not experimental_lua_runtime then ("", "", "") else
-
-    let root_dir = runtime_prefix ^ "/lua" in
-    let src_dir = root_dir ^ "/src" in
-    let cn_dir = root_dir ^ "/cn" in
-    
-    let combined_includes = " -I" ^ src_dir ^ " -I" ^ cn_dir in
-
-    let src_link = Printf.sprintf " %s/liblua.a" src_dir in
-    let cn_wrapper_link = Printf.sprintf " %s/lua_wrappers.a" cn_dir in
-    let combined_links = Printf.sprintf "%s %s -ldl -lm" src_link cn_wrapper_link in
-
-    (root_dir, combined_includes, combined_links)
+    if not experimental_lua_runtime then
+      ("", "", "")
+    else (
+      let root_dir = runtime_prefix ^ "/lua" in
+      let src_dir = root_dir ^ "/src" in
+      let cn_dir = root_dir ^ "/cn" in
+      let combined_includes = " -I" ^ src_dir ^ " -I" ^ cn_dir in
+      let src_link = Printf.sprintf " %s/liblua.a" src_dir in
+      let cn_wrapper_link = Printf.sprintf " %s/lua_wrappers.a" cn_dir in
+      let combined_links = Printf.sprintf "%s %s -ldl -lm" src_link cn_wrapper_link in
+      (root_dir, combined_includes, combined_links))
   in
-
   if experimental_lua_runtime then build_lua ~lua_root_dir ~print_steps;
-
   let includes = "-I" ^ runtime_prefix ^ "/include/" ^ lua_inc_flags in
-  
   if not (Sys.file_exists runtime_prefix) then (
     print_endline
       ("Could not find CN's runtime directory (looked at: '" ^ runtime_prefix ^ "')");
@@ -235,9 +238,8 @@ let generate_executable_specs
            ())
         ();
       Or_TypeError.return
-        (if run then
+        (if run then (
            let is_handwritten = false in
-
            run_instrumented_file
              ~filename
              ~cc
@@ -246,7 +248,8 @@ let generate_executable_specs
              ~output_dir
              ~print_steps
              ~experimental_lua_runtime
-             ~is_handwritten))
+             ~is_handwritten)))
+
 
 open Cmdliner
 
@@ -416,9 +419,11 @@ module Flags = struct
     let doc = "(experimental) Insert curly braces for single-statement control flow" in
     Arg.(value & flag & info [ "insert-curly-braces" ] ~doc)
 
+
   let experimental_lua_runtime =
     let doc = "(experimental) Use Lua as the runtime environment for Fulminate" in
     Arg.(value & flag & info [ "experimental-lua-runtime" ] ~doc)
+
 
   let correct_missing_ownership_mode =
     let doc =
@@ -428,15 +433,9 @@ module Flags = struct
     Arg.(value & flag & info [ "correct-missing-ownership" ] ~doc)
 end
 
-let run_existing
-    cc
-    print_steps
-    experimental_lua_runtime
-    filename
-  =
+let run_existing cc print_steps experimental_lua_runtime filename =
   let is_handwritten = true in
   let output_dir = "" in
-
   run_instrumented_file
     ~filename
     ~cc
@@ -447,26 +446,22 @@ let run_existing
     ~experimental_lua_runtime
     ~is_handwritten
 
-let run_existing_term =
-  let one_file =
-    Term.map Common.there_can_only_be_one Common.Flags.file in
 
+let run_existing_term =
+  let one_file = Term.map Common.there_can_only_be_one Common.Flags.file in
   Term.(
     const run_existing
     $ Common.Flags.cc
     $ Flags.print_steps
     $ Flags.experimental_lua_runtime
-    $ one_file
-  )
+    $ one_file)
+
 
 let run_existing_cmd =
-  let doc =
-    "Run an already-instrumented CN executable C file"
-  in
-  let info =
-    Cmd.info "run-existing" ~doc
-  in
+  let doc = "Run an already-instrumented CN executable C file" in
+  let info = Cmd.info "run-existing" ~doc in
   Cmd.v info run_existing_term
+
 
 let instrument_term =
   let open Term in
@@ -499,9 +494,7 @@ let instrument_term =
   $ Flags.with_loop_leak_checks
   $ Flags.without_lemma_checks
   $ Flags.without_inline_statements
-  $ Term.map
-      (fun (x, y) -> x || y)
-      (Term.product Flags.with_test_gen Flags.with_testing)
+  $ Term.map (fun (x, y) -> x || y) (Term.product Flags.with_test_gen Flags.with_testing)
   $ Flags.run
   $ Flags.no_debug_info
   $ Flags.exec_c_locs_mode
@@ -515,6 +508,7 @@ let instrument_term =
   $ Flags.max_bump_blocks
   $ Flags.bump_block_size
 
+
 let instrument_cmd =
   let doc =
     "Instruments [FILE] with runtime C assertions that check the properties provided in \
@@ -522,5 +516,6 @@ let instrument_cmd =
   in
   let info = Cmd.info "instrument" ~doc in
   Cmd.v info instrument_term
+
 
 let cmds = [ instrument_cmd; run_existing_cmd ]

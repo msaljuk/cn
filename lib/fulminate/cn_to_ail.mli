@@ -53,7 +53,9 @@ val wrap_with_convert_from_cn_bool
   GenTypes.genTypeCategory AilSyntax.expression
 
 type ail_bindings_and_statements =
-  AilSyntax.bindings * GenTypes.genTypeCategory AilSyntax.statement_ list * CnL.lua_cn_exec
+  AilSyntax.bindings
+  * GenTypes.genTypeCategory AilSyntax.statement_ list
+  * CnL.lua_cn_exec
 
 type loop_info =
   { cond : Locations.t * ail_bindings_and_statements;
@@ -191,7 +193,7 @@ val cn_to_ail_struct
 val cn_to_ail_datatype
   :  ?first:bool ->
   AilSyntax.sigma_cn_datatype ->
-  ((Locations.t * AilSyntax.sigma_tag_definition list) * CnL.lua_statement)
+  (Locations.t * AilSyntax.sigma_tag_definition list) * CnL.lua_statement
 
 val cn_to_ail_records
   :  (MembersKey.t * AilSyntax.ail_identifier) list ->
@@ -205,8 +207,9 @@ val cn_to_ail_function
   AilSyntax.sigma_cn_datatype list ->
   AilSyntax.sigma_cn_function list ->
   (((Locations.t * AilSyntax.sigma_declaration)
-  * GenTypes.genTypeCategory AilSyntax.sigma_function_definition option)
-  * AilSyntax.sigma_tag_definition option) option
+   * GenTypes.genTypeCategory AilSyntax.sigma_function_definition option)
+  * AilSyntax.sigma_tag_definition option)
+    option
   * CnL.lua_statement option
 
 val cn_to_ail_predicates
@@ -243,7 +246,7 @@ val cn_to_ail_pre_post
   AilSyntax.sigma_cn_datatype list ->
   (Sym.t * Definition.Predicate.t) list ->
   (Sym.t * Ctype.ctype) list ->
-  (Sym.t * ((Ctype.union_tag * Ctype.ctype) list)) ->
+  Sym.t * (Ctype.union_tag * Ctype.ctype) list ->
   Ctype.ctype ->
   Extract.fn_args_and_body option ->
   ail_executable_spec
@@ -284,4 +287,6 @@ val cn_to_ail_cnprog_ghost_args
   (Sym.t * Ctype.ctype) list ->
   spec_mode option ->
   IndexTerms.t Cnprog.t list ->
-  AilSyntax.bindings * GenTypes.genTypeCategory AilSyntax.statement_ list * CnL.lua_cn_exec
+  AilSyntax.bindings
+  * GenTypes.genTypeCategory AilSyntax.statement_ list
+  * CnL.lua_cn_exec

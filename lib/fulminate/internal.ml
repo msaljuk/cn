@@ -14,7 +14,7 @@ type executable_spec =
     returns :
       (Cerb_location.t * (CF.GenTypes.genTypeCategory A.expression option * string list))
         list;
-    helpers : (string list * string list);
+    helpers : string list * string list;
     alt_file : string list
   }
 
@@ -57,7 +57,6 @@ let generate_stack_local_var_inj_strs fn_sym (sigm : _ CF.AilSyntax.sigma) =
     | Some (entry_ownership_bs_and_ss, exit_ownership_bs_and_ss) ->
       let entry_bs, entry_ss = entry_ownership_bs_and_ss in
       let exit_bs, exit_ss = exit_ownership_bs_and_ss in
-
       let entry_ownership_str = generate_ail_stat_strs (entry_bs, entry_ss, []) in
       let exit_ownership_str = generate_ail_stat_strs (exit_bs, exit_ss, []) in
       ((entry_ownership_str, exit_ownership_str), block_ownership_injs)
@@ -112,8 +111,7 @@ let generate_c_loop_invariants
            let loc, bs_ss_ls = loop_info.cond in
            let cond_inj =
              ( get_start_loc loc,
-               Utils.remove_last_semicolon (generate_ail_stat_strs bs_ss_ls) @ [ ", " ]
-             )
+               Utils.remove_last_semicolon (generate_ail_stat_strs bs_ss_ls) @ [ ", " ] )
            in
            let decl_inj =
              ( get_start_loc loop_info.loop_loc,
@@ -144,21 +142,17 @@ let generate_fn_call_ghost_args_injs
   List.concat
     (List.map
        (fun (loc, ghost_args) ->
-          let bs, ail_stats, ls = 
-                    Cn_to_ail.cn_to_ail_cnprog_ghost_args
-                        filename
-                        dts
-                        globals
-                        None
-                        ghost_args in
+          let bs, ail_stats, ls =
+            Cn_to_ail.cn_to_ail_cnprog_ghost_args filename dts globals None ghost_args
+          in
           [ ( get_start_loc loc,
               [ "(" ]
-              @ Utils.remove_last_semicolon
-                  (generate_ail_stat_strs (bs, ail_stats, ls))
+              @ Utils.remove_last_semicolon (generate_ail_stat_strs (bs, ail_stats, ls))
               @ [ ", " ] );
             (get_end_loc loc, [ ")" ])
           ])
        (Extract.ghost_args_and_their_call_locs prog5))
+
 
 let generate_fun_def_and_decl_docs funs =
   let one_def_prog (decl, def) =
@@ -174,6 +168,7 @@ let generate_fun_def_and_decl_docs funs =
   let decls_doc = pp_many one_decl_prog funs in
   (defs_doc, decls_doc)
 
+
 type cn_spec_inj_info =
   { pre_str : string list;
     post_str : string list;
@@ -183,9 +178,17 @@ type cn_spec_inj_info =
   }
 
 let empty_cn_spec_inj_info : cn_spec_inj_info =
-  { pre_str = []; post_str = []; in_stmt_and_loop_inv_injs = []; helpers = ([], []); alt_file = [] }
+  { pre_str = [];
+    post_str = [];
+    in_stmt_and_loop_inv_injs = [];
+    helpers = ([], []);
+    alt_file = []
+  }
 
-let generate_func_c_sig sym (sigm : _ CF.AilSyntax.sigma) : (Sym.t * ((Sym.t * CF.Ctype.ctype) list)) = 
+
+let generate_func_c_sig sym (sigm : _ CF.AilSyntax.sigma)
+  : Sym.t * (Sym.t * CF.Ctype.ctype) list
+  =
   match
     ( List.assoc_opt Sym.equal sym sigm.function_definitions,
       List.assoc_opt Sym.equal sym sigm.declarations )
@@ -197,9 +200,11 @@ let generate_func_c_sig sym (sigm : _ CF.AilSyntax.sigma) : (Sym.t * ((Sym.t * C
     (sym, func_params)
   | _, _ -> (sym, [])
 
+
 let gen_wrapper_dec_and_def_strs (wrapper_functions : CnL.wrapper_functions) =
   let defs, decls = generate_fun_def_and_decl_docs wrapper_functions in
   (doc_to_pretty_string decls, doc_to_pretty_string defs)
+
 
 let generate_c_specs_from_cn_internal
       disable_ghost_arg_failure
@@ -240,7 +245,6 @@ let generate_c_specs_from_cn_internal
       c_return_type
       instrumentation.internal
   in
-
   let pre_str = generate_ail_stat_strs ail_executable_spec.pre in
   let post_str = generate_ail_stat_strs ail_executable_spec.post in
   (* Needed for extracting correct location for CN statement injection *)
@@ -261,67 +265,54 @@ let generate_c_specs_from_cn_internal
   let loop_invariant_injs =
     generate_c_loop_invariants without_loop_invariants ail_executable_spec
   in
-
   let helpers, alt_file =
-    match RC.get_runtime() with
-      | RC.C ->  (([], []), [])
-      | RC.Lua ->
-        let open Lua.Pp_lua in
-
-        let alt_pre_str = 
-          let _, _, cn_stmts = ail_executable_spec.pre in
-          let lua_stmts, wrapper_stmts, _ = cn_stmts in
-          (
-            [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
-            List.map pp_stmt lua_stmts;
-          )
+    match RC.get_runtime () with
+    | RC.C -> (([], []), [])
+    | RC.Lua ->
+      let open Lua.Pp_lua in
+      let alt_pre_str =
+        let _, _, cn_stmts = ail_executable_spec.pre in
+        let lua_stmts, wrapper_stmts, _ = cn_stmts in
+        ([ gen_wrapper_dec_and_def_strs wrapper_stmts ], List.map pp_stmt lua_stmts)
+      in
+      let alt_post_str =
+        let _, _, cn_stmts = ail_executable_spec.post in
+        let lua_stmts, wrapper_stmts, _ = cn_stmts in
+        ([ gen_wrapper_dec_and_def_strs wrapper_stmts ], List.map pp_stmt lua_stmts)
+      in
+      let alt_in_stmt =
+        let _, ail_bindings_and_statements_list =
+          List.split ail_executable_spec.in_stmt
         in
-        
-        let alt_post_str = 
-          let _, _, cn_stmts = ail_executable_spec.post in
-          let lua_stmts, wrapper_stmts, _ = cn_stmts in
-          (
-            [ gen_wrapper_dec_and_def_strs wrapper_stmts ], 
-            List.map pp_stmt lua_stmts;
-          )
+        let _, _, cn_stmts = list_split_three ail_bindings_and_statements_list in
+        let lua_stmts_list, wrapper_stmts_list, _ = Utils.list_split_three cn_stmts in
+        let lua_strs = List.map pp_stmt (List.concat lua_stmts_list) in
+        let decs_and_defs =
+          List.map
+            (fun wrapper_stmts -> gen_wrapper_dec_and_def_strs wrapper_stmts)
+            wrapper_stmts_list
         in
-
-        let alt_in_stmt = 
-          let _, ail_bindings_and_statements_list = List.split ail_executable_spec.in_stmt in
-          let _, _, cn_stmts = list_split_three ail_bindings_and_statements_list in
-          let lua_stmts_list, wrapper_stmts_list, _ = Utils.list_split_three cn_stmts in
-
-          let lua_strs = List.map pp_stmt (List.concat lua_stmts_list) in
-
-          let decs_and_defs =
-              (List.map 
-              (fun wrapper_stmts -> gen_wrapper_dec_and_def_strs wrapper_stmts)
-              wrapper_stmts_list)
-          in
-
-          (( decs_and_defs ), lua_strs )
-        in
-
-        let pre_decs_and_defs, l_pre = alt_pre_str in
-        let in_decs_and_defs, l_in = alt_in_stmt in
-        let post_decs_and_defs, l_post = alt_post_str in
-
-        let pre_dec, pre_def = List.split pre_decs_and_defs in
-        let in_dec, in_def = List.split in_decs_and_defs in
-        let post_dec, post_def = List.split post_decs_and_defs in
-
-        let combined_decs_and_defs = 
-          (
-            pre_dec @ in_dec @ post_dec,
-            pre_def @ in_def @ post_def
-          )
-        in
-        let combined_l = l_pre @ l_in @ l_post in
-
-        ( combined_decs_and_defs, combined_l)
+        (decs_and_defs, lua_strs)
+      in
+      let pre_decs_and_defs, l_pre = alt_pre_str in
+      let in_decs_and_defs, l_in = alt_in_stmt in
+      let post_decs_and_defs, l_post = alt_post_str in
+      let pre_dec, pre_def = List.split pre_decs_and_defs in
+      let in_dec, in_def = List.split in_decs_and_defs in
+      let post_dec, post_def = List.split post_decs_and_defs in
+      let combined_decs_and_defs =
+        (pre_dec @ in_dec @ post_dec, pre_def @ in_def @ post_def)
+      in
+      let combined_l = l_pre @ l_in @ l_post in
+      (combined_decs_and_defs, combined_l)
   in
+  { pre_str;
+    post_str;
+    in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs;
+    helpers;
+    alt_file
+  }
 
-  ({ pre_str; post_str; in_stmt_and_loop_inv_injs = in_stmt @ loop_invariant_injs; helpers; alt_file })
 
 let generate_c_specs_internal
       disable_ghost_arg_failure
@@ -341,7 +332,6 @@ let generate_c_specs_internal
   let stack_local_var_inj_info : stack_local_var_inj_info =
     generate_stack_local_var_inj_strs instrumentation.fn sigm
   in
-
   let cn_spec_inj_info =
     if contains_user_spec then
       generate_c_specs_from_cn_internal
@@ -372,7 +362,6 @@ let generate_c_specs_internal
     else
       c_ownership_comment :: stack_local_var_inj_info.exit_ownership_str
   in
-
   (* NOTE - the nesting pre - entry - exit - post *)
   ( [ ( instrumentation.fn,
         (cn_spec_inj_info.pre_str @ entry_strs, exit_strs @ cn_spec_inj_info.post_str) )
@@ -457,9 +446,7 @@ let generate_c_specs
   in
   let specs = List.map generate_c_spec instrumentation_list in
   let pre_post, in_stmt, returns, helpers, alt_file = Utils.list_split_five specs in
-
   let helper_decs_list, helper_defs_lis = List.split helpers in
-
   { pre_post = List.concat pre_post;
     in_stmt = List.concat in_stmt;
     returns = List.concat returns;
@@ -551,23 +538,23 @@ let generate_c_datatypes (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
       let ail_dts, lua_dts = List.split ail_and_lua_dts in
       (ail_dt1 :: ail_dts, lua_dt1 :: lua_dts)
   in
+  match RC.get_runtime () with
+  | RC.C ->
+    let locs_and_struct_strs =
+      List.map
+        (fun (loc, structs) ->
+           let doc =
+             Utils.concat_map_newline (List.map generate_doc_from_ail_struct structs)
+           in
+           (loc, doc_to_pretty_string doc))
+        ail_datatypes
+    in
+    (locs_and_struct_strs, [])
+  | RC.Lua ->
+    let open Lua.Pp_lua in
+    let lua_datatypes_str = List.map pp_stmt lua_datatypes in
+    ([], lua_datatypes_str)
 
-  match RC.get_runtime() with
-    | RC.C ->
-      let locs_and_struct_strs =
-        List.map
-          (fun (loc, structs) ->
-            let doc =
-              Utils.concat_map_newline (List.map generate_doc_from_ail_struct structs)
-            in
-            (loc, doc_to_pretty_string doc))
-          ail_datatypes
-      in
-      (locs_and_struct_strs, [])
-    | RC.Lua ->
-      let open Lua.Pp_lua in
-      let lua_datatypes_str = List.map pp_stmt lua_datatypes in
-      ([], lua_datatypes_str)
 
 let generate_ghost_enum prog5 =
   let args_and_body_list = Extract.args_and_body_list_of_mucore prog5 in
@@ -596,6 +583,7 @@ let generate_cn_versions_of_structs c_structs =
   let ail_structs = List.concat (List.map Cn_to_ail.cn_to_ail_struct c_structs) in
   "\n/* CN VERSIONS OF C STRUCTS */\n\n" ^ generate_str_from_ail_structs ail_structs
 
+
 let generate_c_functions
       filename
       (cabs_tunit : CF.Cabs.translation_unit)
@@ -615,31 +603,29 @@ let generate_c_functions
       prog5.logical_predicates
   in
   let ail_func_option, lua_func_options = List.split ail_and_lua_funcs in
-
-  match RC.get_runtime() with
-    | RC.C ->
-      let ail_func_group = 
-        List.map
-        (fun option -> 
-          match option with
-            | Some(x) -> x
-            | None -> exit 2
-        )
+  match RC.get_runtime () with
+  | RC.C ->
+    let ail_func_group =
+      List.map
+        (fun option -> match option with Some x -> x | None -> exit 2)
         ail_func_option
-      in
-      let ail_funs, _ = List.split ail_func_group in
-      let locs_and_decls, defs = List.split ail_funs in
-      let locs, decls = List.split locs_and_decls in
+    in
+    let ail_funs, _ = List.split ail_func_group in
+    let locs_and_decls, defs = List.split ail_funs in
+    let locs, decls = List.split locs_and_decls in
+    let defs = List.filter_map Fun.id defs in
+    let decl_str_comment = "\n/* CN FUNCTIONS */\n\n" in
+    let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
+    ( doc_to_pretty_string defs_doc,
+      decl_str_comment ^ doc_to_pretty_string decls_doc,
+      locs,
+      [] )
+  | RC.Lua ->
+    let lua_funcs = List.filter_map (fun x -> x) lua_func_options in
+    let open Lua.Pp_lua in
+    let lua_func_strs = List.map pp_stmt lua_funcs in
+    ("", "", [], lua_func_strs)
 
-      let defs = List.filter_map Fun.id defs in
-      let decl_str_comment = "\n/* CN FUNCTIONS */\n\n" in
-      let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
-      (doc_to_pretty_string defs_doc, decl_str_comment ^ doc_to_pretty_string decls_doc, locs, [])
-    | RC.Lua ->
-      let lua_funcs = List.filter_map (fun x -> x) lua_func_options in
-      let open Lua.Pp_lua in
-      let lua_func_strs = List.map pp_stmt lua_funcs in
-      ("", "", [], lua_func_strs)
 
 let[@warning "-32" (* unused-value-declaration *)] rec remove_duplicates eq_fun = function
   | [] -> []
@@ -666,20 +652,20 @@ let generate_c_predicates
       sigm.cn_predicates
       without_ownership_checking
   in
+  match RC.get_runtime () with
+  | RC.C ->
+    let locs_and_decls, defs = List.split ail_funs in
+    let locs, decls = List.split locs_and_decls in
+    let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
+    ( "\n/* CN PREDICATES */\n\n" ^ doc_to_pretty_string defs_doc,
+      doc_to_pretty_string decls_doc,
+      locs,
+      [] )
+  | RC.Lua ->
+    let open Lua.Pp_lua in
+    let lua_pred_strs = List.map pp_stmt lua_funcs in
+    ("", "", [], lua_pred_strs)
 
-  match RC.get_runtime() with
-    | RC.C ->
-      let locs_and_decls, defs = List.split ail_funs in
-      let locs, decls = List.split locs_and_decls in
-      let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
-      ( "\n/* CN PREDICATES */\n\n" ^ doc_to_pretty_string defs_doc,
-        doc_to_pretty_string decls_doc,
-        locs, 
-        [] )
-    | RC.Lua ->
-      let open Lua.Pp_lua in
-      let lua_pred_strs = List.map pp_stmt lua_funcs in
-      ("", "", [], lua_pred_strs)
 
 let generate_c_lemmas
       filename
@@ -790,14 +776,15 @@ let get_main (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =
 let has_main (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =
   List.non_empty (get_main sigm)
 
+
 let generate_global_assignments
       basefile
       output_dir
       ?(exec_c_locs_mode = false)
       ?(correct_missing_ownership_mode = false)
       ?(experimental_ownership_stack_mode = false)
-      ?(max_bump_blocks)
-      ?(bump_block_size)
+      ?max_bump_blocks
+      ?bump_block_size
       (metadata_fn_call : CF.GenTypes.genTypeCategory A.statement_)
       (cabs_tunit : CF.Cabs.translation_unit)
       (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma)
@@ -807,163 +794,130 @@ let generate_global_assignments
   let exec_c_locs_mode =
     if experimental_ownership_stack_mode then false else exec_c_locs_mode
   in
-  let runtime: RC.runtime = RC.get_runtime() in
+  let runtime : RC.runtime = RC.get_runtime () in
   match get_main sigm with
   | [] -> []
   | (main_sym, _) :: _ ->
     let globals = Cn_to_ail.extract_global_variables cabs_tunit prog5 in
     let global_map_fcalls = List.map OE.generate_c_local_ownership_entry_fcall globals in
     let global_map_stmts_ = List.map (fun e -> A.AilSexpr e) global_map_fcalls in
-
-    let gen_void_call (fn_name: String.t) = 
+    let gen_void_call (fn_name : String.t) =
       let sym = Sym.fresh fn_name in
-      let stmt = 
-        (A.AilSexpr (mk_expr (A.AilEcall (mk_expr (A.AilEident sym), [ ]))))
-      in
-      (stmt)
+      let stmt = A.AilSexpr (mk_expr (A.AilEcall (mk_expr (A.AilEident sym), []))) in
+      stmt
     in
-
     let init_and_global_mapping_str =
-      let init_stmts = 
+      let init_stmts =
         match runtime with
-          | RC.C ->
-              let assignments =
-                OE.get_ownership_global_init_stats
-                  ?max_bump_blocks
-                  ?bump_block_size
-                  ()
-              in
-
-              let generate_flag_init_stat (flag, str) =
-                let gen_ail_const_from_flag flag =
-                  A.(
-                    AilEconst
-                      (ConstantInteger (IConstant (Z.of_int (Bool.to_int flag), Decimal, None))))
-                in
-                let ownership_stack_mode_init_expr_ =
-                  A.(
-                    AilEcall
-                      ( mk_expr (AilEident (Sym.fresh ("initialise_" ^ str))),
-                        [ mk_expr (gen_ail_const_from_flag flag) ] ))
-                in
-                A.AilSexpr (mk_expr ownership_stack_mode_init_expr_)
-              in
-
-              (assignments @ 
-              (List.map
-                generate_flag_init_stat
-                [ (exec_c_locs_mode, "exec_c_locs_mode");
-                  (correct_missing_ownership_mode, "correct_missing_ownership");
-                  (experimental_ownership_stack_mode, "ownership_stack_mode")
-                ]))
-          
-          | RC.Lua ->
-              let gen_lua_runtime_load
+        | RC.C ->
+          let assignments =
+            OE.get_ownership_global_init_stats ?max_bump_blocks ?bump_block_size ()
+          in
+          let generate_flag_init_stat (flag, str) =
+            let gen_ail_const_from_flag flag =
+              A.(
+                AilEconst
+                  (ConstantInteger
+                     (IConstant (Z.of_int (Bool.to_int flag), Decimal, None))))
+            in
+            let ownership_stack_mode_init_expr_ =
+              A.(
+                AilEcall
+                  ( mk_expr (AilEident (Sym.fresh ("initialise_" ^ str))),
+                    [ mk_expr (gen_ail_const_from_flag flag) ] ))
+            in
+            A.AilSexpr (mk_expr ownership_stack_mode_init_expr_)
+          in
+          assignments
+          @ List.map
+              generate_flag_init_stat
+              [ (exec_c_locs_mode, "exec_c_locs_mode");
+                (correct_missing_ownership_mode, "correct_missing_ownership");
+                (experimental_ownership_stack_mode, "ownership_stack_mode")
+              ]
+        | RC.Lua ->
+          let gen_lua_runtime_load
                 filename
-                ?(max_bump_blocks)
-                ?(bump_block_size)
+                ?max_bump_blocks
+                ?bump_block_size
                 exec_c_locs_mode
                 ownership_stack_mode
-                =
-                let gen_ail_const_from_int (integer :int) = 
-                  mk_expr (
-                    A.(
-                      AilEconst
-                        (ConstantInteger (IConstant (Z.of_int (integer), Decimal, None)))))
-                in
-                let get_option_or_neg (opt : int option) = 
-                  (match opt with
-                    | Some(x) -> x
-                    | None -> (-1)
-                  );
-                in
-
-                let gen_ail_const_from_bool (boolean: bool) =
-                  mk_expr (
-                    A.(
-                      AilEconst
-                        (ConstantInteger (IConstant (Z.of_int (Bool.to_int boolean), Decimal, None)))))
-                in
-
-                let lua_load_runtime_sym = Sym.fresh "lua_cn_load_runtime" in
-
-                let lua_runtime_file_expr =
-                  mk_expr (
-                    A.AilEstr ( 
-                      None,
-                        [
-                          (Locations.other __LOC__, [filename])
-                        ]
-                      )
-                    ) 
-                in
-
-                let max_bump_blocks_expr = gen_ail_const_from_int (get_option_or_neg max_bump_blocks) in
-                let bump_block_size_expr = gen_ail_const_from_int (get_option_or_neg bump_block_size) in
-                let exec_c_locs_mode_expr = gen_ail_const_from_bool exec_c_locs_mode in
-                let ownership_stack_mode_expr = gen_ail_const_from_bool ownership_stack_mode in
-
-                let lua_load_runtime_stmt = 
-                  A.AilSexpr (
-                    mk_expr (
-                      A.AilEcall (mk_expr (
-                        A.AilEident lua_load_runtime_sym), 
-                        [ 
-                          lua_runtime_file_expr;
+            =
+            let gen_ail_const_from_int (integer : int) =
+              mk_expr
+                A.(
+                  AilEconst
+                    (ConstantInteger (IConstant (Z.of_int integer, Decimal, None))))
+            in
+            let get_option_or_neg (opt : int option) =
+              match opt with Some x -> x | None -> -1
+            in
+            let gen_ail_const_from_bool (boolean : bool) =
+              mk_expr
+                A.(
+                  AilEconst
+                    (ConstantInteger
+                       (IConstant (Z.of_int (Bool.to_int boolean), Decimal, None))))
+            in
+            let lua_load_runtime_sym = Sym.fresh "lua_cn_load_runtime" in
+            let lua_runtime_file_expr =
+              mk_expr (A.AilEstr (None, [ (Locations.other __LOC__, [ filename ]) ]))
+            in
+            let max_bump_blocks_expr =
+              gen_ail_const_from_int (get_option_or_neg max_bump_blocks)
+            in
+            let bump_block_size_expr =
+              gen_ail_const_from_int (get_option_or_neg bump_block_size)
+            in
+            let exec_c_locs_mode_expr = gen_ail_const_from_bool exec_c_locs_mode in
+            let ownership_stack_mode_expr =
+              gen_ail_const_from_bool ownership_stack_mode
+            in
+            let lua_load_runtime_stmt =
+              A.AilSexpr
+                (mk_expr
+                   (A.AilEcall
+                      ( mk_expr (A.AilEident lua_load_runtime_sym),
+                        [ lua_runtime_file_expr;
                           max_bump_blocks_expr;
                           bump_block_size_expr;
-                          exec_c_locs_mode_expr; 
-                          ownership_stack_mode_expr ]))) 
-                in
-
-                (lua_load_runtime_stmt)
-              in
-
-              let lua_filename = CnL.generate_lua_filename output_dir basefile in
-
-              ([
-                gen_void_call("lua_init"); 
-                gen_lua_runtime_load
-                  lua_filename
-                  ?max_bump_blocks
-                  ?bump_block_size
-                  exec_c_locs_mode
-                  experimental_ownership_stack_mode;
-                metadata_fn_call;
-              ]);
+                          exec_c_locs_mode_expr;
+                          ownership_stack_mode_expr
+                        ] )))
+            in
+            lua_load_runtime_stmt
+          in
+          let lua_filename = CnL.generate_lua_filename output_dir basefile in
+          [ gen_void_call "lua_init";
+            gen_lua_runtime_load
+              lua_filename
+              ?max_bump_blocks
+              ?bump_block_size
+              exec_c_locs_mode
+              experimental_ownership_stack_mode;
+            metadata_fn_call
+          ]
       in
-
-      generate_ail_stat_strs
-        ( [],
-            init_stmts
-          @ global_map_stmts_ , [])
+      generate_ail_stat_strs ([], init_stmts @ global_map_stmts_, [])
     in
-
     let global_unmapping_and_deinit_str =
       let global_unmapping_stmts_ = List.map OE.generate_c_local_ownership_exit globals in
-
-      let deinit_stmts = 
+      let deinit_stmts =
         match runtime with
-          | RC.C -> 
-              let free_ghost_frame_stack_fn_str = "free_ghost_frame_stack" in
-              let free_ghost_frame_stack_decl =
-                A.(
-                  AilSexpr
-                    (mk_expr
-                      (AilEcall (mk_expr (AilEident (Sym.fresh free_ghost_frame_stack_fn_str)), []))))
-              in
-
-              ([free_ghost_frame_stack_decl])
-          | RC.Lua ->
-              ([
-                gen_void_call("lua_cn_unload_runtime");
-                gen_void_call("lua_deinit")
-              ])
+        | RC.C ->
+          let free_ghost_frame_stack_fn_str = "free_ghost_frame_stack" in
+          let free_ghost_frame_stack_decl =
+            A.(
+              AilSexpr
+                (mk_expr
+                   (AilEcall
+                      (mk_expr (AilEident (Sym.fresh free_ghost_frame_stack_fn_str)), []))))
+          in
+          [ free_ghost_frame_stack_decl ]
+        | RC.Lua -> [ gen_void_call "lua_cn_unload_runtime"; gen_void_call "lua_deinit" ]
       in
-
       generate_ail_stat_strs ([], global_unmapping_stmts_ @ deinit_stmts, [])
     in
-
     [ (main_sym, (init_and_global_mapping_str, global_unmapping_and_deinit_str)) ]
 
 
@@ -1001,44 +955,41 @@ let generate_tag_definition_injs (tag_defs : CF.AilSyntax.sigma_tag_definition l
   in
   all_tag_def_injs
 
-let generate_struct_metadata (ail_struct_data)
-  : (CF.GenTypes.genTypeCategory A.statement_ * (string list * string list))
+
+let generate_struct_metadata ail_struct_data
+  : CF.GenTypes.genTypeCategory A.statement_ * (string list * string list)
   =
-  match RC.get_runtime() with
-    | RC.Lua ->
-      let struct_size_wrappers
-        = (List.map 
-          (fun x -> CnL.generate_c_fn_push_struct_size (fst x))
-          ail_struct_data)
-      in
-      let struct_offset_wrappers 
-        = (List.map CnL.generate_c_fn_push_struct_offsets ail_struct_data) 
-      in
-      let struct_push_wrappers 
-        = (List.map CnL.generate_c_fn_push_struct ail_struct_data) 
-      in
-      let struct_get_binds_and_wrappers 
-        = (List.map CnL.generate_c_fn_get_struct ail_struct_data) 
-      in
-      let struct_get_binds, struct_get_wrappers = List.split struct_get_binds_and_wrappers in
-
-      let struct_sizeof_decs = List.map fst struct_size_wrappers in
-      let struct_offset_decs = List.map fst struct_offset_wrappers in
-      let metadata_wrapper = 
-        CnL.generate_c_fn_push_struct_metadata struct_get_binds struct_sizeof_decs struct_offset_decs 
-      in
-
-      let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
-      let offset_decs, offset_defs = gen_wrapper_dec_and_def_strs struct_offset_wrappers in
-      let push_decs, push_defs = gen_wrapper_dec_and_def_strs struct_push_wrappers in
-      let get_decs, get_defs = gen_wrapper_dec_and_def_strs struct_get_wrappers in
-      let metadata_dec, metadata_def = gen_wrapper_dec_and_def_strs [ metadata_wrapper ] in
-
-      let metadata_fn_dec, _ = metadata_wrapper in
-      let metadata_fn_call_stmt = make_fn_call metadata_fn_dec in
-        
-      (metadata_fn_call_stmt, 
-        ([ size_decs; offset_decs; push_decs; metadata_dec; get_decs ], 
-        [ size_defs; offset_defs; push_defs; metadata_def; get_defs ])
-      )
-    | _ -> (A.AilSexpr(mk_expr empty_ail_expr), ([], []))
+  match RC.get_runtime () with
+  | RC.Lua ->
+    let struct_size_wrappers =
+      List.map (fun x -> CnL.generate_c_fn_push_struct_size (fst x)) ail_struct_data
+    in
+    let struct_offset_wrappers =
+      List.map CnL.generate_c_fn_push_struct_offsets ail_struct_data
+    in
+    let struct_push_wrappers = List.map CnL.generate_c_fn_push_struct ail_struct_data in
+    let struct_get_binds_and_wrappers =
+      List.map CnL.generate_c_fn_get_struct ail_struct_data
+    in
+    let struct_get_binds, struct_get_wrappers =
+      List.split struct_get_binds_and_wrappers
+    in
+    let struct_sizeof_decs = List.map fst struct_size_wrappers in
+    let struct_offset_decs = List.map fst struct_offset_wrappers in
+    let metadata_wrapper =
+      CnL.generate_c_fn_push_struct_metadata
+        struct_get_binds
+        struct_sizeof_decs
+        struct_offset_decs
+    in
+    let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
+    let offset_decs, offset_defs = gen_wrapper_dec_and_def_strs struct_offset_wrappers in
+    let push_decs, push_defs = gen_wrapper_dec_and_def_strs struct_push_wrappers in
+    let get_decs, get_defs = gen_wrapper_dec_and_def_strs struct_get_wrappers in
+    let metadata_dec, metadata_def = gen_wrapper_dec_and_def_strs [ metadata_wrapper ] in
+    let metadata_fn_dec, _ = metadata_wrapper in
+    let metadata_fn_call_stmt = make_fn_call metadata_fn_dec in
+    ( metadata_fn_call_stmt,
+      ( [ size_decs; offset_decs; push_decs; metadata_dec; get_decs ],
+        [ size_defs; offset_defs; push_defs; metadata_def; get_defs ] ) )
+  | _ -> (A.AilSexpr (mk_expr empty_ail_expr), ([], []))
