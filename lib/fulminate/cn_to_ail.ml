@@ -1766,7 +1766,6 @@ let rec cn_to_ail_expr_aux
             mk_expr ail_null)
     )
   | MapGet (m, key) ->
-    print_endline("MapGet");
     (* Only works when index is a cn_integer *)
     let b1, s1, l1, e1 =
       cn_to_ail_expr_aux
@@ -1796,22 +1795,28 @@ let rec cn_to_ail_expr_aux
         key_term
         PassBack
     in
-    let is_record =
-      match BT.map_bt (IT.get_bt m) with _, Record _ -> true | _ -> false
-    in
-    let cntype_str_opt = get_underscored_typedef_string_from_bt ~is_record basetype in
-    let map_get_str =
-      match cntype_str_opt with
-      | Some str -> "cn_map_get_" ^ str
-      | None -> failwith (__LOC__ ^ ": Could not get cntype string in MapGet")
-    in
-    let map_get_fcall =
-      A.(AilEcall (mk_expr (AilEident (Sym.fresh map_get_str)), [ e1; e2 ]))
-    in
-    let _, val_bt = BT.map_bt (IT.get_bt m) in
-    let ctype = bt_to_ail_ctype val_bt in
-    let cast_expr_ = A.(AilEcast (C.no_qualifiers, ctype, mk_expr map_get_fcall)) in
-    dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.concat [ l1; l2 ], mk_expr cast_expr_)
+    (match RC.get_runtime() with
+      | RC.C ->
+        let is_record =
+          match BT.map_bt (IT.get_bt m) with _, Record _ -> true | _ -> false
+        in
+        let cntype_str_opt = get_underscored_typedef_string_from_bt ~is_record basetype in
+        let map_get_str =
+          match cntype_str_opt with
+          | Some str -> "cn_map_get_" ^ str
+          | None -> failwith (__LOC__ ^ ": Could not get cntype string in MapGet")
+        in
+        let map_get_fcall =
+          A.(AilEcall (mk_expr (AilEident (Sym.fresh map_get_str)), [ e1; e2 ]))
+        in
+        let _, val_bt = BT.map_bt (IT.get_bt m) in
+        let ctype = bt_to_ail_ctype val_bt in
+        let cast_expr_ = A.(AilEcast (C.no_qualifiers, ctype, mk_expr map_get_fcall)) in
+        dest d spec_mode_opt (b1 @ b2, s1 @ s2, CnL.get_empty_lua_cn_exec, mk_expr cast_expr_)
+      | RC.Lua ->
+        let final_exec = CnL.cn_to_lua_map_get l1 l2 in
+        dest d spec_mode_opt ([], [], final_exec, mk_expr ail_null)
+    )
   | MapDef ((_sym, _bt), _t) -> failwith (__LOC__ ^ ": TODO MapDef")
   | Apply (sym, ts) ->
     let bs_ss_ls_es =
@@ -3497,6 +3502,7 @@ let cn_to_ail_resource
       q.q++;
     }
     *)
+    print_endline("IN RESOURCE");
     let i_sym, i_bt = q.q in
     let start_expr, (end_sym, end_expr), while_loop_cond =
       get_while_bounds_and_cond q.q q.permission
