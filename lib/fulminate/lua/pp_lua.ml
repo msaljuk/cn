@@ -14,6 +14,23 @@ let indent block ?(comma = false) () =
   let indented_block = Stdlib.List.map process_string block in
   Stdlib.String.concat sep indented_block
 
+let break (block : string list) (delimiter : string) =
+  let contains s1 s2 =
+    let re = Str.regexp_string s2 in
+    try ignore (Str.search_forward re s1 0); true
+    with Not_found -> false
+  in
+  let rec loop found_first = function
+    | [] -> []
+    | x :: xs when (contains x delimiter) ->
+        if not found_first then
+          x :: loop true xs
+        else
+          ("\n" ^ x) :: loop true xs
+    | x :: xs -> 
+        x :: loop found_first xs
+  in
+  block |> loop false
 
 let rec pp_expr =
   let lua_c_int_type_prefix = "c_num" in
@@ -98,7 +115,7 @@ and pp_stmt = function
     (match e_opt with
      | Some x -> "local " ^ id ^ " = " ^ pp_expr x
      | None -> "local " ^ id)
-  | LuaS.FunctionDef (fn, args, body) -> pp_fn fn args body ()
+  | LuaS.FunctionDef (fn, args, body, break_errors) -> pp_fn fn args body ~break_errors:break_errors ()
   | LuaS.LocalFunctionDef (fn, args, body) -> "local " ^ pp_fn fn args body ()
   | LuaS.FunctionCall (fn, args) -> pp_expr (LuaS.Call (fn, args))
   | LuaS.Return expr -> "return " ^ pp_expr expr
@@ -132,14 +149,22 @@ and pp_stmt = function
     let body = List.map pp_stmt while_body in
     let indented_body = indent body () in
     while_cond ^ indented_body ^ "\nend"
+  | LuaS.LineBreak -> "\n"
   | _ -> ""
 
 
-and pp_fn fn_name fn_args fn_body ?(is_multiline = true) () =
+and pp_fn fn_name fn_args fn_body ?(is_multiline = true) ?(break_errors = false) () =
   let args_list = List.map pp_expr fn_args in
   let header = Printf.sprintf "function %s(%s)" fn_name (String.concat ", " args_list) in
   let end_str = if is_multiline then "\nend\n\n" else " end" in
-  let body = List.map pp_stmt fn_body in
+  let body = 
+    let initial = List.map pp_stmt fn_body in
+    if break_errors then (
+      (*@saljuk TODO: This is very gross. Find a cleaner solve *)
+      let error_break = "error_stack.push" in
+      break initial error_break
+    ) else initial
+  in
   if is_multiline then (
     let indented_body = indent body () in
     header ^ "\n" ^ indented_body ^ end_str)

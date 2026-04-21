@@ -54,7 +54,7 @@ and unary_expr_type =
 and stmt =
   | Assign of ident * expr option (* x = 10 *)
   | LocalAssign of ident * expr option (* local x = 10 *)
-  | FunctionDef of ident * expr list * stmt list (* function x(a, b) \n body \n end *)
+  | FunctionDef of ident * expr list * stmt list * bool (* function x(a, b) \n body \n end *)
   | LocalFunctionDef of
       ident * expr list * stmt list (* local function x(a, b) \n body \n end *)
   | FunctionCall of ident * expr list (* assert(false) *)
@@ -63,4 +63,5 @@ and stmt =
   | IfElse of (expr option * stmt list) list (* if(cond) then ... else ... *)
   | SExpr of expr (* used to carry an expression as a statement (similar to A.AilSexpr) *)
   | While of expr * stmt list (* while(cond_expr) do\n body \n end *)
+  | LineBreak (* used to add an empty line *)
   | Empty
