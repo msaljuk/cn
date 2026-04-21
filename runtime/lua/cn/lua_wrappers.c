@@ -116,8 +116,32 @@ static int c_get_char() {
     return 1;
 }
 
+static int c_get_u_char() {
+    unsigned char* addr = (unsigned char*)luaL_checkinteger(lua_state, 1);
+    lua_pushlstring(lua_state, addr, 1);
+    return 1;
+}
+
 static int c_get_int() {
     int* addr = (int*)luaL_checkinteger(lua_state, 1);
+    lua_pushinteger(lua_state, *addr);
+    return 1;
+}
+
+static int c_get_u_int() {
+    unsigned int* addr = (unsigned int*)luaL_checkinteger(lua_state, 1);
+    lua_pushinteger(lua_state, *addr);
+    return 1;
+}
+
+static int c_get_long() {
+    long* addr = (long*)luaL_checkinteger(lua_state, 1);
+    lua_pushinteger(lua_state, *addr);
+    return 1;
+}
+
+static int c_get_u_long() {
+    unsigned long* addr = (unsigned long*)luaL_checkinteger(lua_state, 1);
     lua_pushinteger(lua_state, *addr);
     return 1;
 }
@@ -171,9 +195,23 @@ void push_cn_c_tables() {
 
         lua_pushinteger(lua_state, (lua_Integer)sizeof(char));
         lua_setfield(lua_state, -2, "char");
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(unsigned char));
+        lua_setfield(lua_state, -2, "u_char");
 
         lua_pushinteger(lua_state, (lua_Integer)sizeof(int));
         lua_setfield(lua_state, -2, "int");
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(unsigned int));
+        lua_setfield(lua_state, -2, "u_int");
+
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(long));
+        lua_setfield(lua_state, -2, "long");
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(unsigned long));
+        lua_setfield(lua_state, -2, "u_long");
+
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(long long));
+        lua_setfield(lua_state, -2, "long_long");
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(unsigned long long));
+        lua_setfield(lua_state, -2, "u_long_long");
 
         lua_pushinteger(lua_state, (lua_Integer)sizeof(float));
         lua_setfield(lua_state, -2, "float");
@@ -213,7 +251,11 @@ void bind_cn_c_functions() {
     // C type reading
     lua_cn_register_c_func("get_bool", c_get_bool);
     lua_cn_register_c_func("get_char", c_get_char);
+    lua_cn_register_c_func("get_u_char", c_get_u_char);
     lua_cn_register_c_func("get_int", c_get_int);
+    lua_cn_register_c_func("get_u_int", c_get_u_int);
+    lua_cn_register_c_func("get_long", c_get_long);
+    lua_cn_register_c_func("get_u_long", c_get_u_long);
     lua_cn_register_c_func("get_float", c_get_float);
     lua_cn_register_c_func("get_pointer", c_get_pointer);
 

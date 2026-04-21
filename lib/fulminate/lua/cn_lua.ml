@@ -29,6 +29,7 @@ let cn_error_stack_pop_sym  = LuaS.Symbol( "cn.error_stack.pop" )
 let cn_frames_push_fn_sym = LuaS.Symbol( "cn.frames.push_function" )
 let cn_locals_sym = LuaS.Symbol("cn.locals")
 let cn_owned_sym = LuaS.Symbol("owned")
+let cn_get_or_put_ownership_sym = LuaS.Symbol("cn.ghost_state.get_or_put_ownership")
 let cn_member_shift_sym = LuaS.Symbol("member_shift")
 let cn_array_shift_sym = LuaS.Symbol("array_shift")
 let cn_sizeof_field_sym = LuaS.Symbol("cn.c.sizeof")
@@ -116,6 +117,12 @@ let expr_to_string lua_expression
 = 
   Pp_lua.pp_expr lua_expression
 
+let convert 
+  (sym : CF.Ctype.union_tag)
+: lua_expression
+  =
+  LuaS.Symbol(Sym.pp_string sym)
+
 let debug_print_stmts (stmts : lua_statements)
 =
   (List.iter
@@ -127,6 +134,16 @@ let debug_print_exprs (exprs : lua_expressions)
   (List.iter
   (fun (x : lua_expression) -> (print_endline (PP.pp_expr x)))
   exprs)
+
+let get_lua_c_int_type_str bt =
+  match bt with
+  | BT.Loc () | BT.Integer -> "i64"
+  | BT.Bits (sign, size) ->
+    let sign_str = match sign with BT.Signed -> "i" | BT.Unsigned -> "u" in
+    let size_str = string_of_int size in
+    sign_str ^ size_str
+  | _ ->
+    "incompatible" 
 
 let generate_c_fn_wrapper_name (c_fn_name : Sym.t)
  = "lua_cn_" ^ (Sym.pp_string c_fn_name)
@@ -799,9 +816,11 @@ let generate_c_fn_push_struct_metadata
               (*@saljuk TODO: Flesh more of Signed/Unsigned out. *)
               | CF.Ctype.Signed (_) -> LuaS.Symbol("int")
               | CF.Ctype.Unsigned (y) ->
+                let unsigned_prefix = "u_" in
                 begin match y with
-                  | CF.Ctype.Ichar -> LuaS.Symbol("char")
-                  | _ -> LuaS.Symbol("int")
+                  | CF.Ctype.Ichar -> LuaS.Symbol(unsigned_prefix ^ "char")
+                  | CF.Ctype.Long -> LuaS.Symbol(unsigned_prefix ^ "long")
+                  | _ -> LuaS.Symbol(unsigned_prefix ^ "int")
                 end
               | _ -> failwith "Unsupported ctype. Could not get lua symbol"
             end
@@ -870,6 +889,22 @@ let generate_lua_inline_fn
     fn_args
   in
   LuaS.FunctionDef(fn_name, args_exprs, fn_body)
+
+let generate_lua_cn_get_or_put_ownership
+  (spec_mode : lua_expression)
+  (ptr : lua_expression)
+  (sizeof : lua_expression)
+  (loop_ownership : lua_expression)
+  : lua_statement
+=
+  LuaS.FunctionCall(
+    Pp_lua.pp_expr cn_get_or_put_ownership_sym, 
+    [ spec_mode; ptr; sizeof; loop_ownership ])
+
+let generate_lua_cn_empty_table 
+  : lua_expression
+=
+  LuaS.Table([], false)
 
 let generate_lua_owned_fn_name
   = Pp_lua.pp_expr (cn_owned_sym)
@@ -1057,6 +1092,85 @@ let generate_lua_cn_resource sym ctype in_exec is_local_res
 
   (push_stmts_to_exec (exec, [ stmt ]))
 
+let generate_lua_cn_conj_loop
+  ~permission_only_bounds
+  (loop_stmts : lua_statements)
+  (if_expr : lua_expression)
+  (while_expr : lua_expression)
+  (incr_stmt : lua_statement)
+  : lua_statement
+=
+  let loop_body =
+    if permission_only_bounds then
+      (* Optimise Fulminate output if permission only consists of bounds *)
+      loop_stmts @ [ incr_stmt ]
+    else (
+      let if_stmt = generate_lua_cn_conditional 
+        [
+          (Some if_expr, loop_stmts);
+          (None, [])
+        ] 
+      in
+      [ if_stmt; incr_stmt ]
+    )
+  in
+  LuaS.While(while_expr, loop_body)
+
+let generate_lua_cn_increment_stmt
+  (sym : CF.Ctype.union_tag)
+  (int_type : BT.t)
+  : lua_statement
+=
+  let sym_str = Sym.pp_string sym in
+  let int_type_str = get_lua_c_int_type_str int_type in
+  LuaS.Assign(
+    sym_str, 
+    Some (LuaS.Binary(
+      LuaS.Add(LuaS.Symbol(sym_str), LuaS.Symbol("1"), int_type_str))))
+
+let generate_lua_cn_each_ownership_opt
+  (spec_mode : lua_expression)
+  (ptr : lua_expression)
+  (range : lua_expression)
+  (loop_ownership : lua_expression)
+  (sizeof : lua_expression)
+  (range_type : BT.t)
+  : lua_statement
+=
+  let sizeof_expr = LuaS.Binary(
+    LuaS.Multiply(range, sizeof, get_lua_c_int_type_str range_type)) 
+  in
+  generate_lua_cn_get_or_put_ownership spec_mode ptr sizeof_expr loop_ownership
+
+let generate_lua_cn_each_pname_call
+  (pname : CF.Ctype.union_tag)
+  (ptr : CF.Ctype.union_tag)
+  (spec_mode : CF.Ctype.union_tag)
+  (loop_ownership_opt : CF.Ctype.union_tag option)
+  (args : lua_cn_exec list)
+: lua_cn_exec
+=
+  let loop_ownership = match loop_ownership_opt with
+    | Some x -> convert x
+    | None -> LuaS.Symbol("nil")
+  in
+
+  let execs, exprs =
+    List.split (
+      List.map
+      (fun x ->
+        let exec, expr = pop_expr_from_exec x in
+        (exec, expr)
+      )
+      args
+    )
+  in
+  let pname_call_expr = LuaS.Call(
+    Sym.pp_string pname, 
+    [ convert ptr ] @ exprs @ [ convert spec_mode; loop_ownership ])
+  in
+  push_expr_to_exec (concat execs, pname_call_expr)
+
 let generate_lua_cn_datatype (cn_datatype : A.ail_identifier CF.Cn.cn_datatype)
   : lua_statement
 =
@@ -1181,16 +1295,6 @@ let cn_to_lua_sym (c_sym : CF.Ctype.union_tag)
 let cn_to_lua_unop (expr, bt, unop)
   : (lua_expression)
 =
-  let get_lua_c_int_type_str bt =
-    match bt with
-    | BT.Loc () | BT.Integer -> "i64"
-    | BT.Bits (sign, size) ->
-      let sign_str = match sign with BT.Signed -> "i" | BT.Unsigned -> "u" in
-      let size_str = string_of_int size in
-      sign_str ^ size_str
-    | _ ->
-      "incompatible" 
-  in
   let lua_c_int_type = get_lua_c_int_type_str bt in
 
   match unop with
@@ -1376,21 +1480,12 @@ let cn_to_lua_good
   LuaS.Bool(true)
 
 let cn_to_lua_map_set 
-  (map_exec : lua_cn_exec)
-  (key_exec : lua_cn_exec)
-  (val_exec : lua_cn_exec)
-  : lua_cn_exec
+  (map : lua_expression)
+  (key : lua_expression)
+  (value : lua_expression)
+  : lua_statement
 =
-  let l1', e1 = pop_expr_from_exec map_exec in
-  let l2', e2 = pop_expr_from_exec key_exec in
-  let l3', e3 = pop_expr_from_exec val_exec in
-
-  let upd_stmt = LuaS.FunctionCall(Pp_lua.pp_expr cn_map_set_sym, [ e1; e2; e3 ]) in
-
-  let composed_exec = push_stmts_to_exec (concat [ l1'; l2'; l3'; ], [ upd_stmt ]) in
-  let e4 = LuaS.Symbol(Pp_lua.pp_expr e1) in
-
-  push_expr_to_exec (composed_exec, e4)
+  LuaS.FunctionCall(Pp_lua.pp_expr cn_map_set_sym, [ map; key; value ])
 
 let cn_to_lua_map_get
   (map_exec : lua_cn_exec)

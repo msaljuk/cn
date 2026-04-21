@@ -71,6 +71,8 @@ val stmt_to_string : lua_statement -> string
 
 val expr_to_string : lua_expression -> string
 
+val convert : CF.Ctype.union_tag -> lua_expression
+
 val debug_print_stmts : lua_statements -> unit
 
 val debug_print_exprs : lua_expressions -> unit
@@ -200,6 +202,15 @@ val generate_lua_inline_fn
   lua_statements ->
   lua_statement
 
+val generate_lua_cn_get_or_put_ownership
+  :  lua_expression ->
+  lua_expression ->
+  lua_expression ->
+  lua_expression ->
+  lua_statement
+
+val generate_lua_cn_empty_table : lua_expression
+
 val generate_lua_owned_fn_name : string
 
 (*
@@ -295,6 +306,37 @@ val generate_lua_cn_resource
   bool ->
   lua_cn_exec
 
+(*
+   Used in cn_to_ail_resource to generate the actual
+   while loop based on all crafted parameters
+*)
+val generate_lua_cn_conj_loop
+  :  permission_only_bounds:bool ->
+  lua_statements ->
+  lua_expression ->
+  lua_expression ->
+  lua_statement ->
+  lua_statement
+
+val generate_lua_cn_increment_stmt : CF.Ctype.union_tag -> BT.t -> lua_statement
+
+val generate_lua_cn_each_ownership_opt
+  :  lua_expression ->
+  lua_expression ->
+  lua_expression ->
+  lua_expression ->
+  lua_expression ->
+  BT.t ->
+  lua_statement
+
+val generate_lua_cn_each_pname_call
+  :  CF.Ctype.union_tag ->
+  CF.Ctype.union_tag ->
+  CF.Ctype.union_tag ->
+  CF.Ctype.union_tag option ->
+  lua_cn_exec list ->
+  lua_cn_exec
+
 val generate_lua_cn_datatype : A.ail_identifier CF.Cn.cn_datatype -> lua_statement
 
 val generate_lua_cn_function
@@ -361,7 +403,11 @@ val cn_to_lua_array_shift : lua_cn_exec -> lua_cn_exec -> CF.Ctype.ctype -> lua_
 
 val cn_to_lua_good : lua_expression
 
-val cn_to_lua_map_set : lua_cn_exec -> lua_cn_exec -> lua_cn_exec -> lua_cn_exec
+val cn_to_lua_map_set
+  :  lua_expression ->
+  lua_expression ->
+  lua_expression ->
+  lua_statement
 
 val cn_to_lua_map_get : lua_cn_exec -> lua_cn_exec -> lua_cn_exec
 
