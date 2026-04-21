@@ -1747,7 +1747,12 @@ let rec cn_to_ail_expr_aux
            CnL.concat [ l1; l2; l3 ],
            mk_expr map_set_fcall )
      | RC.Lua ->
-       let final_exec = CnL.cn_to_lua_map_set l1 l2 l3 in
+       let l1', e1 = CnL.pop_expr_from_exec l1 in
+       let l2', e2 = CnL.pop_expr_from_exec l2 in
+       let l3', e3 = CnL.pop_expr_from_exec l3 in
+       let map_set_stmt = CnL.cn_to_lua_map_set e1 e2 e3 in
+       let l4 = CnL.push_stmts_to_exec (CnL.concat [ l1'; l2'; l3' ], [ map_set_stmt ]) in
+       let final_exec = CnL.push_expr_to_exec (l4, e1) in
        dest d spec_mode_opt ([], [], final_exec, mk_expr ail_null))
   | MapGet (m, key) ->
     (* Only works when index is a cn_integer *)
@@ -3491,21 +3496,23 @@ let cn_to_ail_resource
       q.q++;
     }
     *)
-    print_endline "IN RESOURCE";
     let i_sym, i_bt = q.q in
     let start_expr, (end_sym, end_expr), while_loop_cond =
       get_while_bounds_and_cond q.q q.permission
     in
-    let _, _, _, e_start =
+    let _, _, l_start, e_start =
       cn_to_ail_expr filename dts globals spec_mode_opt start_expr PassBack
     in
-    let _, _, _, e_end =
+    let _, l_start_expr = CnL.pop_expr_from_exec l_start in
+    let _, _, l_end, e_end =
       cn_to_ail_expr filename dts globals spec_mode_opt end_expr PassBack
     in
-    let _, _, _, while_cond_expr =
+    let _, l_end_expr = CnL.pop_expr_from_exec l_end in
+    let _, _, l_while, while_cond_expr =
       cn_to_ail_expr filename dts globals spec_mode_opt while_loop_cond PassBack
     in
-    let _, _, _, if_cond_expr =
+    let _, l_while_expr = CnL.pop_expr_from_exec l_while in
+    let _, _, l_if, if_cond_expr =
       cn_to_ail_expr
         filename
         dts
@@ -3514,6 +3521,7 @@ let cn_to_ail_resource
         (IndexTerms.Bounds.it_non_bounds q.q q.permission)
         PassBack
     in
+    let _, l_if_expr = CnL.pop_expr_from_exec l_if in
     let cn_integer_ptr_ctype = bt_to_ail_ctype i_bt in
     let b2, s2, l2, _e2 =
       cn_to_ail_expr filename dts globals spec_mode_opt q.permission PassBack
@@ -3537,9 +3545,10 @@ let cn_to_ail_resource
     let value_it =
       IT.arrayShift_ ~base:q.pointer ~index:i_it q.step Cerb_location.unknown
     in
-    let b4, s4, _, e4 =
+    let b4, s4, l4, e4 =
       cn_to_ail_expr filename dts globals spec_mode_opt value_it PassBack
     in
+    let l4_stmts, _, l_ptr_init_expr = l4 in
     let ptr_add_sym = Sym.fresh_anon () in
     let cn_pointer_return_type = bt_to_ail_ctype BT.(Loc ()) in
     let ptr_add_binding = create_binding ptr_add_sym cn_pointer_return_type in
@@ -3548,15 +3557,29 @@ let cn_to_ail_resource
       A.(AilSexpr (mk_expr (AilEassign (mk_expr (AilEident ptr_add_sym), e4))))
     in
     let ptr_add_decl_no_rhs = A.(AilSdeclaration [ (ptr_add_sym, None) ]) in
+    let gen_lua_start_end_stmts =
+      let start_assign =
+        CnL.generate_lua_cn_local_assignment (Sym.pp_string i_sym) (Some l_start_expr)
+      in
+      let end_assign =
+        CnL.generate_lua_cn_local_assignment (Sym.pp_string end_sym) (Some l_end_expr)
+      in
+      (start_assign, end_assign)
+    in
+    let gen_lua_ptr_add_stmt ?(is_local = false) ?(is_decl_only = false) () =
+      let sym_str = Sym.pp_string ptr_add_sym in
+      let value = if is_decl_only then None else Some l_ptr_init_expr in
+      if is_local then
+        CnL.generate_lua_cn_local_assignment sym_str value
+      else
+        CnL.generate_lua_cn_assignment sym_str value
+    in
     (* if permission only contains bounds, the range of memory is contiguous we can assert ownership over entire range in one call for `Owned` *)
     let permission_only_bounds = IndexTerms.Bounds.it_only_bounds q.q q.permission in
-    let rhs, bs, ss, opt_bs, opt_ss, ls =
+    let rhs, bs, ss, opt_bs, opt_ss, ls, opt_ls =
       match q.name with
       | Owned (sct, _) ->
         ownership_ctypes := Sctypes.to_ctype sct :: !ownership_ctypes;
-        let owned_or_deref_fn_name =
-          generate_owned_fn_name ~without_ownership_checking:permission_only_bounds sct
-        in
         let ptr_add_it = IT.(IT (Sym ptr_add_sym, BT.(Loc ()), Cerb_location.unknown)) in
         (* Hack with enum as sym *)
         let enum_val_get = IT.(IT (Sym enum_sym, BT.Integer, Cerb_location.unknown)) in
@@ -3564,39 +3587,86 @@ let cn_to_ail_resource
           match loop_ownership_sym_opt with
           | Some loop_ownership_sym ->
             IT.(IT (Sym loop_ownership_sym, BT.Integer, Cerb_location.unknown))
-          | None -> it_zero_const
+          | None ->
+            (match RC.get_runtime () with
+             | RC.C -> it_zero_const
+             | RC.Lua -> IT.(IT (Sym (Sym.fresh "nil"), BT.Unit, Cerb_location.unknown)))
+        in
+        let lua_sizeof_expr =
+          match RC.get_runtime () with
+          | RC.C -> CnL.get_empty_lua_expr
+          | RC.Lua -> CnL.generate_lua_ctype_sizeof return_ctype
         in
         let fn_call_it =
-          IT.IT
-            ( Apply
-                ( Sym.fresh owned_or_deref_fn_name,
-                  [ ptr_add_it; enum_val_get; loop_ownership_arg ] ),
-              BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
-              Cerb_location.unknown )
+          match RC.get_runtime () with
+          | RC.C ->
+            let owned_or_deref_fn_name =
+              generate_owned_fn_name
+                ~without_ownership_checking:permission_only_bounds
+                sct
+            in
+            IT.IT
+              ( Apply
+                  ( Sym.fresh owned_or_deref_fn_name,
+                    [ ptr_add_it; enum_val_get; loop_ownership_arg ] ),
+                BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
+                Cerb_location.unknown )
+          | RC.Lua ->
+            let reader_fn_sym =
+              Sym.fresh (CnL.expr_to_string (CnL.generate_lua_ctype_get return_ctype))
+            in
+            if permission_only_bounds then
+              IT.IT
+                ( Apply (reader_fn_sym, [ ptr_add_it ]),
+                  BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
+                  Cerb_location.unknown )
+            else (
+              let owned_fn_name =
+                generate_owned_fn_name
+                  ~without_ownership_checking:permission_only_bounds
+                  sct
+              in
+              let reader_term =
+                IT.(IT (Sym reader_fn_sym, BT.Unit, Cerb_location.unknown))
+              in
+              let sizeof_term =
+                IT.(
+                  IT
+                    ( Sym (Sym.fresh (CnL.expr_to_string lua_sizeof_expr)),
+                      BT.Unit,
+                      Cerb_location.unknown ))
+              in
+              IT.IT
+                ( Apply
+                    ( Sym.fresh owned_fn_name,
+                      [ enum_val_get;
+                        ptr_add_it;
+                        sizeof_term;
+                        loop_ownership_arg;
+                        reader_term
+                      ] ),
+                  BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct,
+                  Cerb_location.unknown ))
         in
         let bs', ss', ls', e' =
           cn_to_ail_expr filename dts globals spec_mode_opt fn_call_it PassBack
         in
-        let opt_bs, opt_ss =
+        let opt_bs, opt_ss, opt_ls =
           if permission_only_bounds then (
             (* optimisation: assert ownership separately *)
-            let ownership_fn_str = "cn_get_or_put_ownership" in
-            let ail_sizeof_expr =
-              mk_expr A.(AilEsizeof (CF.Ctype.no_qualifiers, Sctypes.to_ctype sct))
-            in
             let range_it =
               IT.sub_
                 ( IT.sym_ (end_sym, i_bt, Cerb_location.unknown),
                   IT.sym_ (i_sym, i_bt, Cerb_location.unknown) )
                 Cerb_location.unknown
             in
-            let _, _, _, range_expr =
+            let _, _, lua_range_exec, range_expr =
               cn_to_ail_expr filename dts globals spec_mode_opt range_it PassBack
             in
-            let _, _, _, enum_expr =
+            let _, _, lua_enum_exec, enum_expr =
               cn_to_ail_expr filename dts globals spec_mode_opt enum_val_get PassBack
             in
-            let _, _, _, loop_ownership_expr =
+            let _, _, lua_loop_ownership_exec, loop_ownership_expr =
               cn_to_ail_expr
                 filename
                 dts
@@ -3605,44 +3675,80 @@ let cn_to_ail_resource
                 loop_ownership_arg
                 PassBack
             in
-            let ptr_bs, ptr_ss, _, ptr_expr =
+            let ptr_bs, ptr_ss, lua_ptr_exec, ptr_expr =
               cn_to_ail_expr filename dts globals spec_mode_opt ptr_add_it PassBack
             in
-            let ownership_assert_fn_expr_ = A.(AilEident (Sym.fresh ownership_fn_str)) in
-            let mul_expr =
-              mk_expr
-                A.(
-                  AilEbinary
-                    ( ail_sizeof_expr,
-                      A.(Arithmetic Mul),
-                      mk_expr (wrap_with_convert_from (rm_expr range_expr) i_bt) ))
-            in
-            let ptr_member_of =
-              mk_expr A.(AilEmemberofptr (ptr_expr, Id.make Cerb_location.unknown "ptr"))
-            in
-            let ptr_arg =
-              mk_expr
-                A.(
-                  AilEcast
-                    ( CF.Ctype.no_qualifiers,
-                      void_ptr_type,
-                      mk_expr
-                        (AilEcast
-                           ( CF.Ctype.no_qualifiers,
-                             CF.Ctype.(
-                               mk_ctype_pointer no_qualifiers (Sctypes.to_ctype sct)),
-                             ptr_member_of )) ))
-            in
-            let args = [ enum_expr; ptr_arg; mul_expr; loop_ownership_expr ] in
-            let ownership_assert_expr =
-              mk_expr A.(AilEcall (mk_expr ownership_assert_fn_expr_, args))
-            in
-            let opt_main_ss = [ ptr_add_decl; A.(AilSexpr ownership_assert_expr) ] in
-            (ptr_add_binding :: ptr_bs, ptr_ss @ opt_main_ss))
-          else
-            ([ ptr_add_binding ], [ ptr_add_decl_no_rhs ])
+            match RC.get_runtime () with
+            | RC.C ->
+              let ownership_fn_str = "cn_get_or_put_ownership" in
+              let ail_sizeof_expr =
+                mk_expr A.(AilEsizeof (CF.Ctype.no_qualifiers, Sctypes.to_ctype sct))
+              in
+              let ownership_assert_fn_expr_ =
+                A.(AilEident (Sym.fresh ownership_fn_str))
+              in
+              let mul_expr =
+                mk_expr
+                  A.(
+                    AilEbinary
+                      ( ail_sizeof_expr,
+                        A.(Arithmetic Mul),
+                        mk_expr (wrap_with_convert_from (rm_expr range_expr) i_bt) ))
+              in
+              let ptr_member_of =
+                mk_expr
+                  A.(AilEmemberofptr (ptr_expr, Id.make Cerb_location.unknown "ptr"))
+              in
+              let ptr_arg =
+                mk_expr
+                  A.(
+                    AilEcast
+                      ( CF.Ctype.no_qualifiers,
+                        void_ptr_type,
+                        mk_expr
+                          (AilEcast
+                             ( CF.Ctype.no_qualifiers,
+                               CF.Ctype.(
+                                 mk_ctype_pointer no_qualifiers (Sctypes.to_ctype sct)),
+                               ptr_member_of )) ))
+              in
+              let args = [ enum_expr; ptr_arg; mul_expr; loop_ownership_expr ] in
+              let ownership_assert_expr =
+                mk_expr A.(AilEcall (mk_expr ownership_assert_fn_expr_, args))
+              in
+              let opt_main_ss = [ ptr_add_decl; A.(AilSexpr ownership_assert_expr) ] in
+              (ptr_add_binding :: ptr_bs, ptr_ss @ opt_main_ss, CnL.get_empty_lua_cn_exec)
+            | RC.Lua ->
+              let _, enum_expr = CnL.pop_expr_from_exec lua_enum_exec in
+              let _, _, ptr_expr = lua_ptr_exec in
+              let _, range_expr = CnL.pop_expr_from_exec lua_range_exec in
+              let _, loop_ownership_expr =
+                CnL.pop_expr_from_exec lua_loop_ownership_exec
+              in
+              let ptr_add_stmt = gen_lua_ptr_add_stmt ~is_local:true () in
+              let ownership_assert_stmt =
+                CnL.generate_lua_cn_each_ownership_opt
+                  enum_expr
+                  ptr_expr
+                  range_expr
+                  loop_ownership_expr
+                  lua_sizeof_expr
+                  i_bt
+              in
+              let final_stmts = [ ptr_add_stmt; ownership_assert_stmt ] in
+              ([], [], (final_stmts, [], CnL.get_empty_lua_expr)))
+          else (
+            match RC.get_runtime () with
+            | RC.C ->
+              ([ ptr_add_binding ], [ ptr_add_decl_no_rhs ], CnL.get_empty_lua_cn_exec)
+            | RC.Lua ->
+              let ptr_add_stmt =
+                gen_lua_ptr_add_stmt ~is_local:true ~is_decl_only:true ()
+              in
+              let exec = ([ ptr_add_stmt ], [], CnL.get_empty_lua_expr) in
+              ([], [], exec))
         in
-        (e', bs', ss', opt_bs, opt_ss, ls')
+        (e', bs', ss', opt_bs, opt_ss, ls', opt_ls)
       | PName pname ->
         let bs, ss, ls, es =
           list_split_four
@@ -3650,24 +3756,39 @@ let cn_to_ail_resource
                (fun it -> cn_to_ail_expr filename dts globals spec_mode_opt it PassBack)
                q.iargs)
         in
-        let loop_ownership_expr_ =
-          match loop_ownership_sym_opt with
-          | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
-          | None -> ail_zero_const_expr_
-        in
-        let fcall =
-          A.(
-            AilEcall
-              ( mk_expr (AilEident pname),
-                (mk_expr (AilEident ptr_add_sym) :: es)
-                @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ] ))
-        in
-        ( mk_expr fcall,
-          List.concat bs,
-          List.concat ss,
-          [ ptr_add_binding ],
-          [ ptr_add_decl_no_rhs ],
-          CnL.concat ls )
+        (match RC.get_runtime () with
+         | RC.C ->
+           let loop_ownership_expr_ =
+             match loop_ownership_sym_opt with
+             | Some loop_ownership_sym -> A.AilEident loop_ownership_sym
+             | None -> ail_zero_const_expr_
+           in
+           let fcall =
+             A.(
+               AilEcall
+                 ( mk_expr (AilEident pname),
+                   (mk_expr (AilEident ptr_add_sym) :: es)
+                   @ List.map mk_expr [ AilEident enum_sym; loop_ownership_expr_ ] ))
+           in
+           ( mk_expr fcall,
+             List.concat bs,
+             List.concat ss,
+             [ ptr_add_binding ],
+             [ ptr_add_decl_no_rhs ],
+             CnL.get_empty_lua_cn_exec,
+             CnL.get_empty_lua_cn_exec )
+         | RC.Lua ->
+           let final_exec =
+             CnL.generate_lua_cn_each_pname_call
+               pname
+               ptr_add_sym
+               enum_sym
+               loop_ownership_sym_opt
+               ls
+           in
+           let ptr_add_stmt = gen_lua_ptr_add_stmt ~is_local:true ~is_decl_only:true () in
+           let op_exec = ([ ptr_add_stmt ], [], CnL.get_empty_lua_expr) in
+           (mk_expr ail_null, [], [], [], [], final_exec, op_exec))
     in
     let typedef_name = get_typedef_string (bt_to_ail_ctype i_bt) in
     let incr_func_name =
@@ -3706,22 +3827,44 @@ let cn_to_ail_resource
         let loop_body_bs, loop_body_ss =
           ([ ptr_add_binding ], [ ptr_add_stat; void_pred_call ])
         in
-        let while_loop =
-          gen_conj_loop
-            ~permission_only_bounds
-            (loop_body_bs, loop_body_ss)
-            if_cond_expr
-            while_cond_expr
-            increment_stat
-        in
-        let ail_block =
-          A.(
-            AilSblock
-              ( [ start_binding; end_binding ] @ opt_bs,
-                List.map mk_stmt ([ start_assign; end_assign ] @ opt_ss @ [ while_loop ])
-              ))
-        in
-        ([], [ ail_block ], CnL.get_empty_lua_cn_exec)
+        (match RC.get_runtime () with
+         | RC.C ->
+           let while_loop =
+             gen_conj_loop
+               ~permission_only_bounds
+               (loop_body_bs, loop_body_ss)
+               if_cond_expr
+               while_cond_expr
+               increment_stat
+           in
+           let ail_block =
+             A.(
+               AilSblock
+                 ( [ start_binding; end_binding ] @ opt_bs,
+                   List.map
+                     mk_stmt
+                     ([ start_assign; end_assign ] @ opt_ss @ [ while_loop ]) ))
+           in
+           ([], [ ail_block ], CnL.get_empty_lua_cn_exec)
+         | RC.Lua ->
+           let start_assign, end_assign = gen_lua_start_end_stmts in
+           let ptr_add_stmt = gen_lua_ptr_add_stmt () in
+           let increment_stmt = CnL.generate_lua_cn_increment_stmt i_sym i_bt in
+           let while_loop =
+             CnL.generate_lua_cn_conj_loop
+               ~permission_only_bounds
+               [ ptr_add_stmt ]
+               l_if_expr
+               l_while_expr
+               increment_stmt
+           in
+           let opt_lua_stmts, _, _ = opt_ls in
+           let final_exec =
+             ( [ start_assign; end_assign ] @ opt_lua_stmts @ [ while_loop ],
+               [],
+               CnL.get_empty_lua_expr )
+           in
+           ([], [], final_exec))
       | _ ->
         (* TODO: Change to mostly use index terms rather than Ail directly - avoids duplication between these functions and cn_to_ail *)
         let i_ident_expr = A.(AilEident i_sym) in
@@ -3742,23 +3885,40 @@ let cn_to_ail_resource
         let is_contiguous_owned_optimised =
           permission_only_bounds && match q.name with Owned _ -> true | _ -> false
         in
-        let sym_binding, sym_decl, while_loop =
+        let sym_binding, sym_decl, while_loop, lua_map_create, lua_while_loop =
           if not is_used then
             if is_contiguous_owned_optimised then
-              ([], [], [])
+              ([], [], [], [], [])
             else (
               let loop_body_bs, loop_body_ss =
                 (ptr_add_binding :: b4, s4 @ [ ptr_add_stat; AilSexpr rhs ])
               in
-              let while_loop =
-                gen_conj_loop
-                  ~permission_only_bounds
-                  (loop_body_bs, loop_body_ss)
-                  if_cond_expr
-                  while_cond_expr
-                  increment_stat
-              in
-              ([], [], [ while_loop ]))
+              match RC.get_runtime () with
+              | RC.C ->
+                let while_loop =
+                  gen_conj_loop
+                    ~permission_only_bounds
+                    (loop_body_bs, loop_body_ss)
+                    if_cond_expr
+                    while_cond_expr
+                    increment_stat
+                in
+                ([], [], [ while_loop ], [], [])
+              | RC.Lua ->
+                let open Lua.Pp_lua in
+                let ptr_add_stmt = gen_lua_ptr_add_stmt () in
+                let _, rhs_expr = CnL.pop_expr_from_exec ls in
+                let rhs_stmt = LuaS.SExpr rhs_expr in
+                let increment_stmt = CnL.generate_lua_cn_increment_stmt i_sym i_bt in
+                let lua_while_loop =
+                  CnL.generate_lua_cn_conj_loop
+                    ~permission_only_bounds
+                    (l4_stmts @ [ ptr_add_stmt; rhs_stmt ])
+                    l_if_expr
+                    l_while_expr
+                    increment_stmt
+                in
+                ([], [], [], [], [ lua_while_loop ]))
           else (
             let cn_map_type =
               mk_ctype ~annots:[ CF.Annot.Atypedef (Sym.fresh "cn_map") ] C.Void
@@ -3780,23 +3940,61 @@ let cn_to_ail_resource
               ( ptr_add_binding :: b4,
                 s4 @ [ ptr_add_stat; AilSexpr (mk_expr map_set_expr_) ] )
             in
-            let while_loop =
-              gen_conj_loop
-                ~permission_only_bounds
-                (loop_body_bs, loop_body_ss)
-                if_cond_expr
-                while_cond_expr
-                increment_stat
-            in
-            ([ sym_binding ], [ sym_decl ], [ while_loop ]))
+            match RC.get_runtime () with
+            | RC.C ->
+              let while_loop =
+                gen_conj_loop
+                  ~permission_only_bounds
+                  (loop_body_bs, loop_body_ss)
+                  if_cond_expr
+                  while_cond_expr
+                  increment_stat
+              in
+              ([ sym_binding ], [ sym_decl ], [ while_loop ], [], [])
+            | RC.Lua ->
+              let lua_map_create =
+                CnL.generate_lua_cn_assignment
+                  (Sym.pp_string sym)
+                  (Some CnL.generate_lua_cn_empty_table)
+              in
+              let ptr_add_stmt = gen_lua_ptr_add_stmt () in
+              let _, rhs_expr = CnL.pop_expr_from_exec ls in
+              let map_set_stmt =
+                CnL.cn_to_lua_map_set (CnL.convert sym) (CnL.convert i_sym) rhs_expr
+              in
+              let increment_stmt = CnL.generate_lua_cn_increment_stmt i_sym i_bt in
+              let lua_while_loop =
+                CnL.generate_lua_cn_conj_loop
+                  ~permission_only_bounds
+                  (l4_stmts @ [ ptr_add_stmt; map_set_stmt ])
+                  l_if_expr
+                  l_while_expr
+                  increment_stmt
+              in
+              ([], [], [], [ lua_map_create ], [ lua_while_loop ]))
         in
-        let ail_block =
-          A.(
-            AilSblock
-              ( [ start_binding; end_binding ] @ opt_bs,
-                List.map mk_stmt ([ start_assign; end_assign ] @ opt_ss @ while_loop) ))
-        in
-        (sym_binding, sym_decl @ [ ail_block ], CnL.get_empty_lua_cn_exec)
+        (match RC.get_runtime () with
+         | RC.C ->
+           let ail_block =
+             A.(
+               AilSblock
+                 ( [ start_binding; end_binding ] @ opt_bs,
+                   List.map mk_stmt ([ start_assign; end_assign ] @ opt_ss @ while_loop)
+                 ))
+           in
+           (sym_binding, sym_decl @ [ ail_block ], CnL.get_empty_lua_cn_exec)
+         | RC.Lua ->
+           let start_assign, end_assign = gen_lua_start_end_stmts in
+           let opt_lua_stmts, _, _ = opt_ls in
+           let final_exec =
+             ( lua_map_create
+               @ [ start_assign; end_assign ]
+               @ opt_lua_stmts
+               @ lua_while_loop,
+               [],
+               CnL.get_empty_lua_expr )
+           in
+           ([], [], final_exec))
     in
     (b1 @ b2 @ b3 @ bs' @ bs, s1 @ s2 @ s3 @ ss @ ss', CnL.concat [ l1; l2; l3; ls; ls' ])
 
