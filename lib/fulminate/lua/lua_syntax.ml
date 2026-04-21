@@ -14,6 +14,8 @@ type expr =
   | Function of
       expr list * stmt list * bool (* function(a, b) ... end - anonymous function *)
   | Table of table_field_type list * bool
+  | TableGet of expr * expr
+  | TableSet of expr * expr * expr
   | Binary of binary_expr_type
   | Unary of unary_expr_type
 
