@@ -1,5 +1,14 @@
 #pragma once
 
+//@saljuk NOTE: Some files in Lua include defines that clash with cerberus's ones (e.g max_align_t). 
+// We do empty defines here so that the compiler skips the internal library definitions
+// and waits for cerberus to define them
+#define __max_align_t_defined
+#define _MAX_ALIGN_T
+#define _MAX_ALIGN_T_DEFINED
+#define __CLANG_MAX_ALIGN_T_DEFINED
+#define _GCC_MAX_ALIGN_T
+
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
