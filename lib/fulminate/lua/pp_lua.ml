@@ -66,7 +66,9 @@ let rec pp_expr =
       | LuaS.Named (k, v) -> k ^ " = " ^ pp_expr v
       | LuaS.List x -> pp_expr x
     in
-    if is_multiline then (
+    if List.is_empty members then
+      "{}"
+    else if is_multiline then (
       let table_body = indent (List.map pp_table_field members) ~comma:true () in
       "{\n" ^ table_body ^ "\n}\n\n")
     else (
