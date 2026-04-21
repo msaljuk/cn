@@ -127,6 +127,11 @@ and pp_stmt = function
     in
     pp_if_statement cases
   | LuaS.SExpr expr -> pp_expr expr
+  | LuaS.While (cond, while_body) ->
+    let while_cond = Printf.sprintf "while %s do\n" (pp_expr cond) in
+    let body = List.map pp_stmt while_body in
+    let indented_body = indent body () in
+    while_cond ^ indented_body ^ "\nend"
   | _ -> ""
 
 

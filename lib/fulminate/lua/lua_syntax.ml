@@ -62,4 +62,5 @@ and stmt =
   | LocalTable of expr * expr list (* local x = { a = 5, b = 7 } *)
   | IfElse of (expr option * stmt list) list (* if(cond) then ... else ... *)
   | SExpr of expr (* used to carry an expression as a statement (similar to A.AilSexpr) *)
+  | While of expr * stmt list (* while(cond_expr) do\n body \n end *)
   | Empty
