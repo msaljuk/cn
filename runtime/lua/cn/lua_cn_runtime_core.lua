@@ -209,14 +209,6 @@ local core = {
         return (base_addr + (offset * size))
     end,
 
-    map_set = function(m, k, v) m[k] = v end,
-    --[[
-    @saljuk TODO: Consider replacing with just m[k] directly.
-    Would like to do similar for map_set but it often gets used
-    in assignments
-    --]]
-    map_get = function(m, k) return m[k] end,
-
     bool_and = 
         function(a, b) 
             local a_ctrue = is_c_true(a)

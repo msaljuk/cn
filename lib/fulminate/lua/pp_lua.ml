@@ -74,6 +74,9 @@ let rec pp_expr =
     else (
       let table_body = String.concat ", " (List.map pp_table_field members) in
       "{ " ^ table_body ^ " }")
+  | LuaS.TableGet (tbl, key) -> pp_expr tbl ^ "[" ^ pp_expr key ^ "]"
+  | LuaS.TableSet (tbl, key, value) ->
+    pp_expr (LuaS.TableGet (tbl, key)) ^ " = " ^ pp_expr value
   | LuaS.Binary args ->
     let pp_binary_expr_type expr =
       match expr with

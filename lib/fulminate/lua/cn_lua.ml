@@ -61,10 +61,6 @@ let cn_offsets_field_sym = LuaS.Symbol "cn.c.offsets"
 
 let cn_get_field_prefix_sym = LuaS.Symbol "cn.c.get_"
 
-let cn_map_set_sym = LuaS.Symbol "map_set"
-
-let cn_map_get_sym = LuaS.Symbol "map_get"
-
 let get_empty_lua_expr : lua_expression = LuaS.Nil
 
 let get_empty_lua_stmt : lua_statement = LuaS.Empty
@@ -1356,13 +1352,13 @@ let cn_to_lua_map_set
       (value : lua_expression)
   : lua_statement
   =
-  LuaS.FunctionCall (Pp_lua.pp_expr cn_map_set_sym, [ map; key; value ])
+  LuaS.SExpr (LuaS.TableSet (map, key, value))
 
 
 let cn_to_lua_map_get (map_exec : lua_cn_exec) (key_exec : lua_cn_exec) : lua_cn_exec =
   let l1, map_expr = pop_expr_from_exec map_exec in
   let l2, key_expr = pop_expr_from_exec key_exec in
-  let map_get_expr = LuaS.Call (Pp_lua.pp_expr cn_map_get_sym, [ map_expr; key_expr ]) in
+  let map_get_expr = LuaS.TableGet (map_expr, key_expr) in
   let final_exec = push_expr_to_exec (concat [ l1; l2 ], map_get_expr) in
   final_exec
 
