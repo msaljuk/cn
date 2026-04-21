@@ -54,7 +54,8 @@ and unary_expr_type =
 and stmt =
   | Assign of ident * expr option (* x = 10 *)
   | LocalAssign of ident * expr option (* local x = 10 *)
-  | FunctionDef of ident * expr list * stmt list * bool (* function x(a, b) \n body \n end *)
+  | FunctionDef of
+      ident * expr list * stmt list * bool (* function x(a, b) \n body \n end *)
   | LocalFunctionDef of
       ident * expr list * stmt list (* local function x(a, b) \n body \n end *)
   | FunctionCall of ident * expr list (* assert(false) *)

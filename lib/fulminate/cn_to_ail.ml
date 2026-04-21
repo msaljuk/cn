@@ -6026,7 +6026,6 @@ let cn_to_ail_pre_post
           in
           let _, _, lua_cn_exec_pre = ail_executable_spec.pre in
           let lua_stmts_pre, _, _ = lua_cn_exec_pre in
-          
           let precond_fn_lua =
             FunctionDef
               (CnL.generate_lua_precondition_fn_name c_func_name, [], lua_stmts_pre, true)
