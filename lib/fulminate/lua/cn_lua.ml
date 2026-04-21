@@ -888,7 +888,7 @@ let generate_lua_inline_fn
     (fun (sym, _) -> LuaS.Symbol(Sym.pp_string sym))
     fn_args
   in
-  LuaS.FunctionDef(fn_name, args_exprs, fn_body)
+  LuaS.FunctionDef(fn_name, args_exprs, fn_body, false)
 
 let generate_lua_cn_get_or_put_ownership
   (spec_mode : lua_expression)
@@ -988,7 +988,8 @@ let generate_lua_push_frame_fn
     LuaS.FunctionDef(
       lua_fn_name,
       lua_fn_args,
-      lua_fn_body
+      lua_fn_body,
+      false
     )
   )
 
