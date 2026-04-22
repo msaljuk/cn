@@ -184,13 +184,13 @@ val generate_lua_filename : string -> string -> string
    Utility used to generate the name of a Lua precondition function
 based on the name of the C function where it is called.
 *)
-val generate_lua_precondition_fn_name : Sym.t -> string
+val generate_lua_precondition_fn_name : Sym.t -> ?is_lemma:bool -> unit -> string
 
 (*
    Utility used to generate the name of a Lua postcondition function
 based on the name of the C function where it is called.
 *)
-val generate_lua_postcondition_fn_name : Sym.t -> string
+val generate_lua_postcondition_fn_name : Sym.t -> ?is_lemma:bool -> unit -> string
 
 (*
    Utility used to generate the name of a Lua function that pushes a bunch
@@ -205,6 +205,12 @@ val generate_lua_inline_fn
   (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
   lua_statements ->
   lua_statement
+
+val generate_lua_cn_inline_lemma_call : lua_cn_exec -> lua_cn_exec
+
+val generate_lua_cn_lemma_fn
+  :  CF.Ctype.union_tag * (CF.Ctype.union_tag * CF.Ctype.ctype) list ->
+  lua_cn_exec
 
 val generate_c_fn_push_globals : (Sym.t * CF.Ctype.ctype) list -> wrapper_function
 

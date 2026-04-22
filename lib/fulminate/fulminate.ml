@@ -603,9 +603,9 @@ let main
   let c_predicate_defs, c_predicate_decls, _c_predicate_locs, alt_file_predicates =
     generate_c_predicates filename without_ownership_checking cabs_tunit prog5 sigm
   in
-  let c_lemma_defs, c_lemma_decls =
+  let c_lemma_defs, c_lemma_decls, alt_file_lemmas =
     if without_lemma_checks then
-      ("", "")
+      ("", "", [])
     else
       generate_c_lemmas filename cabs_tunit sigm prog5
   in
@@ -870,6 +870,7 @@ let main
      output_to_oc lua_oc alt_file_datatypes;
      output_to_oc lua_oc alt_file_functions;
      output_to_oc lua_oc alt_file_predicates;
+     output_to_oc lua_oc alt_file_lemmas;
      output_to_oc lua_oc executable_spec.alt_file;
      output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_return ^ "\n" ];
      close_out lua_oc
