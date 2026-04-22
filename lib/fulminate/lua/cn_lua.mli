@@ -422,3 +422,5 @@ val cn_to_lua_map_get : lua_cn_exec -> lua_cn_exec -> lua_cn_exec
 val cn_to_lua_apply : CF.Ctype.union_tag -> lua_cn_exec list -> lua_cn_exec
 
 val cn_to_lua_let : CF.Ctype.union_tag -> lua_expression -> lua_cn_exec
+
+val cn_to_lua_cast : BT.t -> BT.t -> lua_cn_exec -> lua_cn_exec
