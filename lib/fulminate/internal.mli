@@ -123,8 +123,10 @@ val generate_tag_definition_injs
   :  AilSyntax.sigma_tag_definition list ->
   (Cerb_location.t * string list) list
 
-val generate_struct_metadata
+val generate_metadata
   :  (AilSyntax.ail_identifier
      * (Cerb_location.t * Annot.attributes * Ctype.tag_definition))
        list ->
+  Cabs.translation_unit ->
+  unit Mucore.file ->
   GenTypes.genTypeCategory AilSyntax.statement_ * (string list * string list)

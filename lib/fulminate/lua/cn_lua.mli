@@ -119,11 +119,14 @@ Takes in
 - the name of the wrapper function, 
 - the name of the corresponding Lua function,
 - the list of C args that need to be pushed into Lua.
+- Whether or not these arguments are globals (if so, they don't appear in the wrapper prototype's args)
 *)
 val generate_c_fn_wrapper_def
   :  string ->
   string ->
   (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
+  ?global:bool ->
+  unit ->
   wrapper_function
 
 (*
@@ -157,11 +160,12 @@ val generate_c_fn_get_struct
   CF.GenTypes.genTypeCategory A.statement * wrapper_function
 
 (*
-   Utility used to generate a c function that can be called to push all custom struct
+   Utility used to generate a c function that can be called to push all custom file
 metadata to the lua cn runtime
 *)
-val generate_c_fn_push_struct_metadata
-  :  CF.GenTypes.genTypeCategory A.statement list ->
+val generate_c_fn_push_metadata
+  :  A.sigma_declaration ->
+  CF.GenTypes.genTypeCategory A.statement list ->
   A.sigma_declaration list ->
   A.sigma_declaration list ->
   wrapper_function
@@ -201,6 +205,8 @@ val generate_lua_inline_fn
   (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
   lua_statements ->
   lua_statement
+
+val generate_c_fn_push_globals : (Sym.t * CF.Ctype.ctype) list -> wrapper_function
 
 val generate_lua_cn_get_or_put_ownership
   :  lua_expression ->
@@ -262,6 +268,8 @@ val generate_lua_push_frame_fn
   :  string ->
   (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
   LuaS.stmt
+
+val generate_lua_cn_fn_push_globals : (Sym.t * CF.Ctype.ctype) list -> LuaS.stmt
 
 (*
    Utility used to generate an error stack push statement in Lua,
@@ -364,7 +372,7 @@ Returns:
 *)
 val cn_to_lua_const : IT.const -> BT.t -> lua_expression * bool
 
-val cn_to_lua_sym : CF.Ctype.union_tag -> lua_expression
+val cn_to_lua_sym : CF.Ctype.union_tag -> ?is_global:bool -> unit -> lua_expression
 
 val cn_to_lua_unop : lua_expression * BT.t * IT.unop -> lua_expression
 

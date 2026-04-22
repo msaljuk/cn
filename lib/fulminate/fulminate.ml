@@ -616,8 +616,8 @@ let main
     generate_ownership_functions without_ownership_checking !Cn_to_ail.ownership_ctypes
   in
   let ordered_ail_tag_defs = order_ail_tag_definitions sigm.tag_definitions in
-  let struct_metadata_fn_call, (struct_wrapper_decs, struct_wrapper_defs) =
-    generate_struct_metadata ordered_ail_tag_defs
+  let metadata_fn_call, (metadata_wrapper_decs, metadata_wrapper_defs) =
+    generate_metadata ordered_ail_tag_defs cabs_tunit prog5
   in
   let c_tag_defs = generate_c_tag_def_strs ordered_ail_tag_defs in
   let cn_converted_struct_defs = generate_cn_versions_of_structs ordered_ail_tag_defs in
@@ -704,12 +704,15 @@ let main
         @ List.concat
             [ [ "/* HELPER FUNCTION DECLARATIONS */\n" ];
               helper_decs;
-              struct_wrapper_decs
+              metadata_wrapper_decs
             ]
       in
       let defs =
         List.concat
-          [ [ "/* HELPER FUNCTION DEFINITIONS */\n" ]; helper_defs; struct_wrapper_defs ]
+          [ [ "/* HELPER FUNCTION DEFINITIONS */\n" ];
+            helper_defs;
+            metadata_wrapper_defs
+          ]
       in
       let enclose_with_newlines str_list = [ "\n" ] @ str_list @ [ "\n" ] in
       (enclose_with_newlines headers, enclose_with_newlines defs)
@@ -797,7 +800,7 @@ let main
           ~experimental_ownership_stack_mode
           ?max_bump_blocks
           ?bump_block_size
-          struct_metadata_fn_call
+          metadata_fn_call
           cabs_tunit
           sigm
           prog5
@@ -819,11 +822,14 @@ let main
       "#endif\n"
     ];
   output_string oc "#pragma GCC diagnostic ignored \"-Wattributes\"\n";
-  output_string oc "\n/* GLOBAL ACCESSORS */\n";
-  output_string
-    oc
-    ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
-     ^ Globals.accessors_prototypes filename cabs_tunit prog5);
+  (match RC.get_runtime () with
+   | RC.C ->
+     output_string oc "\n/* GLOBAL ACCESSORS */\n";
+     output_string
+       oc
+       ("void* memcpy(void* dest, const void* src, __cerbty_size_t count );\n"
+        ^ Globals.accessors_prototypes filename cabs_tunit prog5)
+   | RC.Lua -> ());
   (match
      Source_injection.(
        output_injections
@@ -843,7 +849,9 @@ let main
    | Error str ->
      (* TODO(Christopher/Rini): maybe lift this error to the exception monad? *)
      prerr_endline str);
-  output_to_oc oc [ Globals.accessors_str filename cabs_tunit prog5 ];
+  (match RC.get_runtime () with
+   | RC.C -> output_to_oc oc [ Globals.accessors_str filename cabs_tunit prog5 ]
+   | RC.Lua -> ());
   output_to_oc oc cn_defs_list;
   close_out oc;
   (* Create any alt files needed *)
@@ -852,8 +860,13 @@ let main
      let open Lua.Pp_lua in
      let lua_filename = CnL.generate_lua_filename output_dir basefile in
      let lua_oc = Stdlib.open_out lua_filename in
+     let lua_globals =
+       let globals = Cn_to_ail.extract_global_variables cabs_tunit prog5 in
+       pp_stmt (CnL.generate_lua_cn_fn_push_globals globals)
+     in
      output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
      output_to_oc lua_oc [ pp_stmt CnL.generate_lua_env_req ^ "\n\n" ];
+     output_to_oc lua_oc [ lua_globals ];
      output_to_oc lua_oc alt_file_datatypes;
      output_to_oc lua_oc alt_file_functions;
      output_to_oc lua_oc alt_file_predicates;

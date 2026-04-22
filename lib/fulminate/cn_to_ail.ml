@@ -1009,7 +1009,16 @@ let rec cn_to_ail_expr_aux
          else
            sym
        in
-       let lua_cn_expr = CnL.cn_to_lua_sym sym in
+       let is_global =
+         if is_sym_obj_address sym then
+           if List.exists (fun (x, _) -> Sym.equal x sym) globals then
+             true
+           else
+             false
+         else
+           false
+       in
+       let lua_cn_expr = CnL.cn_to_lua_sym sym ~is_global () in
        let l = CnL.push_expr_to_exec (CnL.get_empty_lua_cn_exec, lua_cn_expr) in
        dest d spec_mode_opt ([], [], l, mk_expr ail_null))
   | Binop (bop, t1, t2) ->
@@ -4943,7 +4952,7 @@ let cn_to_ail_cnprog ~without_lemma_checks filename dts globals spec_mode_opt cn
     let c_wrapper_func_name = CnL.generate_c_inline_fn_wrapper_name func_id in
     let lua_func_name = CnL.generate_lua_inline_fn_name func_id in
     let c_wrapper_dec_and_def, c_wrapper_call =
-      ( CnL.generate_c_fn_wrapper_def lua_func_name c_wrapper_func_name inline_stmt_args,
+      ( CnL.generate_c_fn_wrapper_def lua_func_name c_wrapper_func_name inline_stmt_args (),
         CnL.generate_c_inline_fn_wrapper_call c_wrapper_func_name inline_stmt_args )
     in
     let lua_fn_body, _, _ = ls in
@@ -6001,6 +6010,7 @@ let cn_to_ail_pre_post
               push_fn_lua_name
               push_fn_wrapper_name
               wrapper_args
+              ()
           in
           let push_fn_lua =
             CnL.generate_lua_push_frame_fn push_fn_lua_name wrapper_args
@@ -6022,7 +6032,11 @@ let cn_to_ail_pre_post
             A.(AilEcall (mk_expr (AilEident (Sym.fresh precond_fn_wrapper_name)), []))
           in
           let precond_fn_wrapper_def =
-            CnL.generate_c_fn_wrapper_def precond_fn_lua_name precond_fn_wrapper_name []
+            CnL.generate_c_fn_wrapper_def
+              precond_fn_lua_name
+              precond_fn_wrapper_name
+              []
+              ()
           in
           let _, _, lua_cn_exec_pre = ail_executable_spec.pre in
           let lua_stmts_pre, _, _ = lua_cn_exec_pre in
@@ -6057,6 +6071,7 @@ let cn_to_ail_pre_post
               postcond_fn_lua_name
               postcond_fn_wrapper_name
               postcond_fn_wrapper_args
+              ()
           in
           let _, _, lua_cn_exec_post = ail_executable_spec.post in
           let lua_stmts_post, _, _ = lua_cn_exec_post in
