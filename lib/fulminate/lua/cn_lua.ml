@@ -47,6 +47,8 @@ let cn_frames_push_fn_sym = LuaS.Symbol "cn.frames.push_function"
 
 let cn_locals_sym = LuaS.Symbol "cn.locals"
 
+let cn_globals_sym = LuaS.Symbol "cn.globals"
+
 let cn_owned_sym = LuaS.Symbol "owned"
 
 let cn_get_or_put_ownership_sym = LuaS.Symbol "cn.ghost_state.get_or_put_ownership"
@@ -157,6 +159,8 @@ let generate_c_postcondition_fn_wrapper_name (c_fn_name : Sym.t) =
   generate_c_fn_wrapper_prefix c_fn_name ^ "postcondition"
 
 
+let generate_c_push_globals_fn_wrapper_name = "lua_cn_push_globals"
+
 let generate_c_push_frame_fn_wrapper_name (c_fn_name : Sym.t) =
   generate_c_fn_wrapper_prefix c_fn_name ^ "push_frame"
 
@@ -255,6 +259,8 @@ let generate_c_fn_wrapper_def
       (wrapper_fn_name : string)
       (wrapper_fn_args :
         (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list)
+      ?(global = false)
+      ()
   : wrapper_function
   =
   (*
@@ -306,8 +312,20 @@ let generate_c_fn_wrapper_def
           A.ail_identifier * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool))
     =
     let arg_name, arg_type = wrapper_fn_arg in
-    let arg_name_expr = var (Sym.pp_string arg_name) in
-    let _, arg_ctype, _ = arg_type in
+    let arg_name_expr =
+      let base = var (Sym.pp_string arg_name) in
+      if global then
+        mk_expr (A.AilEunary (Address, base))
+      else
+        base
+    in
+    let arg_ctype =
+      let _, base, _ = arg_type in
+      if global then
+        mk_ctype CF.Ctype.(Pointer (CF.Ctype.no_qualifiers, base))
+      else
+        base
+    in
     A.AilSexpr (generate_c_push_field_into_lua lua_state_expr arg_name_expr arg_ctype)
   in
   let lua_state_bs, lua_state_ss = generate_c_get_lua_state in
@@ -338,6 +356,9 @@ let generate_c_fn_wrapper_def
              [ lua_state_expr; int_const (List.length lua_fn_field_names - 1) ]
          ])
   in
+  let prototype_arg_names, prototype_arg_types =
+    if global then ([], []) else (arg_names, arg_types)
+  in
   let loc = Cerb_location.unknown in
   let attrs = CF.Annot.no_attributes in
   let id = Sym.fresh wrapper_fn_name in
@@ -349,13 +370,15 @@ let generate_c_fn_wrapper_def
           Decl_function
             ( false,
               (CF.Ctype.no_qualifiers, CF.Ctype.void),
-              arg_types,
+              prototype_arg_types,
               false,
               false,
               false )) ) )
   in
   let def =
-    (id, (loc, 0, attrs, arg_names, mk_stmt (A.AilSblock ([ lua_state_bs ], body))))
+    ( id,
+      (loc, 0, attrs, prototype_arg_names, mk_stmt (A.AilSblock ([ lua_state_bs ], body)))
+    )
   in
   (decl, def)
 
@@ -727,13 +750,15 @@ let generate_c_fn_get_struct
   (register_struct_stmt, (decl, def))
 
 
-let generate_c_fn_push_struct_metadata
+let generate_c_fn_push_metadata
+      (globals_decl : A.sigma_declaration)
       (get_bind_stmts : CF.GenTypes.genTypeCategory A.statement list)
       (sizeof_decls : A.sigma_declaration list)
       (offset_decls : A.sigma_declaration list)
   : wrapper_function
   =
   let make_fn_call_stmt (x : A.sigma_declaration) = mk_stmt (make_fn_call x) in
+  let globals_stmt = make_fn_call_stmt globals_decl in
   let gets_block_stmts = mk_stmt (A.AilSblock ([], get_bind_stmts)) in
   let sizeof_block_stmts =
     mk_stmt (A.AilSblock ([], List.map make_fn_call_stmt sizeof_decls))
@@ -741,7 +766,9 @@ let generate_c_fn_push_struct_metadata
   let offset_block_stmts =
     mk_stmt (A.AilSblock ([], List.map make_fn_call_stmt offset_decls))
   in
-  let body_stmts = [ gets_block_stmts; sizeof_block_stmts; offset_block_stmts ] in
+  let body_stmts =
+    [ globals_stmt; gets_block_stmts; sizeof_block_stmts; offset_block_stmts ]
+  in
   let loc = Cerb_location.unknown in
   let attrs = CF.Annot.no_attributes in
   let id = Sym.fresh "lua_cn_push_runtime_metadata" in
@@ -818,12 +845,28 @@ let generate_lua_postcondition_fn_name (c_fn_name : Sym.t) =
   generate_lua_fn_prefix c_fn_name ^ "postcondition"
 
 
+let generate_lua_push_globals_fn_name = Pp_lua.pp_expr cn_sym ^ "." ^ "push_globals"
+
 let generate_lua_push_frame_fn_name (c_fn_name : Sym.t) =
   generate_lua_fn_prefix c_fn_name ^ "push_frame"
 
 
 let generate_lua_inline_fn_name (func_id : Sym.t) =
   Pp_lua.pp_expr (LuaS.Field (cn_inline_sym, LuaS.Symbol (Sym.pp_string func_id)))
+
+
+let generate_c_fn_push_globals (globals : (Sym.t * CF.Ctype.ctype) list)
+  : wrapper_function
+  =
+  let lua_fn_name = generate_lua_push_globals_fn_name in
+  let c_wrapper_fn_name = generate_c_push_globals_fn_wrapper_name in
+  let converted_globals = convert_c_args_to_wrapper_args globals in
+  generate_c_fn_wrapper_def
+    lua_fn_name
+    c_wrapper_fn_name
+    converted_globals
+    ~global:true
+    ()
 
 
 let generate_lua_inline_fn
@@ -917,6 +960,22 @@ let generate_lua_push_frame_fn
   in
   let lua_fn_args = List.map get_arg_name c_fn_args in
   LuaS.FunctionDef (lua_fn_name, lua_fn_args, lua_fn_body, false)
+
+
+let generate_lua_cn_fn_push_globals (globals : (Sym.t * CF.Ctype.ctype) list) : LuaS.stmt =
+  let lua_fn_name = generate_lua_push_globals_fn_name in
+  let get_global_arg arg =
+    let c_sym, _ = arg in
+    convert c_sym
+  in
+  let lua_fn_args = List.map get_global_arg globals in
+  let lua_fn_body =
+    List.map
+      (fun sym ->
+         LuaS.Assign (Pp_lua.pp_expr (LuaS.Field (cn_globals_sym, sym)), Some sym))
+      lua_fn_args
+  in
+  LuaS.FunctionDef (lua_fn_name, lua_fn_args, lua_fn_body, true)
 
 
 let generate_lua_cn_error_stack_push (msg : string) =
@@ -1173,8 +1232,12 @@ let cn_to_lua_const (constant : IT.const) (_baseType : BT.t) : lua_expression * 
   (lua_expression, is_unit)
 
 
-let cn_to_lua_sym (c_sym : CF.Ctype.union_tag) : lua_expression =
-  LuaS.Symbol (Sym.pp_string c_sym)
+let cn_to_lua_sym (c_sym : CF.Ctype.union_tag) ?(is_global = false) () : lua_expression =
+  let lua_sym = convert c_sym in
+  if is_global then
+    LuaS.Field (cn_globals_sym, lua_sym)
+  else
+    lua_sym
 
 
 let cn_to_lua_unop (expr, bt, unop) : lua_expression =

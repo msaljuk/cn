@@ -22,6 +22,7 @@ the entire thing falls under cn.
 
 local cn = {
     error_stack = {},
+    globals = {},
     locals = {}, -- Proxy table
     frames = {},
     ghost_state = {},

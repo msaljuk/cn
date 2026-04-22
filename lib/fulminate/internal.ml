@@ -956,11 +956,18 @@ let generate_tag_definition_injs (tag_defs : CF.AilSyntax.sigma_tag_definition l
   all_tag_def_injs
 
 
-let generate_struct_metadata ail_struct_data
+let generate_metadata
+      ail_struct_data
+      (cabs_tunit : CF.Cabs.translation_unit)
+      (prog5 : unit Mucore.file)
   : CF.GenTypes.genTypeCategory A.statement_ * (string list * string list)
   =
   match RC.get_runtime () with
   | RC.Lua ->
+    let push_globals_wrapper =
+      let globals = Cn_to_ail.extract_global_variables cabs_tunit prog5 in
+      CnL.generate_c_fn_push_globals globals
+    in
     let struct_size_wrappers =
       List.map (fun x -> CnL.generate_c_fn_push_struct_size (fst x)) ail_struct_data
     in
@@ -977,10 +984,14 @@ let generate_struct_metadata ail_struct_data
     let struct_sizeof_decs = List.map fst struct_size_wrappers in
     let struct_offset_decs = List.map fst struct_offset_wrappers in
     let metadata_wrapper =
-      CnL.generate_c_fn_push_struct_metadata
+      CnL.generate_c_fn_push_metadata
+        (fst push_globals_wrapper)
         struct_get_binds
         struct_sizeof_decs
         struct_offset_decs
+    in
+    let globals_decs, globals_defs =
+      gen_wrapper_dec_and_def_strs [ push_globals_wrapper ]
     in
     let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
     let offset_decs, offset_defs = gen_wrapper_dec_and_def_strs struct_offset_wrappers in
@@ -990,6 +1001,6 @@ let generate_struct_metadata ail_struct_data
     let metadata_fn_dec, _ = metadata_wrapper in
     let metadata_fn_call_stmt = make_fn_call metadata_fn_dec in
     ( metadata_fn_call_stmt,
-      ( [ size_decs; offset_decs; push_decs; metadata_dec; get_decs ],
-        [ size_defs; offset_defs; push_defs; metadata_def; get_defs ] ) )
+      ( [ globals_decs; size_decs; offset_decs; push_decs; metadata_dec; get_decs ],
+        [ globals_defs; size_defs; offset_defs; push_defs; metadata_def; get_defs ] ) )
   | _ -> (A.AilSexpr (mk_expr empty_ail_expr), ([], []))
