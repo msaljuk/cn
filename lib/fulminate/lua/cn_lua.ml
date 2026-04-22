@@ -1438,3 +1438,15 @@ let cn_to_lua_apply sym in_execs : lua_cn_exec =
 let cn_to_lua_let (var : CF.Ctype.union_tag) (val_expr : lua_expression) : lua_cn_exec =
   let stmt = LuaS.LocalAssign (Sym.pp_string var, Some val_expr) in
   ([ stmt ], [], get_empty_lua_expr)
+
+
+let cn_to_lua_cast (_from_type : BT.t) (to_type : BT.t) (cast_exec : lua_cn_exec)
+  : lua_cn_exec
+  =
+  let int_type_str = get_lua_c_int_type_str to_type in
+  if String.equal int_type_str "incompatible" then
+    cast_exec
+  else (
+    let exec, expr = pop_expr_from_exec cast_exec in
+    let int_expr = LuaS.Number_Int (expr, int_type_str) in
+    push_expr_to_exec (exec, int_expr))
