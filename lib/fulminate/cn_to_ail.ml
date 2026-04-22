@@ -2141,7 +2141,6 @@ let rec cn_to_ail_expr_aux
     let ps' = List.map (fun (p, t) -> ([ p ], t)) ps in
     translate_real [ t ] ps' d
   | Cast (bt, t) ->
-    print_endline "CAST";
     let ail_expr_, b, s, l =
       match bt with
       | BT.Alloc_id ->
@@ -2176,9 +2175,11 @@ let rec cn_to_ail_expr_aux
         in
         (ail_expr_, b, s, l)
     in
-    print_endline
-      (CF.Pp_utils.to_plain_string (CF.Pp_ail.pp_expression (mk_expr ail_expr_)));
-    dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+    (match RC.get_runtime () with
+     | RC.C -> dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+     | RC.Lua ->
+       let final_exec = CnL.cn_to_lua_cast (IT.get_bt t) bt l in
+       dest d spec_mode_opt ([], [], final_exec, mk_expr ail_null))
   | CN_None _bt -> failwith (__LOC__ ^ ": TODO CN_None")
   | CN_Some _ -> failwith (__LOC__ ^ ": TODO CN_Some")
   | IsSome _ -> failwith (__LOC__ ^ ": TODO IsSome")
