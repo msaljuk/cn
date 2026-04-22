@@ -231,9 +231,9 @@ val cn_to_ail_lemmas
   (Sym.t * Definition.Predicate.t) list ->
   (Sym.t * Ctype.ctype) list ->
   (Sym.t * (Cerb_location.t * ArgumentTypes.lemmat)) list ->
-  (AilSyntax.sigma_declaration
-  * GenTypes.genTypeCategory AilSyntax.sigma_function_definition)
-    list
+  AilSyntax.sigma_declaration list
+  * GenTypes.genTypeCategory AilSyntax.sigma_function_definition list
+  * CnL.lua_statement list
 
 val cn_to_ail_pre_post
   :  without_ownership_checking:bool ->
