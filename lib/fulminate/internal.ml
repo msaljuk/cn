@@ -674,7 +674,7 @@ let generate_c_lemmas
       (prog5 : unit Mucore.file)
   =
   let globals = Cn_to_ail.extract_global_variables cabs_tunit prog5 in
-  let ail_funs =
+  let decls, defs, lua_stmts =
     Cn_to_ail.cn_to_ail_lemmas
       filename
       sigm.cn_datatypes
@@ -682,9 +682,18 @@ let generate_c_lemmas
       globals
       prog5.lemmata
   in
-  let decls, defs = List.split ail_funs in
-  let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
-  ("\n/* CN LEMMAS */\n\n" ^ doc_to_pretty_string defs_doc, doc_to_pretty_string decls_doc)
+  match RC.get_runtime () with
+  | RC.C ->
+    let defs_doc, decls_doc = generate_fun_def_and_decl_docs (List.combine decls defs) in
+    let defs_str, decls_str =
+      ( "\n/* CN LEMMAS */\n\n" ^ doc_to_pretty_string defs_doc,
+        doc_to_pretty_string decls_doc )
+    in
+    (defs_str, decls_str, [])
+  | RC.Lua ->
+    let open Lua.Pp_lua in
+    let lua_lemmas_strs = List.map pp_stmt lua_stmts in
+    ("", "", lua_lemmas_strs)
 
 
 let generate_ownership_functions without_ownership_checking ownership_ctypes =

@@ -45,9 +45,13 @@ let cn_error_stack_pop_sym = LuaS.Symbol "cn.error_stack.pop"
 
 let cn_frames_push_fn_sym = LuaS.Symbol "cn.frames.push_function"
 
+let cn_frames_pop_fn_sym = LuaS.Symbol "cn.frames.pop_function"
+
 let cn_locals_sym = LuaS.Symbol "cn.locals"
 
 let cn_globals_sym = LuaS.Symbol "cn.globals"
+
+let cn_lemma_sym = LuaS.Symbol "cn.lemma"
 
 let cn_owned_sym = LuaS.Symbol "owned"
 
@@ -837,12 +841,24 @@ let generate_lua_fn_prefix (c_fn_name : Sym.t) =
   Pp_lua.pp_expr cn_sym ^ "." ^ Sym.pp_string c_fn_name ^ "."
 
 
-let generate_lua_precondition_fn_name (c_fn_name : Sym.t) =
-  generate_lua_fn_prefix c_fn_name ^ "precondition"
+let generate_lua_lemma_fn_prefix (c_fn_name : Sym.t) =
+  Pp_lua.pp_expr cn_lemma_sym ^ "." ^ Sym.pp_string c_fn_name ^ "."
 
 
-let generate_lua_postcondition_fn_name (c_fn_name : Sym.t) =
-  generate_lua_fn_prefix c_fn_name ^ "postcondition"
+let generate_lua_precondition_fn_name (c_fn_name : Sym.t) ?(is_lemma = false) () =
+  let suffix = "precondition" in
+  if is_lemma then
+    generate_lua_lemma_fn_prefix c_fn_name ^ suffix
+  else
+    generate_lua_fn_prefix c_fn_name ^ suffix
+
+
+let generate_lua_postcondition_fn_name (c_fn_name : Sym.t) ?(is_lemma = false) () =
+  let suffix = "postcondition" in
+  if is_lemma then
+    generate_lua_lemma_fn_prefix c_fn_name ^ suffix
+  else
+    generate_lua_fn_prefix c_fn_name ^ suffix
 
 
 let generate_lua_push_globals_fn_name = Pp_lua.pp_expr cn_sym ^ "." ^ "push_globals"
@@ -877,6 +893,37 @@ let generate_lua_inline_fn
   =
   let args_exprs = List.map (fun (sym, _) -> LuaS.Symbol (Sym.pp_string sym)) fn_args in
   LuaS.FunctionDef (fn_name, args_exprs, fn_body, false)
+
+
+let generate_lua_cn_inline_lemma_call (in_exec : lua_cn_exec) : lua_cn_exec =
+  let exec, expr = pop_expr_from_exec in_exec in
+  push_stmts_to_exec (exec, [ LuaS.SExpr (LuaS.Field (cn_lemma_sym, expr)) ])
+
+
+let generate_lua_cn_lemma_fn
+      ((fn_sym, fn_params) :
+        CF.Ctype.union_tag * (CF.Ctype.union_tag * CF.Ctype.ctype) list)
+  : lua_cn_exec
+  =
+  let args_expr = List.map (fun (sym, _) -> convert sym) fn_params in
+  let push_fn = LuaS.FunctionCall (Pp_lua.pp_expr cn_frames_push_fn_sym, []) in
+  let precond_fn_call =
+    LuaS.FunctionCall
+      (generate_lua_precondition_fn_name fn_sym ~is_lemma:true (), args_expr)
+  in
+  let postcond_fn_call =
+    LuaS.FunctionCall
+      (generate_lua_postcondition_fn_name fn_sym ~is_lemma:true (), args_expr)
+  in
+  let pop_fn = LuaS.FunctionCall (Pp_lua.pp_expr cn_frames_pop_fn_sym, []) in
+  let fn_def =
+    LuaS.FunctionDef
+      ( Pp_lua.pp_expr (LuaS.Field (cn_lemma_sym, convert fn_sym)),
+        args_expr,
+        [ push_fn; precond_fn_call; postcond_fn_call; pop_fn ],
+        true )
+  in
+  ([ fn_def ], [], get_empty_lua_expr)
 
 
 let generate_lua_cn_get_or_put_ownership

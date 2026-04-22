@@ -87,7 +87,7 @@ val generate_c_lemmas
   Cabs.translation_unit ->
   GenTypes.genTypeCategory AilSyntax.sigma ->
   unit Mucore.file ->
-  string * string
+  string * string * string list
 
 val generate_ownership_functions : bool -> Ctype.ctype list -> string * string
 

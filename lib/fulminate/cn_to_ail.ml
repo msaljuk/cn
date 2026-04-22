@@ -4881,7 +4881,14 @@ let rec cn_to_ail_cnprog_aux
            PassBack
            stmt
        in
-       ((bs, upd_s @ ss @ [ A.AilSexpr e ] @ pop_s, ls), no_op, let_map_opt)
+       (match RC.get_runtime () with
+        | RC.C ->
+          ( (bs, upd_s @ ss @ [ A.AilSexpr e ] @ pop_s, CnL.get_empty_lua_cn_exec),
+            no_op,
+            let_map_opt )
+        | RC.Lua ->
+          let final_exec = CnL.generate_lua_cn_inline_lemma_call ls in
+          (([], [], final_exec), no_op, let_map_opt))
      | _ ->
        let (bs, ss, ls), no_op =
          cn_to_ail_cnstatement
@@ -5497,7 +5504,6 @@ let rec cn_to_ail_lat_2
     in
     prepend_to_precondition ail_executable_spec (binding :: b1, decl :: s1, l1)
   | LAT.Resource ((name, (ret, bt)), (loc, _str_opt), lat) ->
-    print_endline (Sym.pp_string name);
     let free_vars_in_rest =
       LAT.free_vars
         (fun (post, (stats, loops)) ->
@@ -5986,16 +5992,17 @@ let cn_to_ail_pre_post
           ([], [ bump_alloc_end_stat_ ], CnL.get_empty_lua_cn_exec)
       | RC.Lua ->
         let c_func_name, c_func_params = func_c_sig in
+        let gen_params_expr params =
+          if List.is_empty params then
+            []
+          else (
+            let func_param_syms, _ = List.split params in
+            List.map (fun sym -> mk_expr (A.AilEident sym)) func_param_syms)
+        in
         let gen_lua_function_frames ()
           : ('a A.statement_ * CnL.lua_cn_exec) * ('a A.statement_ * CnL.lua_cn_exec)
           =
-          let func_params_expr =
-            if List.is_empty c_func_params then
-              []
-            else (
-              let func_param_syms, _ = List.split c_func_params in
-              List.map (fun sym -> mk_expr (A.AilEident sym)) func_param_syms)
-          in
+          let func_params_expr = gen_params_expr c_func_params in
           let push_fn_wrapper_name =
             CnL.generate_c_push_frame_fn_wrapper_name c_func_name
           in
@@ -6024,42 +6031,55 @@ let cn_to_ail_pre_post
           : ('a A.statement_ * CnL.lua_cn_exec) * ('a A.statement_ * CnL.lua_cn_exec)
           =
           let open Lua.Lua_syntax in
+          let params_to_use = if is_lemma then c_func_params else [] in
+          let wrapper_args = CnL.convert_c_args_to_wrapper_args params_to_use in
+          let fn_wrapper_call_params_expr = gen_params_expr params_to_use in
+          let fn_lua_args_expr =
+            List.map (fun (sym, _) -> Symbol (Sym.pp_string sym)) wrapper_args
+          in
           (* Precondition *)
           let precond_fn_wrapper_name =
             CnL.generate_c_precondition_fn_wrapper_name c_func_name
           in
-          let precond_fn_lua_name = CnL.generate_lua_precondition_fn_name c_func_name in
+          let precond_fn_lua_name =
+            CnL.generate_lua_precondition_fn_name c_func_name ~is_lemma ()
+          in
           let precond_fn_wrapper_call =
-            A.(AilEcall (mk_expr (AilEident (Sym.fresh precond_fn_wrapper_name)), []))
+            A.(
+              AilEcall
+                ( mk_expr (AilEident (Sym.fresh precond_fn_wrapper_name)),
+                  fn_wrapper_call_params_expr ))
           in
           let precond_fn_wrapper_def =
             CnL.generate_c_fn_wrapper_def
               precond_fn_lua_name
               precond_fn_wrapper_name
-              []
+              wrapper_args
               ()
           in
           let _, _, lua_cn_exec_pre = ail_executable_spec.pre in
           let lua_stmts_pre, _, _ = lua_cn_exec_pre in
           let precond_fn_lua =
-            FunctionDef
-              (CnL.generate_lua_precondition_fn_name c_func_name, [], lua_stmts_pre, true)
+            FunctionDef (precond_fn_lua_name, fn_lua_args_expr, lua_stmts_pre, true)
           in
           (* Postcondition *)
           let postcond_fn_wrapper_name =
             CnL.generate_c_postcondition_fn_wrapper_name c_func_name
           in
-          let postcond_fn_lua_name = CnL.generate_lua_postcondition_fn_name c_func_name in
+          let postcond_fn_lua_name =
+            CnL.generate_lua_postcondition_fn_name c_func_name ~is_lemma ()
+          in
           let ( postcond_fn_wrapper_args,
                 postcond_fn_wrapper_call_args,
                 postcond_fn_lua_args )
             =
             match rm_ctype c_return_type with
-            | C.Void -> ([], [], [])
+            | C.Void -> (wrapper_args, fn_wrapper_call_params_expr, fn_lua_args_expr)
             | _ ->
-              ( [ (cn_ret_sym, (CF.Ctype.no_qualifiers, c_return_type, false)) ],
-                [ mk_expr (A.AilEident cn_ret_sym) ],
-                [ Symbol (Sym.pp_string cn_ret_sym) ] )
+              ( [ (cn_ret_sym, (CF.Ctype.no_qualifiers, c_return_type, false)) ]
+                @ wrapper_args,
+                [ mk_expr (A.AilEident cn_ret_sym) ] @ fn_wrapper_call_params_expr,
+                [ Symbol (Sym.pp_string cn_ret_sym) ] @ fn_lua_args_expr )
           in
           let postcond_fn_wrapper_call =
             A.(
@@ -6077,11 +6097,7 @@ let cn_to_ail_pre_post
           let _, _, lua_cn_exec_post = ail_executable_spec.post in
           let lua_stmts_post, _, _ = lua_cn_exec_post in
           let postcond_fn_lua =
-            FunctionDef
-              ( CnL.generate_lua_postcondition_fn_name c_func_name,
-                postcond_fn_lua_args,
-                lua_stmts_post,
-                true )
+            FunctionDef (postcond_fn_lua_name, postcond_fn_lua_args, lua_stmts_post, true)
           in
           ( ( A.AilSexpr (mk_expr precond_fn_wrapper_call),
               ([ precond_fn_lua ], [ precond_fn_wrapper_def ], CnL.get_empty_lua_expr) ),
@@ -6094,9 +6110,17 @@ let cn_to_ail_pre_post
         in
         let push_ss, push_ls = lua_frame_function_push in
         let pop_ss, pop_ls = lua_frame_function_pop in
+        let push_ls = if is_lemma then CnL.get_empty_lua_cn_exec else push_ls in
+        let pop_ls = if is_lemma then CnL.get_empty_lua_cn_exec else pop_ls in
         let lua_precond, lua_postcond = gen_lua_pre_post_wrappers () in
         let precond_ss, precond_ls = lua_precond in
         let postcond_ss, postcond_ls = lua_postcond in
+        let maybe_lemma_ls =
+          if is_lemma then
+            CnL.generate_lua_cn_lemma_fn func_c_sig
+          else
+            CnL.get_empty_lua_cn_exec
+        in
         (*
            * Start with a new exec spec that nulls out pre and posts statements 
              * since we've wrapped them inside a function call statement now
@@ -6115,7 +6139,7 @@ let cn_to_ail_pre_post
         in
         append_to_postcondition
           precond_ail_exec_spec
-          ([], [ postcond_ss; pop_ss ], CnL.concat [ postcond_ls; pop_ls ])
+          ([], [ postcond_ss; pop_ss ], CnL.concat [ postcond_ls; pop_ls; maybe_lemma_ls ])
     in
     final_ail_executable_spec
   | None -> empty_ail_executable_spec
@@ -6134,6 +6158,14 @@ let cn_to_ail_lemma filename dts preds globals (sym, (loc, lemmat)) =
       (fun post -> (ReturnTypes.mComputational dummy_bound_and_info post, ([], [])))
       lemmat
   in
+  let func_c_sig_params =
+    List.map2
+      (fun param_sym param_type ->
+         let _, ctype, _ = param_type in
+         (param_sym, ctype))
+      param_syms
+      param_types
+  in
   let ail_executable_spec : ail_executable_spec =
     cn_to_ail_pre_post
       ~without_ownership_checking:false
@@ -6147,12 +6179,12 @@ let cn_to_ail_lemma filename dts preds globals (sym, (loc, lemmat)) =
       dts
       preds
       globals
-      (sym, [])
+      (sym, func_c_sig_params)
       ret_type
       (Some transformed_lemmat)
   in
-  let pre_bs, pre_ss, _ = ail_executable_spec.pre in
-  let post_bs, post_ss, _ = ail_executable_spec.post in
+  let pre_bs, pre_ss, pre_ls = ail_executable_spec.pre in
+  let post_bs, post_ss, post_ls = ail_executable_spec.post in
   (* Generating function declaration *)
   let decl =
     ( sym,
@@ -6171,13 +6203,27 @@ let cn_to_ail_lemma filename dts preds globals (sym, (loc, lemmat)) =
         param_syms,
         mk_stmt A.(AilSblock (pre_bs @ post_bs, List.map mk_stmt (pre_ss @ post_ss))) ) )
   in
-  (decl, def)
+  match RC.get_runtime () with
+  | RC.C -> ([ decl ], [ def ], [])
+  | RC.Lua ->
+    let pre_stmts, pre_wrapper_funcs, _ = pre_ls in
+    let post_stmts, post_wrapper_funcs, _ = post_ls in
+    let pre_wrapper_decls, pre_wrapper_defs = List.split pre_wrapper_funcs in
+    let post_wrapper_decls, post_wrapper_defs = List.split post_wrapper_funcs in
+    ( pre_wrapper_decls @ post_wrapper_decls @ [ decl ],
+      pre_wrapper_defs @ post_wrapper_defs @ [ def ],
+      pre_stmts @ post_stmts )
 
 
 let cn_to_ail_lemmas filename dts preds globals lemmata
-  : (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition) list
+  : A.sigma_declaration list
+    * CF.GenTypes.genTypeCategory A.sigma_function_definition list
+    * CnL.lua_statement list
   =
-  List.map (cn_to_ail_lemma filename dts preds globals) lemmata
+  let decs, defs, lua_stmts =
+    Utils.list_split_three (List.map (cn_to_ail_lemma filename dts preds globals) lemmata)
+  in
+  (List.concat decs, List.concat defs, List.concat lua_stmts)
 
 
 let has_cn_spec (instrumentation : Extract.instrumentation) =
