@@ -34,6 +34,7 @@ local cn = {
         C_ACCESS = 5,
         NON_SPEC = 6
     },
+    inline = {},
     c = {
         -- c asserts
         assert = {},
@@ -57,6 +58,11 @@ local cn = {
         get_integer = {},
         get_float = {},
         get_pointer = {},
+
+        -- c types sizeof
+        sizeof = {
+            array = {}
+        },
 
         -- c loop checks
         initialise_loop_ownership_state = {},
@@ -147,20 +153,20 @@ function cn.ghost_state.postcondition_leak_check()
     cn.c.postcondition_leak_check();
 end
 
---[[
-@Saljuk TODO: Get rid of this. This makes it easy for us
-to generate Lua functions within nested tables since we don't have 
-to generate the intermediate tables. But it's gross, and makes it
-so that typos no longer lead to errors but create new tables. Come
-up with a more elegant solution (possibly involving analyzing all the
-generated functions and generating the nested table structure from them)
-]]--
-local mt = {}
-mt.__index = function(t, k)
-    t[k] = setmetatable({}, mt)
-    return t[k]
+function cn.c.sizeof.array(array_type, array_size)
+    return cn.c.sizeof[array_type] * array_size
 end
-setmetatable(cn, mt)
+
+--[[
+@Saljuk TODO: Consider adding a flag to enable this
+
+This makes it easy for us to generate Lua functions within nested tables 
+since we don't have  to generate the intermediate tables. But it's gross, and makes it
+so that typos no longer lead to errors but create new tables. 
+
+It might be useful to have for a 'final' version since it makes the generation
+slightly cleaner. For now, keep it disabled.
+]]--
 
 --[[
 This allows us to set and get locals using cn.locals.X = Y instead of the more
@@ -234,5 +240,19 @@ cn.env = setmetatable({}, {
         return core[k] or _G[k] 
     end 
 })
+
+function cn.c.generate_get_array(array_type, array_size)
+    return function (base_address)
+        local arr = {}
+        local i = 0 -- note: we follow 'zero based indexing'
+        while (i <= array_size) do
+            arr[i] = 
+                cn.c["get_" .. array_type]
+                (core.array_shift(base_address, i, cn.c.sizeof[array_type]))
+            i = i + 1
+        end
+        return arr
+    end
+end
 
 return cn

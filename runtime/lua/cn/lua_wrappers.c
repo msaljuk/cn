@@ -188,7 +188,7 @@ void push_cn_c_tables() {
 
     // Size-of Table
     {
-        lua_newtable(lua_state);
+        lua_getfield(lua_state, -1, "sizeof");
 
         lua_pushinteger(lua_state, (lua_Integer)sizeof(bool));
         lua_setfield(lua_state, -2, "bool");
@@ -219,7 +219,7 @@ void push_cn_c_tables() {
         lua_pushinteger(lua_state, (lua_Integer)sizeof(void*));
         lua_setfield(lua_state, -2, "pointer");
 
-        lua_setfield(lua_state, -2, "sizeof");
+        lua_pop(lua_state, 1);
     }
 
     // Offsets table

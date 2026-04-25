@@ -229,6 +229,8 @@ val generate_lua_cn_get_or_put_ownership
 
 val generate_lua_cn_empty_table : lua_expression
 
+val generate_lua_cn_const_number : Z.t -> lua_expression
+
 val generate_lua_owned_fn_name : string
 
 (*
@@ -270,6 +272,8 @@ match x
  | y ->
 *)
 val generate_lua_cn_match_case_equality : lua_expression * string -> lua_expression
+
+val generate_lua_cn_spec_decl : CF.Ctype.union_tag -> lua_statement
 
 (*
    Utility used to generate a Lua function that pushes a bunch of 
@@ -371,6 +375,16 @@ val generate_lua_cn_predicate
   lua_cn_exec ->
   lua_statement
 
+val generate_lua_cn_bool_while_loop
+  :  Sym.t ->
+  BT.t ->
+  lua_expression ->
+  Sym.t * lua_expression ->
+  lua_expression ->
+  ?if_cond_opt:lua_expression option ->
+  lua_cn_exec ->
+  lua_cn_exec
+
 (* ---------------------------------- *)
 (*          Cn-to-Lua Terms           *)
 (* ---------------------------------- *)
@@ -398,13 +412,13 @@ val cn_to_lua_struct : CF.Ctype.union_tag -> (Id.t * lua_cn_exec) list -> lua_cn
 
 val cn_to_lua_struct_member : lua_cn_exec -> Id.t -> lua_cn_exec
 
-val cn_to_lua_struct_update : 
-   CF.Ctype.union_tag -> 
-   Id.t -> 
-   Id.t ->
-   lua_expression -> 
-   lua_expression ->
-   lua_statement
+val cn_to_lua_struct_update
+  :  CF.Ctype.union_tag ->
+  Id.t ->
+  Id.t ->
+  lua_expression ->
+  lua_expression ->
+  lua_statement
 
 val cn_to_lua_ite
   :  CF.Ctype.union_tag ->

@@ -303,7 +303,8 @@ let generate_c_specs_from_cn_internal
       let combined_decs_and_defs =
         (pre_dec @ in_dec @ post_dec, pre_def @ in_def @ post_def)
       in
-      let combined_l = l_pre @ l_in @ l_post in
+      let func_dec_l = pp_stmt (CnL.generate_lua_cn_spec_decl (fst func_c_sig)) in
+      let combined_l = [ func_dec_l; "\n\n" ] @ l_pre @ l_in @ l_post in
       (combined_decs_and_defs, combined_l)
   in
   { pre_str;

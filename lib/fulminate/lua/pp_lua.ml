@@ -105,7 +105,7 @@ let rec pp_expr =
   | LuaS.Unary args ->
     let pp_unary_expr_type args =
       let call_c_func name args =
-        LuaS.Call (pp_expr (LuaS.Field (LuaS.Symbol "c", LuaS.Symbol name)), args)
+        LuaS.Call (pp_expr (LuaS.Field(LuaS.Symbol "cn", LuaS.Field (LuaS.Symbol "c", LuaS.Symbol name))), args)
       in
       match args with
       | LuaS.Not v -> "not " ^ pp_expr v
@@ -120,6 +120,9 @@ let rec pp_expr =
 and pp_stmt = function
   | LuaS.Assign (id, e_opt) ->
     (match e_opt with Some x -> id ^ " = " ^ pp_expr x | None -> id)
+  | LuaS.Block stmts ->
+    let stmts_str = List.map pp_stmt stmts in
+    "do\n" ^ indent stmts_str () ^ "\nend"
   | LuaS.LocalAssign (id, e_opt) ->
     (match e_opt with
      | Some x -> "local " ^ id ^ " = " ^ pp_expr x

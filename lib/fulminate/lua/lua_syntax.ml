@@ -55,6 +55,7 @@ and unary_expr_type =
 (* Lua Statements *)
 and stmt =
   | Assign of ident * expr option (* x = 10 *)
+  | Block of stmt list
   | LocalAssign of ident * expr option (* local x = 10 *)
   | FunctionDef of
       ident * expr list * stmt list * bool (* function x(a, b) \n body \n end *)
