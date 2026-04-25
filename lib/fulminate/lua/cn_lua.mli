@@ -43,6 +43,10 @@ val get_empty_wrapper_functions : wrapper_functions
 
 val get_empty_lua_cn_exec : lua_cn_exec
 
+val get_cn_globals_sym_prefix : lua_expression
+
+val make_local_assign : lua_statement -> lua_statement
+
 (*
    Similar to List.concat. 
 
@@ -76,6 +80,8 @@ val convert : CF.Ctype.union_tag -> lua_expression
 val debug_print_stmts : lua_statements -> unit
 
 val debug_print_exprs : lua_expressions -> unit
+
+val is_function_empty : lua_statement -> bool
 
 (* ---------------------------------- *)
 (*             Generators             *)
@@ -388,7 +394,17 @@ val cn_to_lua_binop
   :  lua_expression * lua_expression * BT.t * BT.t * IT.binop ->
   lua_expression
 
+val cn_to_lua_struct : CF.Ctype.union_tag -> (Id.t * lua_cn_exec) list -> lua_cn_exec
+
 val cn_to_lua_struct_member : lua_cn_exec -> Id.t -> lua_cn_exec
+
+val cn_to_lua_struct_update : 
+   CF.Ctype.union_tag -> 
+   Id.t -> 
+   Id.t ->
+   lua_expression -> 
+   lua_expression ->
+   lua_statement
 
 val cn_to_lua_ite
   :  CF.Ctype.union_tag ->

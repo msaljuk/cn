@@ -1274,7 +1274,6 @@ let rec cn_to_ail_expr_aux
   | Tuple _ts -> failwith (__LOC__ ^ ": TODO Tuple")
   | NthTuple (_i, _t) -> failwith (__LOC__ ^ ": TODO NthTuple")
   | Struct (tag, ms) ->
-    print_endline "STRUCT";
     let res_sym = Sym.fresh_anon () in
     let res_ident = A.(AilEident res_sym) in
     let cn_struct_tag = generate_sym_with_suffix ~suffix:"_cn" tag in
@@ -1292,7 +1291,7 @@ let rec cn_to_ail_expr_aux
       in
       let ail_memberof = A.(AilEmemberofptr (mk_expr res_ident, id)) in
       let assign_stat = A.(AilSexpr (mk_expr (AilEassign (mk_expr ail_memberof, e)))) in
-      (b, s, assign_stat, l)
+      (b, s, assign_stat, (id, l))
     in
     let ctype_ = C.(Pointer (C.no_qualifiers, mk_ctype (Struct cn_struct_tag))) in
     let res_binding = create_binding res_sym (mk_ctype ctype_) in
@@ -1300,13 +1299,18 @@ let rec cn_to_ail_expr_aux
     let alloc_stat = A.(AilSdeclaration [ (res_sym, Some fn_call) ]) in
     let b, s = ([ res_binding ], [ alloc_stat ]) in
     let bs, ss, assign_stats, l = list_split_four (List.map generate_ail_stat ms) in
-    dest
-      d
-      spec_mode_opt
-      ( List.concat bs @ b,
-        List.concat ss @ s @ assign_stats,
-        CnL.concat l,
-        mk_expr res_ident )
+    (match RC.get_runtime () with
+     | RC.C ->
+       dest
+        d
+        spec_mode_opt
+        ( List.concat bs @ b,
+          List.concat ss @ s @ assign_stats,
+          CnL.get_empty_lua_cn_exec,
+          mk_expr res_ident )
+     | RC.Lua ->
+       let final_exec = CnL.cn_to_lua_struct res_sym l in
+       dest d spec_mode_opt ([], [], final_exec, mk_expr ail_null))
   | RecordMember (t, m) ->
     (* Currently assuming records only exist *)
     let b, s, l, e =
@@ -1345,7 +1349,6 @@ let rec cn_to_ail_expr_aux
        let l' = CnL.cn_to_lua_struct_member l m in
        dest d spec_mode_opt ([], [], l', mk_expr ail_null))
   | StructUpdate ((struct_term, m), new_val) ->
-    print_endline "STRUCT UPDATE";
     let struct_tag =
       match IT.get_bt struct_term with
       | BT.Struct tag -> tag
@@ -1374,6 +1377,7 @@ let rec cn_to_ail_expr_aux
            struct_term
            PassBack
        in
+       let exec1, expr1 = CnL.pop_expr_from_exec l1 in
        let b2, s2, l2, e2 =
          cn_to_ail_expr_aux
            filename
@@ -1385,6 +1389,7 @@ let rec cn_to_ail_expr_aux
            new_val
            PassBack
        in
+       let exec2, expr2 = CnL.pop_expr_from_exec l2 in
        let res_sym = Sym.fresh_anon () in
        let res_ident = mk_expr A.(AilEident res_sym) in
        let cn_struct_tag = generate_sym_with_suffix ~suffix:"_cn" struct_tag in
@@ -1396,22 +1401,47 @@ let rec cn_to_ail_expr_aux
        let alloc_call = mk_alloc_expr (Struct cn_struct_tag) in
        let res_decl = A.(AilSdeclaration [ (res_sym, Some alloc_call) ]) in
        let generate_member_assignment m (member_id, _) =
-         let lhs_memberof_expr_ = mk_expr A.(AilEmemberofptr (res_ident, member_id)) in
-         let rhs =
-           if Id.equal member_id m then
-             e2
-           else
-             mk_expr (AilEmemberofptr (e1, member_id))
-         in
-         A.(AilSexpr (mk_expr (AilEassign (lhs_memberof_expr_, rhs))))
+         match RC.get_runtime() with
+          | RC.C ->
+            let lhs_memberof_expr_ = mk_expr A.(AilEmemberofptr (res_ident, member_id)) in
+            let rhs =
+              if Id.equal member_id m then
+                e2
+              else
+                mk_expr (AilEmemberofptr (e1, member_id))
+            in
+            (A.(AilSexpr (mk_expr (AilEassign (lhs_memberof_expr_, rhs)))), CnL.get_empty_lua_stmt)
+          | RC.Lua ->
+            let stmt = CnL.cn_to_lua_struct_update res_sym member_id m expr1 expr2 in
+            (A.(AilSexpr (mk_expr ail_null)), stmt)
        in
-       let member_assignments = List.map (generate_member_assignment m) members in
+       let ail_member_assignments, lua_member_assignments = 
+          List.split (List.map (generate_member_assignment m) members) 
+       in
+       let final_lua_exec =
+        match RC.get_runtime() with
+          | RC.C -> CnL.get_empty_lua_cn_exec
+          | RC.Lua ->
+            let lua_res_decl = 
+                CnL.generate_lua_cn_local_assignment 
+                  (Sym.pp_string res_sym)
+                  (Some (CnL.generate_lua_cn_empty_table)) 
+            in
+            let execs = 
+                CnL.concat [ 
+                  exec1; 
+                  exec2; 
+                  (lua_res_decl :: lua_member_assignments, [], CnL.get_empty_lua_expr) 
+                ] 
+            in
+            CnL.push_expr_to_exec (execs, CnL.convert res_sym)
+       in
        dest
          d
          spec_mode_opt
          ( b1 @ b2 @ [ res_binding ],
-           s1 @ s2 @ (res_decl :: member_assignments),
-           CnL.concat [ l1; l2 ],
+           s1 @ s2 @ (res_decl :: ail_member_assignments),
+            final_lua_exec,
            res_ident )
      | UnionDef _ -> failwith (__LOC__ ^ ": Can't apply StructUpdate to a C union"))
     (* Allocation *)
@@ -4323,6 +4353,15 @@ let rec cn_to_ail_lat
         it
         (AssignVar name)
     in
+    let l1' = 
+      match RC.get_runtime () with
+        | RC.C -> l1
+        | RC.Lua ->
+          (* Make this let be a local let in lua *)
+          let stmts, wrappers, _ = l1 in
+          let local_stmt = CnL.make_local_assign (List.hd stmts) in
+          ([ local_stmt ], wrappers, CnL.get_empty_lua_expr)
+    in
     let b2, s2, l2 =
       cn_to_ail_lat
         filename
@@ -4334,7 +4373,9 @@ let rec cn_to_ail_lat
         without_ownership_checking
         lat
     in
-    (b1 @ b2 @ [ binding ], (decl :: s1) @ s2, CnL.concat [ l1; l2 ])
+    (b1 @ b2 @ [ binding ], 
+    (decl :: s1) @ s2, 
+    CnL.concat [ l1'; l2 ])
   | LAT.Resource ((name, (ret, _bt)), (loc, _str_opt), lat) ->
     let free_vars_in_rest = LAT.free_vars IT.free_vars lat in
     let is_used = Sym.Set.mem name free_vars_in_rest in
@@ -4933,42 +4974,58 @@ let cn_to_ail_cnprog ~without_lemma_checks filename dts globals spec_mode_opt cn
         empty_let_map_opt
         cn_prog
     in
-    (* We now have a map of each let binding i.e.
+    let lua_fn_body, _, _ = ls in
+
+    let are_bodies_empty = 
+      let indv_body_results = List.map CnL.is_function_empty lua_fn_body in
+      List.for_all Fun.id indv_body_results
+    in
+    (* Allows us to skip any inline statements that are more hints for the proof checker and not
+     * any meaningful Fulminate statement
+     *)
+    if are_bodies_empty then (
+      ([], [], CnL.get_empty_lua_cn_exec)
+    ) else (
+      (* We now have a map of each let binding i.e.
        * { deref_read_q00 -> read_q0, read_q0 -> q }
        * Traverse it to find the value that is not bound to anything - that is 
        * our 'root' c parameter that we must push into Lua
-    *)
-    let get_inline_stmt_args (map : (String.t * CF.Ctype.ctype) StringMap.t) =
-      let all_values = StringMap.fold (fun _key value acc -> value :: acc) map [] in
-      let roots =
-        List.filter
-          (fun (parent_sym, _ctype) -> not (StringMap.mem parent_sym map))
-          all_values
+      *)
+      let get_inline_stmt_args (map : (String.t * CF.Ctype.ctype) StringMap.t) =
+        let all_values = StringMap.fold (fun _key value acc -> value :: acc) map [] in
+        let global_sym_str = CnL.expr_to_string (CnL.get_cn_globals_sym_prefix) in
+        let roots =
+          List.filter
+            (fun (parent_sym, _ctype) -> 
+              not (StringMap.mem parent_sym map) && 
+              not (String.starts_with ~prefix:global_sym_str parent_sym))
+            all_values
+        in
+        (* Deduplicate to avoid redundant args *)
+        List.sort_uniq (fun (s1, _) (s2, _) -> String.compare s1 s2) roots
       in
-      (* Deduplicate to avoid redundant args *)
-      List.sort_uniq (fun (s1, _) (s2, _) -> String.compare s1 s2) roots
-    in
-    let inline_stmt_args =
-      let sym_type_list =
-        get_inline_stmt_args (Option.value ~default:StringMap.empty completed_let_map_opt)
+      let inline_stmt_args =
+        let sym_type_list =
+          get_inline_stmt_args (Option.value ~default:StringMap.empty completed_let_map_opt)
+        in
+        List.map
+          (fun (name, ctype) -> (Sym.fresh name, (CF.Ctype.no_qualifiers, ctype, false)))
+          sym_type_list
       in
-      List.map
-        (fun (name, ctype) -> (Sym.fresh name, (CF.Ctype.no_qualifiers, ctype, false)))
-        sym_type_list
-    in
-    let func_id = Sym.fresh_make_uniq "instance" in
-    let c_wrapper_func_name = CnL.generate_c_inline_fn_wrapper_name func_id in
-    let lua_func_name = CnL.generate_lua_inline_fn_name func_id in
-    let c_wrapper_dec_and_def, c_wrapper_call =
-      ( CnL.generate_c_fn_wrapper_def lua_func_name c_wrapper_func_name inline_stmt_args (),
-        CnL.generate_c_inline_fn_wrapper_call c_wrapper_func_name inline_stmt_args )
-    in
-    let lua_fn_body, _, _ = ls in
-    let lua_fn = CnL.generate_lua_inline_fn lua_func_name inline_stmt_args lua_fn_body in
-    let final_lua_exec =
-      ([ lua_fn ], [ c_wrapper_dec_and_def ], CnL.get_empty_lua_expr)
-    in
-    ([], [ c_wrapper_call ], final_lua_exec)
+      let func_id = Sym.fresh_make_uniq "instance" in
+      let c_wrapper_func_name = CnL.generate_c_inline_fn_wrapper_name func_id in
+      let lua_func_name = CnL.generate_lua_inline_fn_name func_id in
+      let c_wrapper_dec_and_def, c_wrapper_call =
+        ( CnL.generate_c_fn_wrapper_def lua_func_name c_wrapper_func_name inline_stmt_args (),
+          CnL.generate_c_inline_fn_wrapper_call c_wrapper_func_name inline_stmt_args )
+      in
+      
+      let lua_fn = CnL.generate_lua_inline_fn lua_func_name inline_stmt_args lua_fn_body in
+      let final_lua_exec =
+        ([ lua_fn ], [ c_wrapper_dec_and_def ], CnL.get_empty_lua_expr)
+      in
+      ([], [ c_wrapper_call ], final_lua_exec)
+    )
 
 
 (* GHOST ARGUMENTS *)
