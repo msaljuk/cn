@@ -62,7 +62,7 @@ and stmt =
   | LocalFunctionDef of
       ident * expr list * stmt list (* local function x(a, b) \n body \n end *)
   | FunctionCall of ident * expr list (* assert(false) *)
-  | Return of expr (* return false *)
+  | Return of expr option (* return false *)
   | LocalTable of expr * expr list (* local x = { a = 5, b = 7 } *)
   | IfElse of (expr option * stmt list) list (* if(cond) then ... else ... *)
   | SExpr of expr (* used to carry an expression as a statement (similar to A.AilSexpr) *)

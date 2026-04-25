@@ -1024,7 +1024,7 @@ let generate_lua_runtime_core_req (* local cn = require("lua_cn_runtime_core") *
       Some (LuaS.Call ("require", [ LuaS.String "lua_cn_runtime_core" ])) )
 
 
-let generate_lua_runtime_return (* return cn *) = LuaS.Return cn_sym
+let generate_lua_runtime_return (* return cn *) = LuaS.Return (Some cn_sym)
 
 let generate_lua_env_req (* _ENV = cn.env *) = LuaS.Assign ("_ENV", Some cn_env_sym)
 
@@ -1145,7 +1145,7 @@ let generate_lua_cn_assert
 
 
 let generate_lua_cn_return (expr : lua_expression) (is_unit : bool) : LuaS.stmt =
-  LuaS.Return (if is_unit then LuaS.Nil else expr)
+  LuaS.Return (if is_unit then None else Some expr)
 
 
 let generate_lua_cn_pname_resource_call
@@ -1282,7 +1282,9 @@ let generate_lua_cn_datatype (cn_datatype : A.ail_identifier CF.Cn.cn_datatype)
            in
            [ tag_arg_field ] @ gen_arg_fields
          in
-         let tbl_member_fn_body = LuaS.Return (LuaS.Table (arg_tbl_fields, false)) in
+         let tbl_member_fn_body =
+           LuaS.Return (Some (LuaS.Table (arg_tbl_fields, false)))
+         in
          LuaS.Named
            ( tbl_member_name,
              LuaS.Function (tbl_member_fn_args, [ tbl_member_fn_body ], false) ))
