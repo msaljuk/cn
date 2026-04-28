@@ -303,7 +303,8 @@ let generate_c_specs_from_cn_internal
       let combined_decs_and_defs =
         (pre_dec @ in_dec @ post_dec, pre_def @ in_def @ post_def)
       in
-      let combined_l = l_pre @ l_in @ l_post in
+      let func_dec_l = pp_stmt (CnL.generate_lua_cn_spec_decl (fst func_c_sig)) in
+      let combined_l = [ func_dec_l; "\n\n" ] @ l_pre @ l_in @ l_post in
       (combined_decs_and_defs, combined_l)
   in
   { pre_str;
@@ -747,8 +748,8 @@ let generate_conversion_and_equality_functions
   let struct_map_get_funs =
     List.map Cn_to_ail.generate_struct_map_get sigm.tag_definitions
   in
-  let struct_default_funs =
-    List.map Cn_to_ail.generate_struct_default_function sigm.tag_definitions
+  let struct_default_funs, struct_default_funs_ls =
+    List.split (List.map Cn_to_ail.generate_struct_default_function sigm.tag_definitions)
   in
   let datatype_map_get_funs =
     List.map Cn_to_ail.generate_datatype_map_get sigm.cn_datatypes
@@ -773,7 +774,11 @@ let generate_conversion_and_equality_functions
   in
   let defs_doc, decls_doc = generate_fun_def_and_decl_docs ail_funs in
   let comment = "\n/* GENERATED STRUCT FUNCTIONS */\n\n" in
-  (comment ^ doc_to_pretty_string defs_doc, comment ^ doc_to_pretty_string decls_doc)
+  let open Lua.Pp_lua in
+  let alt_file_doc = List.map pp_stmt (List.concat struct_default_funs_ls) in
+  ( comment ^ doc_to_pretty_string defs_doc,
+    comment ^ doc_to_pretty_string decls_doc,
+    alt_file_doc )
 
 
 let get_main (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =
@@ -984,6 +989,9 @@ let generate_metadata
       List.map CnL.generate_c_fn_push_struct_offsets ail_struct_data
     in
     let struct_push_wrappers = List.map CnL.generate_c_fn_push_struct ail_struct_data in
+    let struct_push_array_wrappers =
+      List.map (fun x -> CnL.generate_c_fn_push_struct_array (fst x)) ail_struct_data
+    in
     let struct_get_binds_and_wrappers =
       List.map CnL.generate_c_fn_get_struct ail_struct_data
     in
@@ -1005,11 +1013,28 @@ let generate_metadata
     let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
     let offset_decs, offset_defs = gen_wrapper_dec_and_def_strs struct_offset_wrappers in
     let push_decs, push_defs = gen_wrapper_dec_and_def_strs struct_push_wrappers in
+    let push_array_decs, push_array_defs =
+      gen_wrapper_dec_and_def_strs struct_push_array_wrappers
+    in
     let get_decs, get_defs = gen_wrapper_dec_and_def_strs struct_get_wrappers in
     let metadata_dec, metadata_def = gen_wrapper_dec_and_def_strs [ metadata_wrapper ] in
     let metadata_fn_dec, _ = metadata_wrapper in
     let metadata_fn_call_stmt = make_fn_call metadata_fn_dec in
     ( metadata_fn_call_stmt,
-      ( [ globals_decs; size_decs; offset_decs; push_decs; metadata_dec; get_decs ],
-        [ globals_defs; size_defs; offset_defs; push_defs; metadata_def; get_defs ] ) )
+      ( [ globals_decs;
+          size_decs;
+          offset_decs;
+          push_decs;
+          push_array_decs;
+          metadata_dec;
+          get_decs
+        ],
+        [ globals_defs;
+          size_defs;
+          offset_defs;
+          push_defs;
+          push_array_defs;
+          metadata_def;
+          get_defs
+        ] ) )
   | _ -> (A.AilSexpr (mk_expr empty_ail_expr), ([], []))

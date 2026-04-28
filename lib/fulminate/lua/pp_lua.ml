@@ -105,7 +105,11 @@ let rec pp_expr =
   | LuaS.Unary args ->
     let pp_unary_expr_type args =
       let call_c_func name args =
-        LuaS.Call (pp_expr (LuaS.Field (LuaS.Symbol "c", LuaS.Symbol name)), args)
+        LuaS.Call
+          ( pp_expr
+              (LuaS.Field
+                 (LuaS.Symbol "cn", LuaS.Field (LuaS.Symbol "c", LuaS.Symbol name))),
+            args )
       in
       match args with
       | LuaS.Not v -> "not " ^ pp_expr v
@@ -120,6 +124,9 @@ let rec pp_expr =
 and pp_stmt = function
   | LuaS.Assign (id, e_opt) ->
     (match e_opt with Some x -> id ^ " = " ^ pp_expr x | None -> id)
+  | LuaS.Block stmts ->
+    let stmts_str = List.map pp_stmt stmts in
+    "do\n" ^ indent stmts_str () ^ "\nend"
   | LuaS.LocalAssign (id, e_opt) ->
     (match e_opt with
      | Some x -> "local " ^ id ^ " = " ^ pp_expr x
@@ -127,7 +134,8 @@ and pp_stmt = function
   | LuaS.FunctionDef (fn, args, body, break_errors) -> pp_fn fn args body ~break_errors ()
   | LuaS.LocalFunctionDef (fn, args, body) -> "local " ^ pp_fn fn args body ()
   | LuaS.FunctionCall (fn, args) -> pp_expr (LuaS.Call (fn, args))
-  | LuaS.Return expr -> "return " ^ pp_expr expr
+  | LuaS.Return expr_opt ->
+    (match expr_opt with Some x -> "return " ^ pp_expr x | None -> "return")
   | LuaS.IfElse cases ->
     let pp_if_statement cases =
       let render_body b = indent (List.map pp_stmt b) () in
