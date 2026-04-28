@@ -226,7 +226,7 @@ let compile_test_file
   let c_predicate_defs, c_predicate_decls, _c_predicate_locs, _ =
     generate_c_predicates filename without_ownership_checking cabs_tunit prog5 sigma
   in
-  let conversion_function_defs, conversion_function_decls =
+  let conversion_function_defs, conversion_function_decls, _ =
     generate_conversion_and_equality_functions filename sigma
   in
   let ownership_function_defs, ownership_function_decls =
@@ -235,7 +235,7 @@ let compile_test_file
   let ordered_ail_tag_defs = order_ail_tag_definitions sigma.tag_definitions in
   let c_struct_decls = generate_c_tag_def_strs ordered_ail_tag_defs in
   let cn_converted_struct_defs = generate_cn_versions_of_structs ordered_ail_tag_defs in
-  let record_fun_defs, record_fun_decls = Records.generate_c_record_funs sigma in
+  let record_fun_defs, record_fun_decls, _ = Records.generate_c_record_funs sigma in
   (* let record_defs = Records.generate_all_record_strs () in *)
   let cn_header_decls_list =
     List.concat
