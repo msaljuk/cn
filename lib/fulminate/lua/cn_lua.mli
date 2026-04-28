@@ -43,6 +43,10 @@ val get_empty_wrapper_functions : wrapper_functions
 
 val get_empty_lua_cn_exec : lua_cn_exec
 
+val get_cn_globals_sym_prefix : lua_expression
+
+val make_local_assign : lua_statement -> lua_statement
+
 (*
    Similar to List.concat. 
 
@@ -76,6 +80,8 @@ val convert : CF.Ctype.union_tag -> lua_expression
 val debug_print_stmts : lua_statements -> unit
 
 val debug_print_exprs : lua_expressions -> unit
+
+val is_function_empty : lua_statement -> bool
 
 (* ---------------------------------- *)
 (*             Generators             *)
@@ -152,6 +158,12 @@ val generate_c_fn_push_struct
   wrapper_function
 
 (*
+   Utility used to generate a c function to push any arrays of custom C structs as a table of nested Lua table 
+   onto the stack.
+*)
+val generate_c_fn_push_struct_array : A.ail_identifier -> wrapper_function
+
+(*
    Utility used to generate a c function that can be called from Lua to get a C struct as 
 a Lua table
 *)
@@ -223,6 +235,8 @@ val generate_lua_cn_get_or_put_ownership
 
 val generate_lua_cn_empty_table : lua_expression
 
+val generate_lua_cn_const_number : Z.t -> lua_expression
+
 val generate_lua_owned_fn_name : string
 
 (*
@@ -264,6 +278,8 @@ match x
  | y ->
 *)
 val generate_lua_cn_match_case_equality : lua_expression * string -> lua_expression
+
+val generate_lua_cn_spec_decl : CF.Ctype.union_tag -> lua_statement
 
 (*
    Utility used to generate a Lua function that pushes a bunch of 
@@ -365,6 +381,21 @@ val generate_lua_cn_predicate
   lua_cn_exec ->
   lua_statement
 
+val generate_lua_cn_bool_while_loop
+  :  Sym.t ->
+  BT.t ->
+  lua_expression ->
+  Sym.t * lua_expression ->
+  lua_expression ->
+  ?if_cond_opt:lua_expression option ->
+  lua_cn_exec ->
+  lua_cn_exec
+
+val generate_lua_cn_struct_default
+  :  CF.Ctype.union_tag ->
+  (Id.t * CF.Ctype.ctype) list ->
+  lua_statement
+
 (* ---------------------------------- *)
 (*          Cn-to-Lua Terms           *)
 (* ---------------------------------- *)
@@ -388,7 +419,17 @@ val cn_to_lua_binop
   :  lua_expression * lua_expression * BT.t * BT.t * IT.binop ->
   lua_expression
 
+val cn_to_lua_struct : CF.Ctype.union_tag -> (Id.t * lua_cn_exec) list -> lua_cn_exec
+
 val cn_to_lua_struct_member : lua_cn_exec -> Id.t -> lua_cn_exec
+
+val cn_to_lua_struct_update
+  :  CF.Ctype.union_tag ->
+  Id.t ->
+  Id.t ->
+  lua_expression ->
+  lua_expression ->
+  lua_statement
 
 val cn_to_lua_ite
   :  CF.Ctype.union_tag ->
@@ -423,7 +464,11 @@ val cn_to_lua_map_set
   lua_expression ->
   lua_statement
 
-val cn_to_lua_map_get : lua_cn_exec -> lua_cn_exec -> lua_cn_exec
+val cn_to_lua_map_get
+  :  lua_cn_exec ->
+  lua_cn_exec ->
+  CF.Ctype.union_tag option ->
+  lua_cn_exec
 
 val cn_to_lua_apply : CF.Ctype.union_tag -> lua_cn_exec list -> lua_cn_exec
 

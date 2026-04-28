@@ -55,13 +55,14 @@ and unary_expr_type =
 (* Lua Statements *)
 and stmt =
   | Assign of ident * expr option (* x = 10 *)
+  | Block of stmt list
   | LocalAssign of ident * expr option (* local x = 10 *)
   | FunctionDef of
       ident * expr list * stmt list * bool (* function x(a, b) \n body \n end *)
   | LocalFunctionDef of
       ident * expr list * stmt list (* local function x(a, b) \n body \n end *)
   | FunctionCall of ident * expr list (* assert(false) *)
-  | Return of expr (* return false *)
+  | Return of expr option (* return false *)
   | LocalTable of expr * expr list (* local x = { a = 5, b = 7 } *)
   | IfElse of (expr option * stmt list) list (* if(cond) then ... else ... *)
   | SExpr of expr (* used to carry an expression as a statement (similar to A.AilSexpr) *)
