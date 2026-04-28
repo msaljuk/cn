@@ -985,6 +985,9 @@ let generate_metadata
       List.map CnL.generate_c_fn_push_struct_offsets ail_struct_data
     in
     let struct_push_wrappers = List.map CnL.generate_c_fn_push_struct ail_struct_data in
+    let struct_push_array_wrappers =
+      List.map (fun x -> CnL.generate_c_fn_push_struct_array (fst x)) ail_struct_data
+    in
     let struct_get_binds_and_wrappers =
       List.map CnL.generate_c_fn_get_struct ail_struct_data
     in
@@ -1006,11 +1009,28 @@ let generate_metadata
     let size_decs, size_defs = gen_wrapper_dec_and_def_strs struct_size_wrappers in
     let offset_decs, offset_defs = gen_wrapper_dec_and_def_strs struct_offset_wrappers in
     let push_decs, push_defs = gen_wrapper_dec_and_def_strs struct_push_wrappers in
+    let push_array_decs, push_array_defs =
+      gen_wrapper_dec_and_def_strs struct_push_array_wrappers
+    in
     let get_decs, get_defs = gen_wrapper_dec_and_def_strs struct_get_wrappers in
     let metadata_dec, metadata_def = gen_wrapper_dec_and_def_strs [ metadata_wrapper ] in
     let metadata_fn_dec, _ = metadata_wrapper in
     let metadata_fn_call_stmt = make_fn_call metadata_fn_dec in
     ( metadata_fn_call_stmt,
-      ( [ globals_decs; size_decs; offset_decs; push_decs; metadata_dec; get_decs ],
-        [ globals_defs; size_defs; offset_defs; push_defs; metadata_def; get_defs ] ) )
+      ( [ globals_decs;
+          size_decs;
+          offset_decs;
+          push_decs;
+          push_array_decs;
+          metadata_dec;
+          get_decs
+        ],
+        [ globals_defs;
+          size_defs;
+          offset_defs;
+          push_defs;
+          push_array_defs;
+          metadata_def;
+          get_defs
+        ] ) )
   | _ -> (A.AilSexpr (mk_expr empty_ail_expr), ([], []))

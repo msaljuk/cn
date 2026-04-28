@@ -1711,7 +1711,6 @@ let rec cn_to_ail_expr_aux
   | Nil _bt -> failwith (__LOC__ ^ ": TODO Nil")
   | Cons (_x, _xs) -> failwith (__LOC__ ^ ": TODO Cons")
   | Head xs ->
-    print_endline "HEAD";
     let b, s, l, e =
       cn_to_ail_expr_aux
         filename
@@ -1723,9 +1722,12 @@ let rec cn_to_ail_expr_aux
         xs
         PassBack
     in
-    (* dereference to get first value, where xs is assumed to be a pointer *)
-    let ail_expr_ = A.(AilEunary (Indirection, e)) in
-    dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+    (match RC.get_runtime () with
+     | RC.C ->
+       (* dereference to get first value, where xs is assumed to be a pointer *)
+       let ail_expr_ = A.(AilEunary (Indirection, e)) in
+       dest d spec_mode_opt (b, s, l, mk_expr ail_expr_)
+     | RC.Lua -> failwith "TODO HEAD")
   | Tail _xs -> failwith (__LOC__ ^ ": TODO Tail")
   | Representable (_ct, _t) -> failwith (__LOC__ ^ ": TODO Representable")
   | Good (_ct, _t) ->
@@ -4916,13 +4918,21 @@ let rec cn_to_ail_cnprog_aux
          | None -> failwith "Sym Map must be passed!"
        in
        let final_expr =
+         let global_sym_str = CnL.expr_to_string CnL.get_cn_globals_sym_prefix in
          (*
             The 'root' expr (i.e. the c parameter) gets used as is.
             The remaining parameters have to be wrapped with a reader call.
             We determine if this is a root by checking if we've encountered it before
-            or not (if yes, not root, otherwise root)
+            or not (if yes, not root, otherwise root).
+            
+            NOTE: We also make a special-case exception for globals. Even if they get
+            passed as 'roots' in the MuCore, we omit the args and wrap the actual global
+            expression in a reader call.
          *)
-         if StringMap.mem expr_str let_map then (
+         if
+           StringMap.mem expr_str let_map
+           || String.starts_with ~prefix:global_sym_str expr_str
+         then (
            let reader_str =
              let reader_expr = CnL.generate_lua_ctype_get ctype in
              CnL.expr_to_string reader_expr

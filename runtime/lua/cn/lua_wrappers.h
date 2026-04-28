@@ -1,8 +1,13 @@
 #pragma once
 
-//@saljuk NOTE: Some files in Lua include defines that clash with cerberus's ones (e.g max_align_t). 
+//@saljuk NOTE: DO NOT TOUCH! (unless you know what you're doing)
+// 
+// Some files in Lua include defines that clash with cerberus's ones (e.g max_align_t). 
 // We do empty defines here so that the compiler skips the internal library definitions
-// and waits for cerberus to define them
+// and waits for cerberus to define them.
+//
+// Since lua_wrappers.h is always the FIRST include in the instrumented Lua file, this 
+// works fine. If that changes, you WILL have to make changes to keep this working.
 #define __max_align_t_defined
 #define _MAX_ALIGN_T
 #define _MAX_ALIGN_T_DEFINED
@@ -12,6 +17,8 @@
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
+
+#include <stdbool.h>
 
 // Core Lua State
 void       lua_init();
@@ -46,3 +53,23 @@ void lua_cn_frame_pop_loop();
 
 // Types Utils
 int64_t lua_convert_ptr_to_int(void* ptr);
+
+// Arrays
+#define DECLARE_PUSH_ARRAY_FUNC(type_name, c_type)                       \
+void lua_cn_push_##type_name##_array(c_type *arr, int size);
+
+DECLARE_PUSH_ARRAY_FUNC(char,        char)
+DECLARE_PUSH_ARRAY_FUNC(u_8,         uint8_t)
+DECLARE_PUSH_ARRAY_FUNC(i_8,         int8_t)
+DECLARE_PUSH_ARRAY_FUNC(u_int,       unsigned int)
+DECLARE_PUSH_ARRAY_FUNC(int,         int)
+DECLARE_PUSH_ARRAY_FUNC(u_long,      unsigned long)
+DECLARE_PUSH_ARRAY_FUNC(long,        long)
+DECLARE_PUSH_ARRAY_FUNC(long_long,   long long)
+DECLARE_PUSH_ARRAY_FUNC(u_long_long, unsigned long long)
+DECLARE_PUSH_ARRAY_FUNC(float,       float)              
+DECLARE_PUSH_ARRAY_FUNC(double,      double)          
+DECLARE_PUSH_ARRAY_FUNC(bool,        bool)
+
+// Misc.
+void lua_cn_abort();

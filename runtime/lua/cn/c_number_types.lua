@@ -15,6 +15,11 @@ local function create_number_type(bits, signed)
 
     -- Internal wrapping function to mimic C type overflow and sign extension
     local function wrap(v)
+        -- Replicate implicit boolean casting to integer
+        if type(v) == "boolean" then
+            v = v and 1 or 0
+        end
+
         v = v & mask
         if signed and bits < 64 and (v & sign_bit) ~= 0 then
             return v - (mask + 1)
@@ -89,7 +94,16 @@ local function create_number_type(bits, signed)
         bw_compl = function(a)    return wrap(~a) end,
         
         -- Shifts
-        shl = function(a, n) return wrap(a << n) end,
+        shl = function(a, n) 
+            --[[
+            C Fulminate has an interesting behavior where if the
+            shift exceeds the number of available bits, we cap
+            it at the max possible shift. Replicating that here.
+            --]]
+            local shift_mask = bits - 1
+            local actual_shift = n & shift_mask
+            return wrap(a << actual_shift) 
+        end,
         shr = function(a, n)
             if signed then
                 -- Emulate Arithmetic Right Shift (sign extension)

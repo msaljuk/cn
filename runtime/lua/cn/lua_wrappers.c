@@ -1,8 +1,11 @@
+#pragma once
+
+#include <assert.h>
+#include <stdlib.h>
+
 #include "lua_wrappers.h"
 
 #include <cn-executable/utils.h>
-
-#include <assert.h>
 
 // Lua globals
 
@@ -122,6 +125,12 @@ static int c_get_u_char() {
     return 1;
 }
 
+static int c_get_u_8() {
+    uint8_t* addr = (uint8_t*)luaL_checkinteger(lua_state, 1);
+    lua_pushinteger(lua_state, *addr);
+    return 1;
+}
+
 static int c_get_int() {
     int* addr = (int*)luaL_checkinteger(lua_state, 1);
     lua_pushinteger(lua_state, *addr);
@@ -198,6 +207,11 @@ void push_cn_c_tables() {
         lua_pushinteger(lua_state, (lua_Integer)sizeof(unsigned char));
         lua_setfield(lua_state, -2, "u_char");
 
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(int8_t));
+        lua_setfield(lua_state, -2, "i_8");
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(u_int8_t));
+        lua_setfield(lua_state, -2, "u_8");
+
         lua_pushinteger(lua_state, (lua_Integer)sizeof(int));
         lua_setfield(lua_state, -2, "int");
         lua_pushinteger(lua_state, (lua_Integer)sizeof(unsigned int));
@@ -252,6 +266,7 @@ void bind_cn_c_functions() {
     lua_cn_register_c_func("get_bool", c_get_bool);
     lua_cn_register_c_func("get_char", c_get_char);
     lua_cn_register_c_func("get_u_char", c_get_u_char);
+    lua_cn_register_c_func("get_u_8", c_get_u_8);
     lua_cn_register_c_func("get_int", c_get_int);
     lua_cn_register_c_func("get_u_int", c_get_u_int);
     lua_cn_register_c_func("get_long", c_get_long);
@@ -416,4 +431,41 @@ void lua_cn_frame_pop_loop() {
 // Types Utils
 int64_t lua_convert_ptr_to_int(void* ptr) {
     return (int64_t)(uintptr_t)ptr;
+}
+
+// Arrays
+
+#define DEFINE_PUSH_ARRAY_FUNC(type_name, c_type, lua_func)                       \
+void lua_cn_push_##type_name##_array(c_type *arr, int size) {                     \
+    lua_createtable(lua_state, size, 0);                                          \
+    for (int i = 0; i < size; ++i) {                                              \
+        lua_func(lua_state, arr[i]);                                              \
+        lua_rawseti(lua_state, -2, i);                                            \
+    }                                                                             \
+}
+DEFINE_PUSH_ARRAY_FUNC(u_8,         uint8_t,             lua_pushinteger)
+DEFINE_PUSH_ARRAY_FUNC(i_8,         int8_t,              lua_pushinteger)
+DEFINE_PUSH_ARRAY_FUNC(u_int,       unsigned int,        lua_pushinteger)
+DEFINE_PUSH_ARRAY_FUNC(int,         int,                 lua_pushinteger)
+DEFINE_PUSH_ARRAY_FUNC(u_long,      unsigned long,       lua_pushinteger)
+DEFINE_PUSH_ARRAY_FUNC(long,        long,                lua_pushinteger)
+DEFINE_PUSH_ARRAY_FUNC(long_long,   long long,           lua_pushinteger)
+DEFINE_PUSH_ARRAY_FUNC(u_long_long, unsigned long long,  lua_pushinteger)
+DEFINE_PUSH_ARRAY_FUNC(float,       float,               lua_pushnumber)
+DEFINE_PUSH_ARRAY_FUNC(double,      double,              lua_pushnumber)
+DEFINE_PUSH_ARRAY_FUNC(bool,        bool,                lua_pushboolean)
+
+// Specialized implementation for char array since it has a slightly
+// different signature for the push function
+void lua_cn_push_char_array(char *arr, int size) {
+    lua_createtable(lua_state, size, 0);
+    for (int i = 0; i < size; ++i) {
+        lua_pushlstring(lua_state, &arr[i], 1);
+        lua_rawseti(lua_state, -2, i);
+    }
+}
+
+// Misc.
+void lua_cn_abort() {
+    exit(1);
 }

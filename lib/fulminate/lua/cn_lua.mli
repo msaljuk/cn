@@ -158,6 +158,12 @@ val generate_c_fn_push_struct
   wrapper_function
 
 (*
+   Utility used to generate a c function to push any arrays of custom C structs as a table of nested Lua table 
+   onto the stack.
+*)
+val generate_c_fn_push_struct_array : A.ail_identifier -> wrapper_function
+
+(*
    Utility used to generate a c function that can be called from Lua to get a C struct as 
 a Lua table
 *)

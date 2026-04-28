@@ -194,6 +194,8 @@ let generate_c_postcondition_fn_wrapper_name (c_fn_name : Sym.t) =
 
 let generate_c_push_globals_fn_wrapper_name = "lua_cn_push_globals"
 
+let generate_c_push_array_fn_name arr_type = "lua_cn_push_" ^ arr_type ^ "_array"
+
 let generate_c_push_frame_fn_wrapper_name (c_fn_name : Sym.t) =
   generate_c_fn_wrapper_prefix c_fn_name ^ "push_frame"
 
@@ -247,6 +249,56 @@ let generate_c_get_lua_state =
   (binding, decl_stmt)
 
 
+let generate_lua_ctype_symbol (ctype : CF.Ctype.ctype) : lua_expression =
+  let get_ctype_str in_ctype =
+    CF.Pp_utils.to_plain_pretty_string
+      (CF.Pp_ail.pp_ctype CF.Ctype.no_qualifiers in_ctype)
+  in
+  let rec sym ctype =
+    match rm_ctype ctype with
+    | CF.Ctype.Basic x ->
+      (match x with
+       | CF.Ctype.Integer i_type ->
+         (match i_type with
+          | CF.Ctype.Bool -> LuaS.Symbol "bool"
+          (*@saljuk TODO: Buddy allocator uses char for number types 
+           but not sure if that'll always be the case *)
+          | CF.Ctype.Char -> LuaS.Symbol "u_8"
+          (*@saljuk TODO: Flesh more of Signed/Unsigned out. *)
+          | CF.Ctype.Signed s ->
+            (match s with Long | LongLong -> LuaS.Symbol "long" | _ -> LuaS.Symbol "int")
+          | CF.Ctype.Unsigned y ->
+            let unsigned_prefix = "u_" in
+            (match y with
+             | CF.Ctype.Ichar -> LuaS.Symbol (unsigned_prefix ^ "8")
+             | CF.Ctype.Long -> LuaS.Symbol (unsigned_prefix ^ "long")
+             | _ -> LuaS.Symbol (unsigned_prefix ^ "int"))
+          | _ -> failwith "Unsupported ctype. Could not get lua symbol")
+       | CF.Ctype.Floating f_type ->
+         (match f_type with
+          | CF.Ctype.RealFloating rf_type ->
+            (match rf_type with
+             | CF.Ctype.Float -> LuaS.Symbol "float"
+             | _ -> failwith "Unsupported ctype. Could not get lua symbol")))
+    | CF.Ctype.Pointer (_, _) -> LuaS.Symbol "pointer"
+    | CF.Ctype.Struct s_sym -> LuaS.Symbol (Sym.pp_string s_sym)
+    | CF.Ctype.Array (array_c_type, size_opt) ->
+      let c_type_sym = sym array_c_type in
+      let size = Option.value ~default:Z.zero size_opt in
+      LuaS.Call
+        ( "array",
+          [ LuaS.String (Pp_lua.pp_expr c_type_sym);
+            LuaS.Number_Int (LuaS.Symbol (Z.to_string size), "u64")
+          ] )
+      (*failwith ("Unsupported type. Could not get lua symbol for type " ^ (get_ctype_str array_c_type)
+       ^ "and size " ^ Z.to_string (Option.value ~default:Z.minus_one size_opt))*)
+    | _ ->
+      failwith
+        ("Unsupported type. Could not get lua symbol for type " ^ get_ctype_str ctype)
+  in
+  sym ctype
+
+
 let generate_c_push_field_into_lua
       (lua_state_expr : CF.GenTypes.genTypeCategory A.expression)
       (c_field_expr : CF.GenTypes.genTypeCategory A.expression)
@@ -275,13 +327,19 @@ let generate_c_push_field_into_lua
             (match rf_type with
              | CF.Ctype.Float | CF.Ctype.Double | CF.Ctype.LongDouble ->
                call "lua_pushfloat" [ lua_state_expr; c_field_expr ])))
-    | CF.Ctype.Pointer (_, _) | CF.Ctype.Array (_, _) ->
+    | CF.Ctype.Pointer (_, _) ->
       call
         "lua_pushinteger"
         [ lua_state_expr; call "lua_convert_ptr_to_int" [ c_field_expr ] ]
     | CF.Ctype.Struct s_sym ->
       let addressof_field = A.AilEunary (Address, c_field_expr) in
       call ("lua_cn_push_" ^ Sym.pp_string s_sym) [ mk_expr addressof_field ]
+    | CF.Ctype.Array (arr_c_type, arr_size_opt) ->
+      let arr_c_type_expr = generate_lua_ctype_symbol arr_c_type in
+      let arr_size = Option.value ~default:Z.zero arr_size_opt in
+      call
+        (generate_c_push_array_fn_name (Pp_lua.pp_expr arr_c_type_expr))
+        [ c_field_expr; int_const (Z.to_int arr_size) ]
     | _ -> failwith "Unsupported type. Cannot push field into lua"
   in
   final_expr
@@ -356,7 +414,8 @@ let generate_c_fn_wrapper_def
                        ];
                      call
                        "lua_pop"
-                       [ lua_state_expr; int_const (List.length lua_fn_field_names - 1) ]
+                       [ lua_state_expr; int_const (List.length lua_fn_field_names - 1) ];
+                     call "lua_cn_abort" []
                    ] )),
           mk_stmt (AilSblock ([], [ mk_stmt AilSskip ])) ))
   in
@@ -713,6 +772,85 @@ let generate_c_fn_push_struct
   (decl, def)
 
 
+let generate_c_fn_push_struct_array (struct_tag : A.ail_identifier) : wrapper_function =
+  (*
+     struct lua_State* L = lua_get_state();
+  lua_createtable(lua_state, size, 0);
+  int i = 0;
+  while (i < size) {
+    lua_cn_push_<struct>(arr[i]);
+    lua_rawseti(lua_state, -2, i);
+    i++;
+  }
+  *)
+  let loc = Cerb_location.unknown in
+  let attrs = CF.Annot.no_attributes in
+  let id = Sym.fresh (generate_c_push_array_fn_name (Sym.pp_string struct_tag)) in
+  let call name args = mk_expr (AilEcall (mk_expr (AilEident (Sym.fresh name)), args)) in
+  let var_sym s = mk_expr (AilEident s) in
+  let int_const i =
+    mk_expr (A.AilEconst (ConstantInteger (IConstant (Z.of_int i, Decimal, None))))
+  in
+  let sym_L = Sym.fresh "L" in
+  let sym_arr = Sym.fresh "arr" in
+  let sym_size = Sym.fresh "size" in
+  let sym_i = Sym.fresh "i" in
+  let mk_push_array_loop =
+    let expr_i = var_sym sym_i in
+    let cond_expr = mk_expr (A.AilEbinary (expr_i, A.Lt, var_sym sym_size)) in
+    let incr_stmt = A.AilSexpr (mk_expr (A.AilEunary (A.PostfixIncr, expr_i))) in
+    let body =
+      let sym_call_fm = Sym.fresh (generate_c_fn_push_struct_name struct_tag) in
+      let elem_exp =
+        mk_expr (A.AilEbinary (var_sym sym_arr, A.Arithmetic A.Add, expr_i))
+      in
+      let push_call = A.AilSexpr (call (Sym.pp_string sym_call_fm) [ elem_exp ]) in
+      let rawseti_call =
+        A.AilSexpr (call "lua_rawseti" [ var_sym sym_L; int_const (-2); expr_i ])
+      in
+      mk_stmt (A.AilSblock ([], List.map mk_stmt [ push_call; rawseti_call; incr_stmt ]))
+    in
+    A.AilSwhile (cond_expr, body, 0)
+  in
+  let lua_state_bs, lua_state_ss = generate_c_get_lua_state in
+  let i_bs = mk_binding sym_i CF.Ctype.signed_int in
+  let body_stmts =
+    List.map
+      mk_stmt
+      [ lua_state_ss;
+        AilSexpr
+          (call
+             "lua_createtable"
+             [ mk_expr (AilEident sym_L); var_sym sym_size; int_const 0 ]);
+        A.AilSdeclaration [ (sym_i, Some (int_const 0)) ];
+        mk_push_array_loop
+      ]
+  in
+  let block_bindings = [ lua_state_bs; i_bs ] in
+  let final_body = mk_stmt (A.AilSblock (block_bindings, body_stmts)) in
+  let struct_ptr_type =
+    mk_ctype
+      CF.Ctype.(Pointer (CF.Ctype.no_qualifiers, mk_ctype CF.Ctype.(Struct struct_tag)))
+  in
+  let struct_decl_type = (CF.Ctype.no_qualifiers, struct_ptr_type, false) in
+  let size_decl_type = (CF.Ctype.no_qualifiers, CF.Ctype.signed_int, false) in
+  let decl =
+    ( id,
+      ( loc,
+        attrs,
+        A.(
+          Decl_function
+            ( false,
+              (CF.Ctype.no_qualifiers, CF.Ctype.void),
+              [ struct_decl_type; size_decl_type ],
+              false,
+              false,
+              false )) ) )
+  in
+  let def = (id, (loc, 0, attrs, [ sym_arr; sym_size ], final_body)) in
+  (decl, def)
+
+
 let generate_c_fn_get_struct
       (struct_data :
         A.ail_identifier
@@ -840,54 +978,6 @@ let generate_c_fn_push_metadata
   in
   let def = (id, (loc, 0, attrs, [], mk_stmt (A.AilSblock ([], body_stmts)))) in
   (decl, def)
-
-
-let generate_lua_ctype_symbol (ctype : CF.Ctype.ctype) : lua_expression =
-  let get_ctype_str in_ctype =
-    CF.Pp_utils.to_plain_pretty_string
-      (CF.Pp_ail.pp_ctype CF.Ctype.no_qualifiers in_ctype)
-  in
-  let rec sym ctype =
-    match rm_ctype ctype with
-    | CF.Ctype.Basic x ->
-      (match x with
-       | CF.Ctype.Integer i_type ->
-         (match i_type with
-          | CF.Ctype.Bool -> LuaS.Symbol "bool"
-          | CF.Ctype.Char -> LuaS.Symbol "char"
-          (*@saljuk TODO: Flesh more of Signed/Unsigned out. *)
-          | CF.Ctype.Signed s ->
-            (match s with Long | LongLong -> LuaS.Symbol "long" | _ -> LuaS.Symbol "int")
-          | CF.Ctype.Unsigned y ->
-            let unsigned_prefix = "u_" in
-            (match y with
-             | CF.Ctype.Ichar -> LuaS.Symbol (unsigned_prefix ^ "char")
-             | CF.Ctype.Long -> LuaS.Symbol (unsigned_prefix ^ "long")
-             | _ -> LuaS.Symbol (unsigned_prefix ^ "int"))
-          | _ -> failwith "Unsupported ctype. Could not get lua symbol")
-       | CF.Ctype.Floating f_type ->
-         (match f_type with
-          | CF.Ctype.RealFloating rf_type ->
-            (match rf_type with
-             | CF.Ctype.Float -> LuaS.Symbol "float"
-             | _ -> failwith "Unsupported ctype. Could not get lua symbol")))
-    | CF.Ctype.Pointer (_, _) -> LuaS.Symbol "pointer"
-    | CF.Ctype.Struct s_sym -> LuaS.Symbol (Sym.pp_string s_sym)
-    | CF.Ctype.Array (array_c_type, size_opt) ->
-      let c_type_sym = sym array_c_type in
-      let size = Option.value ~default:Z.zero size_opt in
-      LuaS.Call
-        ( "array",
-          [ LuaS.String (Pp_lua.pp_expr c_type_sym);
-            LuaS.Number_Int (LuaS.Symbol (Z.to_string size), "u64")
-          ] )
-      (*failwith ("Unsupported type. Could not get lua symbol for type " ^ (get_ctype_str array_c_type)
-       ^ "and size " ^ Z.to_string (Option.value ~default:Z.minus_one size_opt))*)
-    | _ ->
-      failwith
-        ("Unsupported type. Could not get lua symbol for type " ^ get_ctype_str ctype)
-  in
-  sym ctype
 
 
 let generate_lua_ctype_sizeof (ctype : CF.Ctype.ctype) : lua_expression =

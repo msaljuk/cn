@@ -197,12 +197,13 @@ Setup an environment where core functions can be easily used 'globally'
 so that we can just call error_stack.push() instead of cn.error_stack.push()
 ]] --
 local is_c_true = function(val) return (val ~= 0 and val ~= nil and val ~= false) end
+local ptr_type_eq = function(a, b) return (a == b) end
 local core = {
     c_num = c_num,
     equals = deep_compare,
     is_null = function(p) return (p == nil or p == 0) end,
-    ptr_eq = function(a, b) return (a == b) end,
-    addr_eq = function(a, b) return false end, -- Not supported
+    ptr_eq = ptr_type_eq,
+    addr_eq = ptr_type_eq, --@saljuk $NOTE: Not supported
     owned = function(mode, base_addr, size, loop_ownership, reader)
         cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
         return reader(base_addr)
