@@ -8,6 +8,15 @@ local function deep_equals(o1, o2, ignore_mt)
     local o1Type = type(o1)
     local o2Type = type(o2)
 
+    ---@saljuk MODIFICATION: Support implicit casting of booleans to numbers
+    if o1Type == "boolean" and o2Type == "number" then
+        o1 = o1 and 1 or 0
+        return o1 == o2
+    elseif o1Type == "number" and o2Type == "boolean" then
+        o2 = o2 and 1 or 0
+        return o1 == o2
+    end
+
     --- different type
     if o1Type ~= o2Type then return false end
     --- same type but not table, already compared above

@@ -1864,7 +1864,14 @@ let rec cn_to_ail_expr_aux
          spec_mode_opt
          (b1 @ b2, s1 @ s2, CnL.get_empty_lua_cn_exec, mk_expr cast_expr_)
      | RC.Lua ->
-       let final_exec = CnL.cn_to_lua_map_get l1 l2 in
+       let default_sym_opt =
+         match basetype with
+         | BT.Datatype sym -> Some sym
+         | BT.Struct sym -> Some sym
+         | BT.Record _ -> Some (lookup_records_map_with_default basetype)
+         | _ -> None
+       in
+       let final_exec = CnL.cn_to_lua_map_get l1 l2 default_sym_opt in
        dest d spec_mode_opt ([], [], final_exec, mk_expr ail_null))
   | MapDef ((_sym, _bt), _t) -> failwith (__LOC__ ^ ": TODO MapDef")
   | Apply (sym, ts) ->
@@ -2858,6 +2865,7 @@ let generate_struct_default_function
       ?(is_record = false)
       ((sym, (_loc, _attrs, tag_def)) : A.sigma_tag_definition)
   : (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition) list
+    * CnL.lua_statements
   =
   match tag_def with
   | C.StructDef (members, _) ->
@@ -2917,8 +2925,17 @@ let generate_struct_default_function
                   List.map mk_stmt ((ret_decl :: member_default_assigns) @ [ return_stmt ])
                 )) ) )
     in
-    [ (decl, def) ]
-  | C.UnionDef _ -> []
+    let lua_struct_default =
+      match RC.get_runtime () with
+      | RC.Lua ->
+        let members_formatted =
+          List.map (fun (id, (_, _, _, ctype)) -> (id, ctype)) members
+        in
+        CnL.generate_lua_cn_struct_default sym members_formatted
+      | RC.C -> CnL.get_empty_lua_stmt
+    in
+    ([ (decl, def) ], [ lua_struct_default ])
+  | C.UnionDef _ -> ([], [])
 
 
 let generate_struct_map_get ((sym, (_loc, _attrs, tag_def)) : A.sigma_tag_definition)
@@ -3179,6 +3196,7 @@ let generate_record_equality_function (sym, (members : BT.member_types))
 
 let generate_record_default_function _dts (sym, (members : BT.member_types))
   : (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition) list
+    * CnL.lua_statements
   =
   let cn_sym = sym in
   let fn_str = "default_struct_" ^ Sym.pp_string cn_sym in
@@ -3231,7 +3249,20 @@ let generate_record_default_function _dts (sym, (members : BT.member_types))
                 List.map mk_stmt ((ret_decl :: member_default_assigns) @ [ return_stmt ])
               )) ) )
   in
-  [ (decl, def) ]
+  let lua_record_default =
+    match RC.get_runtime () with
+    | RC.Lua ->
+      let members_formatted =
+        List.map
+          (fun (id, bt) ->
+             let hack_bt_to_ctype = cn_to_ail_base_type (bt_to_cn_base_type bt) in
+             (id, hack_bt_to_ctype))
+          members
+      in
+      CnL.generate_lua_cn_struct_default sym members_formatted
+    | RC.C -> CnL.get_empty_lua_stmt
+  in
+  ([ (decl, def) ], [ lua_record_default ])
 
 
 let generate_record_map_get (sym, _) = generate_map_get sym

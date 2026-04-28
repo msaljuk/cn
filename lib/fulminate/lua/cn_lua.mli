@@ -391,6 +391,11 @@ val generate_lua_cn_bool_while_loop
   lua_cn_exec ->
   lua_cn_exec
 
+val generate_lua_cn_struct_default
+  :  CF.Ctype.union_tag ->
+  (Id.t * CF.Ctype.ctype) list ->
+  lua_statement
+
 (* ---------------------------------- *)
 (*          Cn-to-Lua Terms           *)
 (* ---------------------------------- *)
@@ -459,7 +464,11 @@ val cn_to_lua_map_set
   lua_expression ->
   lua_statement
 
-val cn_to_lua_map_get : lua_cn_exec -> lua_cn_exec -> lua_cn_exec
+val cn_to_lua_map_get
+  :  lua_cn_exec ->
+  lua_cn_exec ->
+  CF.Ctype.union_tag option ->
+  lua_cn_exec
 
 val cn_to_lua_apply : CF.Ctype.union_tag -> lua_cn_exec list -> lua_cn_exec
 

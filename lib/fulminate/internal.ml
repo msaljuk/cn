@@ -748,8 +748,8 @@ let generate_conversion_and_equality_functions
   let struct_map_get_funs =
     List.map Cn_to_ail.generate_struct_map_get sigm.tag_definitions
   in
-  let struct_default_funs =
-    List.map Cn_to_ail.generate_struct_default_function sigm.tag_definitions
+  let struct_default_funs, struct_default_funs_ls =
+    List.split (List.map Cn_to_ail.generate_struct_default_function sigm.tag_definitions)
   in
   let datatype_map_get_funs =
     List.map Cn_to_ail.generate_datatype_map_get sigm.cn_datatypes
@@ -774,7 +774,11 @@ let generate_conversion_and_equality_functions
   in
   let defs_doc, decls_doc = generate_fun_def_and_decl_docs ail_funs in
   let comment = "\n/* GENERATED STRUCT FUNCTIONS */\n\n" in
-  (comment ^ doc_to_pretty_string defs_doc, comment ^ doc_to_pretty_string decls_doc)
+  let open Lua.Pp_lua in
+  let alt_file_doc = List.map pp_stmt (List.concat struct_default_funs_ls) in
+  ( comment ^ doc_to_pretty_string defs_doc,
+    comment ^ doc_to_pretty_string decls_doc,
+    alt_file_doc )
 
 
 let get_main (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) =

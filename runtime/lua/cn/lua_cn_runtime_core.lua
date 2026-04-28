@@ -208,6 +208,7 @@ local core = {
         cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
         return reader(base_addr)
     end,
+    map_get = function(m, k, def) return m[k] or def end,
 
     member_shift = function(base_addr, offset)
         return (base_addr + offset)

@@ -61,6 +61,8 @@ let cn_member_shift_sym = LuaS.Symbol "member_shift"
 
 let cn_array_shift_sym = LuaS.Symbol "array_shift"
 
+let cn_map_get_sym = LuaS.Symbol "map_get"
+
 let cn_sizeof_field_sym = LuaS.Symbol "cn.c.sizeof"
 
 let cn_offsets_field_sym = LuaS.Symbol "cn.c.offsets"
@@ -249,6 +251,12 @@ let generate_c_get_lua_state =
   (binding, decl_stmt)
 
 
+let generate_lua_default_map_name (sym : CF.Ctype.union_tag) : string =
+  "default_" ^ Sym.pp_string sym
+
+
+let generate_lua_cn_empty_table : lua_expression = LuaS.Table ([], false)
+
 let generate_lua_ctype_symbol (ctype : CF.Ctype.ctype) : lua_expression =
   let get_ctype_str in_ctype =
     CF.Pp_utils.to_plain_pretty_string
@@ -297,6 +305,41 @@ let generate_lua_ctype_symbol (ctype : CF.Ctype.ctype) : lua_expression =
         ("Unsupported type. Could not get lua symbol for type " ^ get_ctype_str ctype)
   in
   sym ctype
+
+
+let generate_lua_ctype_default_value (ctype : CF.Ctype.ctype) : lua_expression =
+  let zero_sym = LuaS.Symbol "0" in
+  let default_value ctype =
+    match rm_ctype ctype with
+    | CF.Ctype.Basic x ->
+      (match x with
+       | CF.Ctype.Integer i_type ->
+         (match i_type with
+          | CF.Ctype.Bool -> LuaS.Bool false
+          | CF.Ctype.Char -> LuaS.Number_Int (zero_sym, "u8")
+          | CF.Ctype.Signed s ->
+            (match s with
+             | Long | LongLong -> LuaS.Number_Int (zero_sym, "long")
+             | _ -> LuaS.Number_Int (zero_sym, "i64"))
+          | CF.Ctype.Unsigned y ->
+            let unsigned_prefix = "u" in
+            (match y with
+             | CF.Ctype.Ichar -> LuaS.Number_Int (zero_sym, unsigned_prefix ^ "8")
+             | CF.Ctype.Long -> LuaS.Number_Int (zero_sym, unsigned_prefix ^ "64")
+             | _ -> LuaS.Number_Int (zero_sym, unsigned_prefix ^ "32"))
+          | _ -> failwith "Unsupported ctype. Could not get default value for ctype")
+       | CF.Ctype.Floating f_type ->
+         (match f_type with
+          | CF.Ctype.RealFloating rf_type ->
+            (match rf_type with
+             | CF.Ctype.Float -> LuaS.Number_Float Q.zero
+             | _ -> failwith "Unsupported ctype. Could not default value for ctype")))
+    | CF.Ctype.Pointer (_, _) -> LuaS.Number_Int (zero_sym, "u64")
+    | CF.Ctype.Struct s_sym -> LuaS.Symbol (generate_lua_default_map_name s_sym)
+    | CF.Ctype.Array (_, _) -> generate_lua_cn_empty_table
+    | _ -> failwith "Unsupported type. Could not get default value for ctype"
+  in
+  default_value ctype
 
 
 let generate_c_push_field_into_lua
@@ -1099,8 +1142,6 @@ let generate_lua_cn_get_or_put_ownership
       [ spec_mode; ptr; sizeof; loop_ownership ] )
 
 
-let generate_lua_cn_empty_table : lua_expression = LuaS.Table ([], false)
-
 let generate_lua_cn_const_number (number : Z.t) : lua_expression =
   let int_type_str = "i64" in
   LuaS.Number_Int (LuaS.Symbol (Z.to_string number), int_type_str)
@@ -1452,6 +1493,25 @@ let generate_lua_cn_bool_while_loop
   ([ b_decl; block ], [], b)
 
 
+let generate_lua_cn_struct_default
+      (struct_sym : CF.Ctype.union_tag)
+      (struct_members : (Id.t * CF.Ctype.ctype) list)
+  : lua_statement
+  =
+  let sym_str sym = CF.Pp_utils.to_plain_pretty_string (CF.Pp_symbol.pp_identifier sym) in
+  let default_struct_name = generate_lua_default_map_name struct_sym in
+  let member_exprs =
+    List.map
+      (fun (id, ctype) ->
+         let m_name = sym_str id in
+         let default_value = generate_lua_ctype_default_value ctype in
+         LuaS.Named (m_name, default_value))
+      struct_members
+  in
+  let default_struct_table = LuaS.Table (member_exprs, true) in
+  generate_lua_cn_local_assignment default_struct_name (Some default_struct_table)
+
+
 (* ---------------------------------- *)
 (*         Cn-to-Lua Terms            *)
 (* ---------------------------------- *)
@@ -1703,10 +1763,22 @@ let cn_to_lua_map_set
   LuaS.SExpr (LuaS.TableSet (map, key, value))
 
 
-let cn_to_lua_map_get (map_exec : lua_cn_exec) (key_exec : lua_cn_exec) : lua_cn_exec =
+let cn_to_lua_map_get
+      (map_exec : lua_cn_exec)
+      (key_exec : lua_cn_exec)
+      (sym_opt : CF.Ctype.union_tag option)
+  : lua_cn_exec
+  =
   let l1, map_expr = pop_expr_from_exec map_exec in
   let l2, key_expr = pop_expr_from_exec key_exec in
-  let map_get_expr = LuaS.TableGet (map_expr, key_expr) in
+  let default_val_expr =
+    match sym_opt with 
+      | Some sym -> LuaS.Symbol (generate_lua_default_map_name sym) 
+      | None -> LuaS.Nil
+  in
+  let map_get_expr =
+    LuaS.Call (Pp_lua.pp_expr cn_map_get_sym, [ map_expr; key_expr; default_val_expr ])
+  in
   let final_exec = push_expr_to_exec (concat [ l1; l2 ], map_get_expr) in
   final_exec
 
