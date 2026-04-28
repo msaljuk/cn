@@ -609,7 +609,7 @@ let main
     else
       generate_c_lemmas filename cabs_tunit sigm prog5
   in
-  let conversion_function_defs, conversion_function_decls =
+  let conversion_function_defs, conversion_function_decls, alt_file_conversion_functions =
     generate_conversion_and_equality_functions filename sigm
   in
   let ownership_function_defs, ownership_function_decls =
@@ -621,7 +621,9 @@ let main
   in
   let c_tag_defs = generate_c_tag_def_strs ordered_ail_tag_defs in
   let cn_converted_struct_defs = generate_cn_versions_of_structs ordered_ail_tag_defs in
-  let record_fun_defs, record_fun_decls = Records.generate_c_record_funs sigm in
+  let record_fun_defs, record_fun_decls, alt_file_record_funs =
+    Records.generate_c_record_funs sigm
+  in
   let record_defs = Records.generate_all_record_strs () in
   let fn_call_ghost_args_injs =
     generate_fn_call_ghost_args_injs filename cabs_tunit sigm prog5
@@ -866,6 +868,8 @@ let main
      in
      output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
      output_to_oc lua_oc [ pp_stmt CnL.generate_lua_env_req ^ "\n\n" ];
+     output_to_oc lua_oc alt_file_conversion_functions;
+     output_to_oc lua_oc alt_file_record_funs;
      output_to_oc lua_oc [ lua_globals ];
      output_to_oc lua_oc alt_file_datatypes;
      output_to_oc lua_oc alt_file_functions;

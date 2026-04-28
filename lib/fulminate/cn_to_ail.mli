@@ -139,6 +139,7 @@ val generate_struct_default_function
   (AilSyntax.sigma_declaration
   * GenTypes.genTypeCategory AilSyntax.sigma_function_definition)
     list
+  * CnL.lua_statements
 
 val generate_record_tag : Sym.t -> BaseTypes.t -> Sym.t option
 
@@ -156,6 +157,7 @@ val generate_record_default_function
   (AilSyntax.sigma_declaration
   * GenTypes.genTypeCategory AilSyntax.sigma_function_definition)
     list
+  * CnL.lua_statements
 
 val generate_record_map_get
   :  Sym.t * 'a ->

@@ -94,7 +94,7 @@ val generate_ownership_functions : bool -> Ctype.ctype list -> string * string
 val generate_conversion_and_equality_functions
   :  string ->
   GenTypes.genTypeCategory AilSyntax.sigma ->
-  string * string
+  string * string * string list
 
 val has_main : GenTypes.genTypeCategory AilSyntax.sigma -> bool
 

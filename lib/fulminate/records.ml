@@ -195,8 +195,8 @@ let generate_c_record_funs (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigm
   let record_equality_functions =
     List.concat (List.map Cn_to_ail.generate_record_equality_function cn_record_info)
   in
-  let record_default_functions =
-    List.concat
+  let record_default_functions, record_default_functions_lua =
+    List.split
       (List.map
          (Cn_to_ail.generate_record_default_function sigm.cn_datatypes)
          cn_record_info)
@@ -205,7 +205,7 @@ let generate_c_record_funs (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigm
     List.concat (List.map Cn_to_ail.generate_record_map_get cn_record_info)
   in
   let eq_decls, eq_defs = List.split record_equality_functions in
-  let default_decls, default_defs = List.split record_default_functions in
+  let default_decls, default_defs = List.split (List.concat record_default_functions) in
   let mapget_decls, mapget_defs = List.split record_map_get_functions in
   let modified_prog1 : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma =
     { sigm with
@@ -229,4 +229,6 @@ let generate_c_record_funs (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigm
     List.map (fun doc -> [ "static " ^ CF.Pp_utils.to_plain_pretty_string doc ]) decl_docs
   in
   let fun_prot_strs = String.concat "\n" (List.concat fun_prot_strs) in
-  (fun_strs, fun_prot_strs)
+  let open Lua.Pp_lua in
+  let fun_lua_strs = List.map pp_stmt (List.concat record_default_functions_lua) in
+  (fun_strs, fun_prot_strs, fun_lua_strs)
