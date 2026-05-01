@@ -9,6 +9,8 @@
 
 // Lua globals
 
+#define CN_LUA_PATH (CN_ROOT "/share/cn/runtime/lua/?.lua")
+
 lua_State *lua_state = NULL;
 int lua_cn_runtime_ref = LUA_NOREF;
 
