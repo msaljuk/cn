@@ -1,0 +1,33 @@
+;; Glom everything lua into a single lib
+
+(rule
+ (target libcn_lua.a)
+ (deps
+  (:liblua
+   (file src/liblua.a))
+  (:support
+   (glob_files cn/*.o)))
+ (action
+  (progn
+   (copy %{liblua} %{target})
+   (run chmod +w %{target})
+   (run ar -rcs %{target} %{support}))))
+
+(install
+ (files
+  (libcn_lua.a as runtime/libcn_lua.a)
+  (cn/lua_wrappers.h as runtime/include/cn-lua/lua_wrappers.h)
+  (src/luaconf.h as runtime/include/cn-lua/luaconf.h)
+  (src/lua.h as runtime/include/cn-lua/lua.h)
+  (src/lualib.h as runtime/include/cn-lua/lualib.h)
+  (src/lauxlib.h as runtime/include/cn-lua/lauxlib.h))
+ (section lib)
+ (package cn))
+
+(install
+ (files
+  (cn/c_number_types.lua as runtime/lua/c_number_types.lua)
+  (cn/fast_deep_compare.lua as runtime/lua/fast_deep_compare.lua)
+  (cn/lua_cn_runtime_core.lua as runtime/lua/lua_cn_runtime_core.lua))
+ (section share)
+ (package cn))

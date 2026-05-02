@@ -43,9 +43,6 @@ clean:
 install: cn
 	@echo "[DUNE] install cn"
 	$(Q)dune install cn --profile=$(PROFILE)
-	@echo "[LUA_SRC_COPY] runtime/lua to $(OPAM_LIB)/cn/runtime"
-	$(Q)mkdir -p $(OPAM_LIB)/cn/runtime
-	$(Q)cp -rp runtime/lua $(OPAM_LIB)/cn/runtime/
 
 .PHONY: uninstall
 uninstall:
