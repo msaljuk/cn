@@ -14,9 +14,9 @@
 #define __CLANG_MAX_ALIGN_T_DEFINED
 #define _GCC_MAX_ALIGN_T
 
-#include <lua.h>
-#include <lauxlib.h>
-#include <lualib.h>
+#include <cn-lua/lua.h>
+#include <cn-lua/lauxlib.h>
+#include <cn-lua/lualib.h>
 
 #include <stdbool.h>
 
