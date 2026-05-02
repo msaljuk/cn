@@ -1,0 +1,24 @@
+(env
+ (_
+  (c_flags :standard -Wno-incompatible-pointer-types)))
+
+;; Build naked .o files for the wrapper
+
+(rule
+ (targets lua_wrappers.o)
+ (deps
+  (:headers
+   (glob_files *.h)
+   (glob_files ../src/*.h)
+   (glob_files ../../libcn/include/cn-executable/*.h))
+  (:src
+   (glob_files *.c)))
+ (action
+  (run
+   %{cc}
+   -c
+   %{src}
+   -I../src
+   -I../../libcn/include
+   ;; This should come from a configuration option to allow opam-less builds.
+   "-DCN_ROOT=\"%{env:OPAM_SWITCH_PREFIX=/usr/lib}\"")))

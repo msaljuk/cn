@@ -1,0 +1,13 @@
+;; build the regular liblua.a
+
+(rule
+ (target liblua.a)
+ (deps
+  (glob_files *.h)
+  (glob_files *.c)
+  (file Makefile))
+ (action
+  (ignore-stdout
+   ;; Not great, as we don't inherit the build config from dune.
+   ;; Use it for now to avoid replicating its platform detection logic.
+   (run make liblua.a))))
