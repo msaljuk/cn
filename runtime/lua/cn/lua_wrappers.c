@@ -3,7 +3,9 @@
 #include <assert.h>
 #include <stdlib.h>
 
-#include "lua_wrappers.h"
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
 
 #include <cn-executable/utils.h>
 
@@ -13,6 +15,11 @@
 
 lua_State *lua_state = NULL;
 int lua_cn_runtime_ref = LUA_NOREF;
+
+// Fwd declarations
+
+int64_t lua_convert_ptr_to_int(void* ptr);
+void lua_cn_register_c_func(const char* func_name, lua_CFunction func);
 
 // Core Lua State
 
