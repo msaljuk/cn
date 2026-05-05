@@ -237,11 +237,8 @@ local core = {
             return ((not a_ctrue) or b_ctrue)
         end,
 }
-cn.env = setmetatable({}, {
-    __index = function(_, k) 
-        return core[k] or _G[k] 
-    end 
-})
+
+cn.env = setmetatable(core, { __index = _G })
 
 function cn.c.generate_get_array(array_type, array_size)
     return function (base_address)
