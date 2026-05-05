@@ -74,8 +74,11 @@ local cn = {
     }
 }
 
+local frames = cn.frames
+local C = cn.c
+
 function cn.assert(cond, spec_mode)
-    cn.c.assert(cond, spec_mode);
+    C.assert(cond, spec_mode)
 end
 
 --[[
@@ -83,50 +86,38 @@ ERROR HANDLING
 --]]
 
 function cn.error_stack.push(msg)
-    cn.c.update_error_msg_info(msg)
+    C.update_error_msg_info(msg)
 end
 
 function cn.error_stack.pop()
-    cn.c.pop_msg_info()
+    C.pop_msg_info()
 end
 
 function cn.error_stack.dump()
-    cn.c.dump_error_msgs();
+    C.dump_error_msgs();
 end
 
 --[[
 FRAMES
 --]]
 
-function cn.frames.push_function()
-    cn.frames[#cn.frames + 1] = {}
-    cn.c.ghost_state_depth_incr()
+function frames.push_function()
+    frames[#frames + 1] = {}
+    C.ghost_state_depth_incr()
 end
 
-function cn.frames.pop_function()
-    cn.c.ghost_state_depth_decr()
-    cn.c.postcondition_leak_check()
-    cn.frames[#cn.frames] = nil
+function frames.pop_function()
+    C.ghost_state_depth_decr()
+    C.postcondition_leak_check()
+    frames[#frames] = nil
 end
 
-function cn.frames.push_loop()
-    cn.frames[#cn.frames + 1] = {}
+function frames.push_loop()
+    frames[#frames + 1] = {}
 end
 
-function cn.frames.pop_loop()
-    cn.frames[#cn.frames] = nil
-end
-
-function cn.frames.get_current_frame()
-    return cn.frames[#cn.frames]
-end
-
-function cn.frames.set_local(name, value)
-    cn.frames.get_current_frame()[name] = value
-end
-
-function cn.frames.get_local(name)
-    return cn.frames.get_current_frame()[name]
+function frames.pop_loop()
+    frames[#frames] = nil
 end
 
 --[[
@@ -135,26 +126,26 @@ OWNERSHIP GHOST STATE
 
 function cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
     if loop_ownership == nil then
-        cn.c.get_or_put_ownership(mode, base_addr, size, 0)
+        C.get_or_put_ownership(mode, base_addr, size, 0)
     else
-        cn.c.get_or_put_ownership(mode, base_addr, size, loop_ownership)
+        C.get_or_put_ownership(mode, base_addr, size, loop_ownership)
     end
 end
 
 function cn.ghost_state.stack_depth_incr()
-    return cn.c.ghost_state_depth_incr()
+    return C.ghost_state_depth_incr()
 end
 
 function cn.ghost_state.stack_depth_decr()
-    return cn.c.ghost_state_depth_decr()
+    return C.ghost_state_depth_decr()
 end
 
 function cn.ghost_state.postcondition_leak_check()
-    cn.c.postcondition_leak_check();
+    C.postcondition_leak_check();
 end
 
-function cn.c.sizeof.array(array_type, array_size)
-    return cn.c.sizeof[array_type] * array_size
+function C.sizeof.array(array_type, array_size)
+    return C.sizeof[array_type] * array_size
 end
 
 --[[
@@ -175,18 +166,17 @@ verbose function calls (i.e. cn.locals.set/get_local())
 setmetatable(cn.locals, {
     -- support assignments
     __newindex = function(_, key, value)
-        cn.frames.set_local(key, value)
+        frames[#frames][key] = value
     end,
 
     -- support lookups
     __index = function(_, key)
-        return cn.frames.get_local(key)
+        return frames[#frames][key]
     end,
 
     -- support iteration over locals
     __pairs = function(_)
-        local real_table = cn.frames.get_current_frame()
-        return next, real_table, nil
+        return next, frames[#frames]
     end
 })
 
@@ -198,6 +188,7 @@ so that we can just call error_stack.push() instead of cn.error_stack.push()
 ]] --
 local is_c_true = function(val) return (val ~= 0 and val ~= nil and val ~= false) end
 local ptr_type_eq = function(a, b) return (a == b) end
+local get_or_put_ownership = cn.ghost_state.get_or_put_ownership
 local core = {
     c_num = c_num,
     equals = deep_compare,
@@ -205,7 +196,7 @@ local core = {
     ptr_eq = ptr_type_eq,
     addr_eq = ptr_type_eq, --@saljuk $NOTE: Not supported
     owned = function(mode, base_addr, size, loop_ownership, reader)
-        cn.ghost_state.get_or_put_ownership(mode, base_addr, size, loop_ownership)
+        get_or_put_ownership(mode, base_addr, size, loop_ownership)
         return reader(base_addr)
     end,
     map_get = function(m, k, def) return m[k] or def end,
@@ -240,14 +231,14 @@ local core = {
 
 cn.env = setmetatable(core, { __index = _G })
 
-function cn.c.generate_get_array(array_type, array_size)
+function C.generate_get_array(array_type, array_size)
     return function (base_address)
         local arr = {}
         local i = 0 -- note: we follow 'zero based indexing'
         while (i <= array_size) do
             arr[i] = 
-                cn.c["get_" .. array_type]
-                (core.array_shift(base_address, i, cn.c.sizeof[array_type]))
+                C["get_" .. array_type]
+                (core.array_shift(base_address, i, C.sizeof[array_type]))
             i = i + 1
         end
         return arr
