@@ -78,8 +78,8 @@ let rec pp_expr =
   | LuaS.Binary args ->
     let pp_binary_expr_type expr =
       match expr with
-      | LuaS.Or (a, b) -> pp_expr (LuaS.Call ("bool_or", [ a; b ]))
-      | LuaS.And (a, b) -> pp_expr (LuaS.Call ("bool_and", [ a; b ]))
+      | LuaS.Or (a, b) -> pp_expr a ^ " or " ^ pp_expr b
+      | LuaS.And (a, b) -> pp_expr a ^ " and " ^ pp_expr b
       | LuaS.Add (a, b, t) -> pp_expr (c_int_type_op t "add" [ a; b ])
       | LuaS.Subtract (a, b, t) -> pp_expr (c_int_type_op t "sub" [ a; b ])
       | LuaS.Multiply (a, b, t) -> pp_expr (c_int_type_op t "mul" [ a; b ])
