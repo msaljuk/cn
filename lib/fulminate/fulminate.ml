@@ -815,7 +815,8 @@ let main
     oc
     (match RC.get_runtime () with
      | RC.C -> [ "#define __CN_INSTRUMENT\n"; "#include <cn-executable/utils.h>\n" ]
-     | RC.Lua -> [ "#include <cn-lua/lua_wrappers.h>\n"; "#include <cn-executable/utils.h>\n" ]);
+     | RC.Lua ->
+       [ "#include <cn-lua/lua_wrappers.h>\n"; "#include <cn-executable/utils.h>\n" ]);
   output_to_oc oc cn_header_decls_list;
   output_to_oc
     oc
@@ -868,6 +869,7 @@ let main
      in
      output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
      output_to_oc lua_oc [ pp_stmt CnL.generate_lua_env_req ^ "\n\n" ];
+     output_to_oc lua_oc (List.map pp_stmt CnL.generate_lua_c_number_locals);
      output_to_oc lua_oc alt_file_conversion_functions;
      output_to_oc lua_oc alt_file_record_funs;
      output_to_oc lua_oc [ lua_globals ];
