@@ -71,7 +71,8 @@ local cn = {
         -- c builtins
         fls = {},
         flsl = {}
-    }
+    },
+    defmap = true,
 }
 
 local frames = cn.frames
@@ -79,6 +80,20 @@ local C = cn.c
 
 function cn.assert(cond, spec_mode)
     C.assert(cond, spec_mode)
+end
+
+--[[
+CN MAPS
+--]]
+
+local __cnmapmt = {
+    __index = function(self, k)
+        return self.__default__
+    end
+}
+function cn.defmap(def)
+    if def == nil then return {} end
+    return setmetatable({ __default__ = def }, __mapmt)
 end
 
 --[[
