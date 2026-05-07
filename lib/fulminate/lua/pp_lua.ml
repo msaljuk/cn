@@ -37,10 +37,8 @@ let break (block : string list) (delimiter : string) =
 
 
 let rec pp_expr =
-  let lua_c_int_type_prefix = "c_num" in
-  let get_c_int_type t = LuaS.Field (LuaS.Symbol lua_c_int_type_prefix, LuaS.Symbol t) in
   let c_int_type_op t o args =
-    LuaS.Call (pp_expr (LuaS.Field (get_c_int_type t, LuaS.Symbol o)), args)
+    LuaS.Call (pp_expr (LuaS.Field (LuaS.Symbol t, LuaS.Symbol o)), args)
   in
   function
   | LuaS.Nil -> "nil"
