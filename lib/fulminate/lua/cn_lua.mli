@@ -255,6 +255,12 @@ val generate_lua_runtime_return : LuaS.stmt
 val generate_lua_env_req : LuaS.stmt
 
 (*
+   Utility used to generate locals bound to each c number type
+   (For optimization)
+*)
+val generate_lua_c_number_locals : lua_statements
+
+(*
    Utility used to generate an if-else block in Lua
 *)
 val generate_lua_cn_conditional

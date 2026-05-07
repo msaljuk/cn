@@ -69,6 +69,12 @@ let cn_offsets_field_sym = LuaS.Symbol "cn.c.offsets"
 
 let cn_get_field_prefix_sym = LuaS.Symbol "cn.c.get_"
 
+let lua_c_number_library_sym = LuaS.Symbol "c_num"
+
+let lua_c_number_unsigned_types = [ "u8"; "u16"; "u32"; "u64" ]
+
+let lua_c_number_signed_types = [ "i8"; "i16"; "i32"; "i64" ]
+
 let cn_generate_get_field_prefix_sym = LuaS.Symbol "cn.c.generate_get_"
 
 let get_empty_lua_expr : lua_expression = LuaS.Nil
@@ -1159,6 +1165,22 @@ let generate_lua_runtime_return (* return cn *) = LuaS.Return (Some cn_sym)
 
 let generate_lua_env_req (* _ENV = cn.env *) = LuaS.Assign ("_ENV", Some cn_env_sym)
 
+let generate_lua_c_number_locals : lua_statements =
+  let generate_local_for_number_type num_type =
+    [ LuaS.LocalAssign
+        (num_type, Some (LuaS.Field (lua_c_number_library_sym, LuaS.Symbol num_type)));
+      LuaS.LineBreak
+    ]
+  in
+  let unsigned_locals =
+    List.concat (List.map generate_local_for_number_type lua_c_number_unsigned_types)
+  in
+  let signed_locals =
+    List.concat (List.map generate_local_for_number_type lua_c_number_signed_types)
+  in
+  unsigned_locals @ signed_locals @ [ LuaS.LineBreak ]
+
+
 let generate_lua_cn_conditional (cases : (lua_expression option * lua_statements) list)
   : LuaS.stmt
   =
@@ -1772,9 +1794,9 @@ let cn_to_lua_map_get
   let l1, map_expr = pop_expr_from_exec map_exec in
   let l2, key_expr = pop_expr_from_exec key_exec in
   let default_val_expr =
-    match sym_opt with 
-      | Some sym -> LuaS.Symbol (generate_lua_default_map_name sym) 
-      | None -> LuaS.Nil
+    match sym_opt with
+    | Some sym -> LuaS.Symbol (generate_lua_default_map_name sym)
+    | None -> LuaS.Nil
   in
   let map_get_expr =
     LuaS.Call (Pp_lua.pp_expr cn_map_get_sym, [ map_expr; key_expr; default_val_expr ])
