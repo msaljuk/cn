@@ -1251,8 +1251,26 @@ let generate_lua_cn_match_case_equality ((subject, case) : lua_expression * stri
   LuaS.Binary (LuaS.Eq (subject_field, case_str, false))
 
 
-let generate_lua_cn_map_define_call (default_expr : lua_expression) =
-  LuaS.Call (Pp_lua.pp_expr cn_map_def_sym, [ default_expr ])
+let generate_lua_cn_map_define
+      (map_sym : CF.Ctype.union_tag)
+      (default_expr : lua_expression)
+  : lua_statement
+  =
+  let map_def_expr = LuaS.Call (Pp_lua.pp_expr cn_map_def_sym, [ default_expr ]) in
+  let map_sym_str = Sym.pp_string map_sym in
+  (*@saljuk $HACK: We want to figure out if this is a frame local or a function local.
+    Ideally, this info would come from someplace upstream, but the cn_to_lua_resource
+    function deviates from a lot of the standard expression generation and repeats a lot of logic,
+    so we don't have the ability to generate assignments through the standard dest GADT.
+    So for now, gross string parsing it is.
+  *)
+  let is_frame_local =
+    String.starts_with ~prefix:(Pp_lua.pp_expr cn_locals_sym) map_sym_str
+  in
+  if is_frame_local then
+    generate_lua_cn_assignment map_sym_str (Some map_def_expr)
+  else
+    generate_lua_cn_local_assignment map_sym_str (Some map_def_expr)
 
 
 let generate_lua_cn_spec_decl (fn_sym : CF.Ctype.union_tag) : lua_statement =
