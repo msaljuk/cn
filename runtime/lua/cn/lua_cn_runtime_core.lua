@@ -72,7 +72,7 @@ local cn = {
         fls = {},
         flsl = {}
     },
-    defmap = true,
+    map_def = {},
 }
 
 local frames = cn.frames
@@ -91,9 +91,9 @@ local __cnmapmt = {
         return self.__default__
     end
 }
-function cn.defmap(def)
+function cn.map_def(def)
     if def == nil then return {} end
-    return setmetatable({ __default__ = def }, __mapmt)
+    return setmetatable({ __default__ = def }, __cnmapmt)
 end
 
 --[[
