@@ -186,6 +186,8 @@ val generate_lua_ctype_sizeof : CF.Ctype.ctype -> lua_expression
 
 val generate_lua_ctype_get : CF.Ctype.ctype -> lua_expression
 
+val generate_lua_ctype_default_value : CF.Ctype.ctype -> lua_expression
+
 (*
    Utility used to generate the filename of the Lua file (with .Lua extension)
 based on the given output directory and C filename.
@@ -260,6 +262,8 @@ val generate_lua_env_req : LuaS.stmt
 *)
 val generate_lua_c_number_locals : lua_statements
 
+val generate_lua_default_map_name : CF.Ctype.union_tag -> string
+
 (*
    Utility used to generate an if-else block in Lua
 *)
@@ -284,6 +288,8 @@ match x
  | y ->
 *)
 val generate_lua_cn_match_case_equality : lua_expression * string -> lua_expression
+
+val generate_lua_cn_map_define_call : lua_expression -> lua_expression
 
 val generate_lua_cn_spec_decl : CF.Ctype.union_tag -> lua_statement
 
@@ -470,11 +476,7 @@ val cn_to_lua_map_set
   lua_expression ->
   lua_statement
 
-val cn_to_lua_map_get
-  :  lua_cn_exec ->
-  lua_cn_exec ->
-  CF.Ctype.union_tag option ->
-  lua_cn_exec
+val cn_to_lua_map_get : lua_cn_exec -> lua_cn_exec -> lua_cn_exec
 
 val cn_to_lua_apply : CF.Ctype.union_tag -> lua_cn_exec list -> lua_cn_exec
 
