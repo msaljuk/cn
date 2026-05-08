@@ -77,6 +77,8 @@ local cn = {
 
 local frames = cn.frames
 local C = cn.c
+local current_frame = {}
+local current_frame_number = 0
 
 function cn.assert(cond, spec_mode)
     C.assert(cond, spec_mode)
@@ -117,22 +119,28 @@ FRAMES
 --]]
 
 function frames.push_function()
-    frames[#frames + 1] = {}
+    current_frame_number = current_frame_number + 1
+    frames[current_frame_number] = {}
+    current_frame = frames[current_frame_number]
     C.ghost_state_depth_incr()
 end
 
 function frames.pop_function()
     C.ghost_state_depth_decr()
     C.postcondition_leak_check()
-    frames[#frames] = nil
+    frames[current_frame_number] = nil
+    current_frame_number = current_frame_number - 1
+    current_frame = frames[current_frame_number]
 end
 
 function frames.push_loop()
-    frames[#frames + 1] = {}
+    -- TODO: Fix
+    -- frames[#frames + 1] = {}
 end
 
 function frames.pop_loop()
-    frames[#frames] = nil
+    -- TODO: Fix
+    -- frames[#frames] = nil
 end
 
 --[[
@@ -181,17 +189,17 @@ verbose function calls (i.e. cn.locals.set/get_local())
 setmetatable(cn.locals, {
     -- support assignments
     __newindex = function(_, key, value)
-        frames[#frames][key] = value
+        current_frame[key] = value
     end,
 
     -- support lookups
     __index = function(_, key)
-        return frames[#frames][key]
+        return current_frame[key]
     end,
 
     -- support iteration over locals
     __pairs = function(_)
-        return next, frames[#frames]
+        return next, current_frame
     end
 })
 
@@ -214,7 +222,6 @@ local core = {
         get_or_put_ownership(mode, base_addr, size, loop_ownership)
         return reader(base_addr)
     end,
-    map_get = function(m, k, def) return m[k] or def end,
 
     member_shift = function(base_addr, offset)
         return (base_addr + offset)
@@ -224,18 +231,6 @@ local core = {
         return (base_addr + (offset * size))
     end,
 
-    bool_and = 
-        function(a, b) 
-            local a_ctrue = is_c_true(a)
-            local b_ctrue = is_c_true(b)
-            return (a_ctrue and b_ctrue)
-        end,
-    bool_or = 
-        function(a, b) 
-            local a_ctrue = is_c_true(a)
-            local b_ctrue = is_c_true(b)
-            return (a_ctrue or b_ctrue)
-        end,
     implies =
         function(a, b) 
             local a_ctrue = is_c_true(a)
