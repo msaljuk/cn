@@ -97,7 +97,11 @@ let rec pp_expr =
       | LuaS.BW_Or (a, b, t) -> pp_expr (c_int_type_op t "bw_or" [ a; b ])
       | LuaS.LeftShift (a, b, t) -> pp_expr (c_int_type_op t "shl" [ a; b ])
       | LuaS.RightShift (a, b, t) -> pp_expr (c_int_type_op t "shr" [ a; b ])
-      | LuaS.Eq (a, b) -> pp_expr (LuaS.Call ("equals", [ a; b ]))
+      | LuaS.Eq (a, b, t) ->
+        (match t with
+         | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" ->
+           pp_expr a ^ " == " ^ pp_expr b
+         | _ -> pp_expr (LuaS.Call ("equals", [ a; b ])))
     in
     pp_binary_expr_type args
   | LuaS.Unary args ->
@@ -110,7 +114,7 @@ let rec pp_expr =
             args )
       in
       match args with
-      | LuaS.Not v -> "not " ^ pp_expr v
+      | LuaS.Not v -> "not (" ^ pp_expr v ^ ")"
       | LuaS.Negate (v, t) -> pp_expr (c_int_type_op t "neg" [ v ])
       | LuaS.BW_FLS v -> pp_expr (call_c_func "fls" [ v ])
       | LuaS.BW_FLSL v -> pp_expr (call_c_func "flsl" [ v ])

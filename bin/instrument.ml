@@ -48,9 +48,8 @@ let run_instrumented_file
       let src_dir = root_dir ^ "/src" in
       let cn_dir = root_dir ^ "/cn" in
       let combined_includes = " -I" ^ src_dir ^ " -I" ^ cn_dir in
-      let src_link = Printf.sprintf " %s/liblua.a" src_dir in
-      let cn_wrapper_link = Printf.sprintf " %s/lua_wrappers.a" cn_dir in
-      let combined_links = Printf.sprintf "%s %s -ldl -lm" src_link cn_wrapper_link in
+      let lua_lib_name = runtime_prefix ^ "/libcn_lua.a" in
+      let combined_links = Printf.sprintf "%s -ldl -lm" lua_lib_name in
       (root_dir, combined_includes, combined_links))
   in
   if experimental_lua_runtime then build_lua ~lua_root_dir ~print_steps;

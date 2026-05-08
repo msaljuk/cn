@@ -364,7 +364,10 @@ let generate_c_push_field_into_lua
       (match x with
        | CF.Ctype.Integer i_type ->
          (match i_type with
-          | CF.Ctype.Bool -> call "lua_pushboolean" [ lua_state_expr; c_field_expr ]
+          (* Since 'bools' in C are just typedefs as some version of a integer, we maintain there 
+           since some cn specs make comparisons to integers
+          *)
+          | CF.Ctype.Bool -> call "lua_pushinteger" [ lua_state_expr; c_field_expr ]
           | CF.Ctype.Char ->
             call "lua_pushlstring" [ lua_state_expr; c_field_expr; int_const 1 ]
           | CF.Ctype.Signed _ | CF.Ctype.Unsigned _ | CF.Ctype.Size_t ->
@@ -1207,7 +1210,7 @@ let generate_lua_cn_match_case_equality ((subject, case) : lua_expression * stri
   let tag_sym = LuaS.Symbol "tag" in
   let subject_field = LuaS.Field (subject, tag_sym) in
   let case_str = LuaS.String case in
-  LuaS.Binary (LuaS.Eq (subject_field, case_str))
+  LuaS.Binary (LuaS.Eq (subject_field, case_str, "incompatible"))
 
 
 let generate_lua_cn_map_define_call (default_expr : lua_expression) =
@@ -1217,7 +1220,6 @@ let generate_lua_cn_map_define_call (default_expr : lua_expression) =
 let generate_lua_cn_spec_decl (fn_sym : CF.Ctype.union_tag) : lua_statement =
   let fn_name = Pp_lua.pp_expr cn_sym ^ "." ^ Sym.pp_string fn_sym in
   LuaS.Assign (fn_name, Some generate_lua_cn_empty_table)
-
 
 let generate_lua_push_frame_fn
       (lua_fn_name : string)
@@ -1657,7 +1659,8 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) : lua_expression =
     | LEPointer -> LuaS.Binary (LuaS.LessThanOrEqTo (expr_a, expr_b, "i64"))
     | Min -> LuaS.Binary (LuaS.Min (expr_a, expr_b, lua_c_int_type))
     | Max -> LuaS.Binary (LuaS.Max (expr_a, expr_b, lua_c_int_type))
-    | EQ -> LuaS.Binary (LuaS.Eq (expr_a, expr_b))
+    | EQ -> 
+      LuaS.Binary (LuaS.Eq (expr_a, expr_b, lua_c_int_type))
     | Implies -> LuaS.Call ("implies", [ expr_a; expr_b ])
     | SetUnion -> failwith (__LOC__ ^ ": TODO SetUnion")
     | SetIntersection -> failwith (__LOC__ ^ ": TODO SetIntersection")
