@@ -4,6 +4,7 @@ type ident = string
 type expr =
   | Nil
   | Bool of bool
+  | Number of expr
   | Number_Int of expr * string
   | Number_IntLimit of string * string
   | Number_Float of Q.t
@@ -26,8 +27,11 @@ and table_field_type =
 and binary_expr_type =
   | And of expr * expr
   | Or of expr * expr
+  | AddI of expr * expr
   | Add of expr * expr * string
+  | SubtractI of expr * expr
   | Subtract of expr * expr * string
+  | MultiplyI of expr * expr
   | Multiply of expr * expr * string
   | IntegerDivide of expr * expr * string
   | FloatDivide of expr * expr

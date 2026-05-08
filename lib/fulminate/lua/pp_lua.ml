@@ -40,9 +40,11 @@ let rec pp_expr =
   let c_int_type_op t o args =
     LuaS.Call (pp_expr (LuaS.Field (LuaS.Symbol t, LuaS.Symbol o)), args)
   in
+  let wrap int_type expr = pp_expr (c_int_type_op int_type "make" [ expr ]) in
   function
   | LuaS.Nil -> "nil"
   | LuaS.Bool b -> string_of_bool b
+  | LuaS.Number (value : LuaS.expr) -> pp_expr value
   | LuaS.Number_Int ((value, t) : LuaS.expr * string) ->
     pp_expr (c_int_type_op t "make" [ value ])
   | LuaS.Number_IntLimit ((limit, t) : string * string) ->
@@ -80,16 +82,31 @@ let rec pp_expr =
       match expr with
       | LuaS.Or (a, b) -> pp_expr a ^ " or " ^ pp_expr b
       | LuaS.And (a, b) -> pp_expr a ^ " and " ^ pp_expr b
-      | LuaS.Add (a, b, t) -> pp_expr (c_int_type_op t "add" [ a; b ])
-      | LuaS.Subtract (a, b, t) -> pp_expr (c_int_type_op t "sub" [ a; b ])
-      | LuaS.Multiply (a, b, t) -> pp_expr (c_int_type_op t "mul" [ a; b ])
+      | LuaS.AddI (a, b) -> pp_expr a ^ " + " ^ pp_expr b
+      | LuaS.Add (a, b, t) ->
+        let add_expr = LuaS.Symbol (pp_expr (LuaS.Binary (LuaS.AddI (a, b)))) in
+        wrap t add_expr
+      | LuaS.SubtractI (a, b) -> pp_expr a ^ " - " ^ pp_expr b
+      | LuaS.Subtract (a, b, t) ->
+        let subtract_expr = LuaS.Symbol (pp_expr (LuaS.Binary (LuaS.SubtractI (a, b)))) in
+        wrap t subtract_expr
+      | LuaS.MultiplyI (a, b) -> pp_expr a ^ " * " ^ pp_expr b
+      | LuaS.Multiply (a, b, t) ->
+        let multiply_expr = LuaS.Symbol (pp_expr (LuaS.Binary (LuaS.MultiplyI (a, b)))) in
+        wrap t multiply_expr
       | LuaS.IntegerDivide (a, b, t) -> pp_expr (c_int_type_op t "div" [ a; b ])
       | LuaS.FloatDivide (_a, _b) -> failwith "Float Divide not supported yet"
       | LuaS.Exp (a, b, t) -> pp_expr (c_int_type_op t "exp" [ a; b ])
-      | LuaS.Remainder (a, b, t) -> pp_expr (c_int_type_op t "rem" [ a; b ])
+      | LuaS.Remainder (a, b, t) ->
+        let rem_expr = LuaS.Call ("math.fmod", [ a; b ]) in
+        wrap t rem_expr
       | LuaS.Modulo (a, b, t) -> pp_expr (c_int_type_op t "mod" [ a; b ])
-      | LuaS.LessThan (a, b, t) -> pp_expr (c_int_type_op t "lt" [ a; b ])
-      | LuaS.LessThanOrEqTo (a, b, t) -> pp_expr (c_int_type_op t "le" [ a; b ])
+      | LuaS.LessThan (a, b, t) ->
+        (match t with
+         | "i8" | "i16" | "i32" | "i64" -> pp_expr a ^ " < " ^ pp_expr b
+         | _ -> pp_expr (LuaS.Call ("math.ult", [ a; b ])))
+      | LuaS.LessThanOrEqTo (a, b, t) ->
+        pp_expr (LuaS.Unary (LuaS.Not (LuaS.Binary (LuaS.LessThan (b, a, t)))))
       | LuaS.Min (a, b, t) -> pp_expr (c_int_type_op t "min" [ a; b ])
       | LuaS.Max (a, b, t) -> pp_expr (c_int_type_op t "max" [ a; b ])
       | LuaS.BW_Xor (a, b, t) -> pp_expr (c_int_type_op t "bw_xor" [ a; b ])
@@ -101,7 +118,8 @@ let rec pp_expr =
         (match t with
          | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" ->
            pp_expr a ^ " == " ^ pp_expr b
-         | _ -> pp_expr (LuaS.Call ("equals", [ a; b ])))
+         | _ -> 
+          pp_expr (LuaS.Call ("equals", [ a; b ])))
     in
     pp_binary_expr_type args
   | LuaS.Unary args ->
@@ -115,7 +133,9 @@ let rec pp_expr =
       in
       match args with
       | LuaS.Not v -> "not (" ^ pp_expr v ^ ")"
-      | LuaS.Negate (v, t) -> pp_expr (c_int_type_op t "neg" [ v ])
+      | LuaS.Negate (v, t) ->
+        let neg_expr = LuaS.Symbol ("-" ^ pp_expr v) in
+        wrap t neg_expr
       | LuaS.BW_FLS v -> pp_expr (call_c_func "fls" [ v ])
       | LuaS.BW_FLSL v -> pp_expr (call_c_func "flsl" [ v ])
       | LuaS.BW_Complement (v, t) -> pp_expr (c_int_type_op t "bw_compl" [ v ])
