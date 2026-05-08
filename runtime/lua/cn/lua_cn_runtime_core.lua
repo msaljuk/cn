@@ -79,8 +79,6 @@ local cn = {
 
 local frames = cn.frames
 local C = cn.c
-local current_frame = {}
-local current_frame_number = 0
 
 function cn.assert(cond, spec_mode)
     C.assert(cond, spec_mode)
@@ -121,28 +119,22 @@ FRAMES
 --]]
 
 function frames.push_function()
-    current_frame_number = current_frame_number + 1
-    frames[current_frame_number] = {}
-    current_frame = frames[current_frame_number]
+    frames[#frames + 1] = {}
     C.ghost_state_depth_incr()
 end
 
 function frames.pop_function()
     C.ghost_state_depth_decr()
     C.postcondition_leak_check()
-    frames[current_frame_number] = nil
-    current_frame_number = current_frame_number - 1
-    current_frame = frames[current_frame_number]
+    frames[#frames] = nil
 end
 
 function frames.push_loop()
-    -- TODO: Fix
-    -- frames[#frames + 1] = {}
+    frames[#frames + 1] = {}
 end
 
 function frames.pop_loop()
-    -- TODO: Fix
-    -- frames[#frames] = nil
+    frames[#frames] = nil
 end
 
 --[[
@@ -191,17 +183,17 @@ verbose function calls (i.e. cn.locals.set/get_local())
 setmetatable(cn.locals, {
     -- support assignments
     __newindex = function(_, key, value)
-        current_frame[key] = value
+        frames[#frames][key] = value
     end,
 
     -- support lookups
     __index = function(_, key)
-        return current_frame[key]
+        return frames[#frames][key]
     end,
 
     -- support iteration over locals
     __pairs = function(_)
-        return next, current_frame
+        return next, frames[#frames]
     end
 })
 
