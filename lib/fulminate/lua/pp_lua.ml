@@ -118,8 +118,7 @@ let rec pp_expr =
         (match t with
          | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" ->
            pp_expr a ^ " == " ^ pp_expr b
-         | _ -> 
-          pp_expr (LuaS.Call ("equals", [ a; b ])))
+         | _ -> pp_expr (LuaS.Call ("equals", [ a; b ])))
     in
     pp_binary_expr_type args
   | LuaS.Unary args ->
