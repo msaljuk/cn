@@ -61,7 +61,7 @@ let cn_member_shift_sym = LuaS.Symbol "member_shift"
 
 let cn_array_shift_sym = LuaS.Symbol "array_shift"
 
-let cn_map_get_sym = LuaS.Symbol "map_get"
+let cn_map_def_sym = LuaS.Symbol "cn.map_def"
 
 let cn_sizeof_field_sym = LuaS.Symbol "cn.c.sizeof"
 
@@ -1210,6 +1210,10 @@ let generate_lua_cn_match_case_equality ((subject, case) : lua_expression * stri
   LuaS.Binary (LuaS.Eq (subject_field, case_str))
 
 
+let generate_lua_cn_map_define_call (default_expr : lua_expression) =
+  LuaS.Call (Pp_lua.pp_expr cn_map_def_sym, [ default_expr ])
+
+
 let generate_lua_cn_spec_decl (fn_sym : CF.Ctype.union_tag) : lua_statement =
   let fn_name = Pp_lua.pp_expr cn_sym ^ "." ^ Sym.pp_string fn_sym in
   LuaS.Assign (fn_name, Some generate_lua_cn_empty_table)
@@ -1785,22 +1789,10 @@ let cn_to_lua_map_set
   LuaS.SExpr (LuaS.TableSet (map, key, value))
 
 
-let cn_to_lua_map_get
-      (map_exec : lua_cn_exec)
-      (key_exec : lua_cn_exec)
-      (sym_opt : CF.Ctype.union_tag option)
-  : lua_cn_exec
-  =
+let cn_to_lua_map_get (map_exec : lua_cn_exec) (key_exec : lua_cn_exec) : lua_cn_exec =
   let l1, map_expr = pop_expr_from_exec map_exec in
   let l2, key_expr = pop_expr_from_exec key_exec in
-  let default_val_expr =
-    match sym_opt with
-    | Some sym -> LuaS.Symbol (generate_lua_default_map_name sym)
-    | None -> LuaS.Nil
-  in
-  let map_get_expr =
-    LuaS.Call (Pp_lua.pp_expr cn_map_get_sym, [ map_expr; key_expr; default_val_expr ])
-  in
+  let map_get_expr = LuaS.TableGet (map_expr, key_expr) in
   let final_exec = push_expr_to_exec (concat [ l1; l2 ], map_get_expr) in
   final_exec
 

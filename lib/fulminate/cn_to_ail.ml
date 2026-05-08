@@ -1864,14 +1864,7 @@ let rec cn_to_ail_expr_aux
          spec_mode_opt
          (b1 @ b2, s1 @ s2, CnL.get_empty_lua_cn_exec, mk_expr cast_expr_)
      | RC.Lua ->
-       let default_sym_opt =
-         match basetype with
-         | BT.Datatype sym -> Some sym
-         | BT.Struct sym -> Some sym
-         | BT.Record _ -> Some (lookup_records_map_with_default basetype)
-         | _ -> None
-       in
-       let final_exec = CnL.cn_to_lua_map_get l1 l2 default_sym_opt in
+       let final_exec = CnL.cn_to_lua_map_get l1 l2 in
        dest d spec_mode_opt ([], [], final_exec, mk_expr ail_null))
   | MapDef ((_sym, _bt), _t) -> failwith (__LOC__ ^ ": TODO MapDef")
   | Apply (sym, ts) ->
@@ -3634,7 +3627,7 @@ let cn_to_ail_resource
     let start_assign = A.(AilSdeclaration [ (i_sym, Some e_start) ]) in
     let end_binding = create_binding end_sym cn_integer_ptr_ctype in
     let end_assign = A.(AilSdeclaration [ (end_sym, Some e_end) ]) in
-    let return_ctype, _return_bt = calculate_resource_return_type preds loc q.name in
+    let return_ctype, return_bt = calculate_resource_return_type preds loc q.name in
     (* Translation of q.pointer *)
     let i_it = IT.IT (IT.(Sym i_sym), i_bt, Cerb_location.unknown) in
     let value_it =
@@ -4050,10 +4043,22 @@ let cn_to_ail_resource
               in
               ([ sym_binding ], [ sym_decl ], [ while_loop ], [], [])
             | RC.Lua ->
+              let default_map_expr =
+                match return_bt with
+                | BT.Datatype sym | BT.Struct sym ->
+                  CnL.cn_to_lua_sym (Sym.fresh (CnL.generate_lua_default_map_name sym)) ()
+                | BT.Record _ ->
+                  CnL.cn_to_lua_sym
+                    (Sym.fresh
+                       (CnL.generate_lua_default_map_name
+                          (lookup_records_map_with_default return_bt)))
+                    ()
+                | _ -> CnL.generate_lua_ctype_default_value return_ctype
+              in
               let lua_map_create =
                 CnL.generate_lua_cn_assignment
                   (Sym.pp_string sym)
-                  (Some CnL.generate_lua_cn_empty_table)
+                  (Some (CnL.generate_lua_cn_map_define_call default_map_expr))
               in
               let ptr_add_stmt = gen_lua_ptr_add_stmt () in
               let _, rhs_expr = CnL.pop_expr_from_exec ls in
