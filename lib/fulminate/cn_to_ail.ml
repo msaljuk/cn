@@ -4055,11 +4055,7 @@ let cn_to_ail_resource
                     ()
                 | _ -> CnL.generate_lua_ctype_default_value return_ctype
               in
-              let lua_map_create =
-                CnL.generate_lua_cn_assignment
-                  (Sym.pp_string sym)
-                  (Some (CnL.generate_lua_cn_map_define_call default_map_expr))
-              in
+              let lua_map_create = CnL.generate_lua_cn_map_define sym default_map_expr in
               let ptr_add_stmt = gen_lua_ptr_add_stmt () in
               let _, rhs_expr = CnL.pop_expr_from_exec ls in
               let map_set_stmt =

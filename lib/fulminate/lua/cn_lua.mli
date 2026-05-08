@@ -301,7 +301,7 @@ match x
 *)
 val generate_lua_cn_match_case_equality : lua_expression * string -> lua_expression
 
-val generate_lua_cn_map_define_call : lua_expression -> lua_expression
+val generate_lua_cn_map_define : CF.Ctype.union_tag -> lua_expression -> lua_statement
 
 val generate_lua_cn_spec_decl : CF.Ctype.union_tag -> lua_statement
 
