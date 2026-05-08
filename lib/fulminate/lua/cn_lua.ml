@@ -1211,7 +1211,7 @@ let generate_lua_locals_for_optimization : lua_statements =
       LuaS.LocalAssign
         ( Pp_lua.pp_expr cn_offsets_field_sym,
           Some (LuaS.Field (cn_sym, LuaS.Field (c_sym, cn_offsets_field_sym))) );
-      LuaS.LineBreak;
+      LuaS.LineBreak
     ]
   in
   c_locals
@@ -1248,7 +1248,7 @@ let generate_lua_cn_match_case_equality ((subject, case) : lua_expression * stri
   let tag_sym = LuaS.Symbol "tag" in
   let subject_field = LuaS.Field (subject, tag_sym) in
   let case_str = LuaS.String case in
-  LuaS.Binary (LuaS.Eq (subject_field, case_str, "incompatible"))
+  LuaS.Binary (LuaS.Eq (subject_field, case_str, false))
 
 
 let generate_lua_cn_map_define_call (default_expr : lua_expression) =
@@ -1671,6 +1671,7 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) : lua_expression =
       let size_str = string_of_int size in
       sign_str ^ size_str
     | BT.Loc (), BT.Loc () -> "i64"
+    | BT.Alloc_id, BT.Alloc_id -> "i64"
     | _, _ -> "incompatible"
   in
   let lua_c_int_type = get_lua_c_int_type_str bt_a bt_b in
@@ -1696,7 +1697,14 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) : lua_expression =
     | LEPointer -> LuaS.Binary (LuaS.LessThanOrEqTo (expr_a, expr_b, "i64"))
     | Min -> LuaS.Binary (LuaS.Min (expr_a, expr_b, lua_c_int_type))
     | Max -> LuaS.Binary (LuaS.Max (expr_a, expr_b, lua_c_int_type))
-    | EQ -> LuaS.Binary (LuaS.Eq (expr_a, expr_b, lua_c_int_type))
+    | EQ ->
+      let can_prim_compare =
+        if not (String.equal lua_c_int_type "incompatible") then
+          true
+        else (
+          match (bt_a, bt_b) with BT.Bool, BT.Bool -> true | _, _ -> false)
+      in
+      LuaS.Binary (LuaS.Eq (expr_a, expr_b, can_prim_compare))
     | Implies -> LuaS.Call ("implies", [ expr_a; expr_b ])
     | SetUnion -> failwith (__LOC__ ^ ": TODO SetUnion")
     | SetIntersection -> failwith (__LOC__ ^ ": TODO SetIntersection")
