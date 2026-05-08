@@ -869,7 +869,8 @@ let main
      in
      output_to_oc lua_oc [ pp_stmt CnL.generate_lua_runtime_core_req ^ "\n\n" ];
      output_to_oc lua_oc [ pp_stmt CnL.generate_lua_env_req ^ "\n\n" ];
-     output_to_oc lua_oc (List.map pp_stmt CnL.generate_lua_c_number_locals);
+     (* @saljuk OPTIMIZATION: Pull out locals for fast register access *)
+     output_to_oc lua_oc (List.map pp_stmt CnL.generate_lua_locals_for_optimization);
      output_to_oc lua_oc alt_file_conversion_functions;
      output_to_oc lua_oc alt_file_record_funs;
      output_to_oc lua_oc [ lua_globals ];

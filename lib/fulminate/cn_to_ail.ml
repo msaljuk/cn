@@ -60,7 +60,7 @@ let sym_of_spec_mode_opt = function
 
 let lua_sym_of_spec_mode_opt spec_mode_opt =
   match spec_mode_opt with
-  | Some spec_mode -> Sym.fresh ("cn.spec_mode." ^ spec_mode_to_str spec_mode)
+  | Some spec_mode -> Sym.fresh (spec_mode_to_str spec_mode)
   | None -> Sym.fresh "spec_mode"
 
 

@@ -29,6 +29,8 @@ let push_type_prefix = "push_"
 
 let cn_sym = LuaS.Symbol "cn"
 
+let c_sym = LuaS.Symbol "c"
+
 let cn_spec_mode_var_sym = LuaS.Symbol "spec_mode"
 
 let cn_loop_ownership_var_sym = LuaS.Symbol "loop_ownership"
@@ -63,9 +65,9 @@ let cn_array_shift_sym = LuaS.Symbol "array_shift"
 
 let cn_map_def_sym = LuaS.Symbol "cn.map_def"
 
-let cn_sizeof_field_sym = LuaS.Symbol "cn.c.sizeof"
+let cn_sizeof_field_sym = LuaS.Symbol "sizeof"
 
-let cn_offsets_field_sym = LuaS.Symbol "cn.c.offsets"
+let cn_offsets_field_sym = LuaS.Symbol "offsets"
 
 let cn_get_field_prefix_sym = LuaS.Symbol "cn.c.get_"
 
@@ -1180,7 +1182,44 @@ let generate_lua_c_number_locals : lua_statements =
   let signed_locals =
     List.concat (List.map generate_local_for_number_type lua_c_number_signed_types)
   in
-  unsigned_locals @ signed_locals @ [ LuaS.LineBreak ]
+  unsigned_locals @ signed_locals
+
+
+let generate_lua_cn_spec_modes : lua_statements =
+  let generate_local_for_spec_mode spec_mode_str =
+    let spec_mode_field = LuaS.Field (cn_sym, cn_spec_mode_var_sym) in
+    [ LuaS.LocalAssign
+        (spec_mode_str, Some (LuaS.Field (spec_mode_field, LuaS.Symbol spec_mode_str)));
+      LuaS.LineBreak
+    ]
+  in
+  let spec_mode_stmts =
+    List.concat
+      (List.map
+         generate_local_for_spec_mode
+         [ "PRE"; "POST"; "LOOP"; "STATEMENT"; "C_ACCESS"; "NON_SPEC" ])
+  in
+  spec_mode_stmts
+
+
+let generate_lua_locals_for_optimization : lua_statements =
+  let c_locals =
+    [ LuaS.LocalAssign
+        ( Pp_lua.pp_expr cn_sizeof_field_sym,
+          Some (LuaS.Field (cn_sym, LuaS.Field (c_sym, cn_sizeof_field_sym))) );
+      LuaS.LineBreak;
+      LuaS.LocalAssign
+        ( Pp_lua.pp_expr cn_offsets_field_sym,
+          Some (LuaS.Field (cn_sym, LuaS.Field (c_sym, cn_offsets_field_sym))) );
+      LuaS.LineBreak;
+    ]
+  in
+  c_locals
+  @ [ LuaS.LineBreak ]
+  @ generate_lua_c_number_locals
+  @ [ LuaS.LineBreak ]
+  @ generate_lua_cn_spec_modes
+  @ [ LuaS.LineBreak ]
 
 
 let generate_lua_cn_conditional (cases : (lua_expression option * lua_statements) list)
@@ -1631,9 +1670,8 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) : lua_expression =
       let sign_str = match sign with BT.Signed -> "i" | BT.Unsigned -> "u" in
       let size_str = string_of_int size in
       sign_str ^ size_str
-    | BT.Loc(), BT.Loc() -> "i64"
-    | _, _ -> 
-      "incompatible"
+    | BT.Loc (), BT.Loc () -> "i64"
+    | _, _ -> "incompatible"
   in
   let lua_c_int_type = get_lua_c_int_type_str bt_a bt_b in
   let lua_expression =
@@ -1761,17 +1799,15 @@ let cn_to_lua_member_shift
   =
   let member_tag_str = Sym.pp_string member_tag in
   let offsets_field_expr = cn_to_lua_offsetof struct_tag member_tag_str in
-
   (*@saljuk OPTIMIZATION: Print out member shift inline *)
   let member_shift_expr =
     if true then
-      LuaS.Binary
-        (LuaS.AddI (struct_expr, offsets_field_expr))
-    else  
+      LuaS.Binary (LuaS.AddI (struct_expr, offsets_field_expr))
+    else
       LuaS.Call (Pp_lua.pp_expr cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
   in
-
   member_shift_expr
+
 
 let cn_to_lua_array_shift
       (ptr_exec : lua_cn_exec)

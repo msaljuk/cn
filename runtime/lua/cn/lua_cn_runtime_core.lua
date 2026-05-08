@@ -63,6 +63,8 @@ local cn = {
         sizeof = {
             array = {}
         },
+        -- c types offsets
+        offsets = {},
 
         -- c loop checks
         initialise_loop_ownership_state = {},
