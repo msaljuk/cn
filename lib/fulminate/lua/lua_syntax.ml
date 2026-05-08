@@ -43,7 +43,7 @@ and binary_expr_type =
   | BW_And of expr * expr * string
   | LeftShift of expr * expr * string
   | RightShift of expr * expr * string
-  | Eq of expr * expr
+  | Eq of expr * expr * string
 
 and unary_expr_type =
   | Not of expr
