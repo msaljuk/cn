@@ -1,5 +1,3 @@
-#pragma once
-
 #include <assert.h>
 #include <stdlib.h>
 
@@ -130,7 +128,7 @@ static int c_get_char() {
 
 static int c_get_u_char() {
     unsigned char* addr = (unsigned char*)luaL_checkinteger(lua_state, 1);
-    lua_pushlstring(lua_state, addr, 1);
+    lua_pushlstring(lua_state, (char*)addr, 1);
     return 1;
 }
 
@@ -247,11 +245,14 @@ void push_cn_c_tables() {
 
     // Offsets table
     {
-        lua_newtable(lua_state);
-        lua_setfield(lua_state, -2, "offsets");
+        lua_getfield(lua_state, -1, "offsets");
+
+        // No default offsets to add here for now
+
+        lua_pop(lua_state, 1);
     }
 
-    lua_pop(lua_state, 2);
+    lua_pop(lua_state, 1);
 }
 
 void bind_cn_c_functions() {

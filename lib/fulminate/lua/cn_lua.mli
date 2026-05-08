@@ -262,6 +262,18 @@ val generate_lua_env_req : LuaS.stmt
 *)
 val generate_lua_c_number_locals : lua_statements
 
+(*
+   Utility used to generate local constants for all spec modes
+   (For optimization)
+*)
+val generate_lua_cn_spec_modes : lua_statements
+
+(*
+   Higher level function called from Fulminate module to dump out any frequently
+ used tables as locals for quick access
+*)
+val generate_lua_locals_for_optimization : lua_statements
+
 val generate_lua_default_map_name : CF.Ctype.union_tag -> string
 
 (*
