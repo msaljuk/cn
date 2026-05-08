@@ -238,12 +238,11 @@ cn.env = setmetatable(core, { __index = _G })
 function C.generate_get_array(array_type, array_size)
     return function (base_address)
         local arr = {}
-        local i = 0 -- note: we follow 'zero based indexing'
-        while (i <= array_size) do
+        -- note: we follow 'zero based indexing'
+        for i = 0, array_size - 1 do
             arr[i] = 
                 C["get_" .. array_type]
                 (core.array_shift(base_address, i, C.sizeof[array_type]))
-            i = i + 1
         end
         return arr
     end
