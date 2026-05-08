@@ -15,11 +15,6 @@ local function create_number_type(bits, signed)
 
     -- Internal wrapping function to mimic C type overflow and sign extension
     local function wrap(v)
-        -- Replicate implicit boolean casting to integer
-        if type(v) == "boolean" then
-            v = v and 1 or 0
-        end
-
         v = v & mask
         if signed and bits < 64 and (v & sign_bit) ~= 0 then
             return v - (mask + 1)
