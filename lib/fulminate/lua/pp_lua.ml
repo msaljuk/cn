@@ -1,5 +1,3 @@
-module LuaS = Lua_syntax
-include PPrint
 
 let indent block ?(comma = false) () =
   let sep = if comma then ",\n" else "\n" in
@@ -7,12 +5,12 @@ let indent block ?(comma = false) () =
     if Stdlib.(line = "") then "" else "    " ^ line
   in
   let process_string s =
-    let lines = Stdlib.String.split_on_char '\n' s in
-    let indented = Stdlib.List.map indent_line lines in
-    Stdlib.String.concat "\n" indented
+    let lines = String.split_on_char '\n' s in
+    let indented = List.map indent_line lines in
+    String.concat "\n" indented
   in
-  let indented_block = Stdlib.List.map process_string block in
-  Stdlib.String.concat sep indented_block
+  let indented_block = List.map process_string block in
+  String.concat sep indented_block
 
 
 let break block delimiter =
@@ -35,36 +33,37 @@ let break block delimiter =
   in
   block |> loop false
 
+open Lua_syntax
 
 let rec pp_expr =
   let c_int_type_op t o args =
-    LuaS.Call (pp_expr (LuaS.Field (LuaS.Symbol t, LuaS.Symbol o)), args)
+    Call (pp_expr (Field (Symbol t, Symbol o)), args)
   in
   let wrap int_type expr = pp_expr (c_int_type_op int_type "make" [ expr ]) in
   function
-  | LuaS.Nil -> "nil"
-  | LuaS.Bool b -> string_of_bool b
-  | LuaS.Number value -> pp_expr value
-  | LuaS.Number_Int (value, t) ->
+  | Nil -> "nil"
+  | Bool b -> string_of_bool b
+  | Number value -> pp_expr value
+  | Number_Int (value, t) ->
     pp_expr (c_int_type_op t "make" [ value ])
-  | LuaS.Number_IntLimit (limit, t) ->
+  | Number_IntLimit (limit, t) ->
     (match String.lowercase_ascii limit with
      | "max" -> pp_expr (c_int_type_op t "max_val" [])
      | "min" -> pp_expr (c_int_type_op t "min_val" [])
      | _ -> failwith "Only support min or max for limit parameter")
-  | LuaS.Number_Float q -> Q.to_string q
-  | LuaS.String s -> "\"" ^ s ^ "\""
-  | LuaS.Symbol id -> id
-  | LuaS.Field (k, v) -> Printf.sprintf "%s.%s" (pp_expr k) (pp_expr v)
-  | LuaS.Call (fn, args) ->
+  | Number_Float q -> Q.to_string q
+  | String s -> "\"" ^ s ^ "\""
+  | Symbol id -> id
+  | Field (k, v) -> Printf.sprintf "%s.%s" (pp_expr k) (pp_expr v)
+  | Call (fn, args) ->
     let args_str = String.concat ", " (List.map pp_expr args) in
     Printf.sprintf "%s(%s)" fn args_str
-  | LuaS.Function (args, body, is_multiline) -> pp_fn "" args body ~is_multiline ()
-  | LuaS.Table (members, is_multiline) ->
+  | Function (args, body, is_multiline) -> pp_fn "" args body ~is_multiline ()
+  | Table (members, is_multiline) ->
     let pp_table_field table_field =
       match table_field with
-      | LuaS.Named (k, v) -> k ^ " = " ^ pp_expr v
-      | LuaS.List x -> pp_expr x
+      | Named (k, v) -> k ^ " = " ^ pp_expr v
+      | List x -> pp_expr x
     in
     if List.is_empty members then
       "{}"
@@ -74,94 +73,94 @@ let rec pp_expr =
     else (
       let table_body = String.concat ", " (List.map pp_table_field members) in
       "{ " ^ table_body ^ " }")
-  | LuaS.TableGet (tbl, key) -> pp_expr tbl ^ "[" ^ pp_expr key ^ "]"
-  | LuaS.TableSet (tbl, key, value) ->
-    pp_expr (LuaS.TableGet (tbl, key)) ^ " = " ^ pp_expr value
-  | LuaS.Binary args ->
+  | TableGet (tbl, key) -> pp_expr tbl ^ "[" ^ pp_expr key ^ "]"
+  | TableSet (tbl, key, value) ->
+    pp_expr (TableGet (tbl, key)) ^ " = " ^ pp_expr value
+  | Binary args ->
     let pp_binary_expr_type expr =
       match expr with
-      | LuaS.Or (a, b) -> pp_expr a ^ " or " ^ pp_expr b
-      | LuaS.And (a, b) -> pp_expr a ^ " and " ^ pp_expr b
-      | LuaS.AddI (a, b) -> pp_expr a ^ " + " ^ pp_expr b
-      | LuaS.Add (a, b, t) ->
-        let add_expr = LuaS.Symbol (pp_expr (LuaS.Binary (LuaS.AddI (a, b)))) in
+      | Or (a, b) -> pp_expr a ^ " or " ^ pp_expr b
+      | And (a, b) -> pp_expr a ^ " and " ^ pp_expr b
+      | AddI (a, b) -> pp_expr a ^ " + " ^ pp_expr b
+      | Add (a, b, t) ->
+        let add_expr = Symbol (pp_expr (Binary (AddI (a, b)))) in
         wrap t add_expr
-      | LuaS.SubtractI (a, b) -> pp_expr a ^ " - " ^ pp_expr b
-      | LuaS.Subtract (a, b, t) ->
-        let subtract_expr = LuaS.Symbol (pp_expr (LuaS.Binary (LuaS.SubtractI (a, b)))) in
+      | SubtractI (a, b) -> pp_expr a ^ " - " ^ pp_expr b
+      | Subtract (a, b, t) ->
+        let subtract_expr = Symbol (pp_expr (Binary (SubtractI (a, b)))) in
         wrap t subtract_expr
-      | LuaS.MultiplyI (a, b) -> pp_expr a ^ " * " ^ pp_expr b
-      | LuaS.Multiply (a, b, t) ->
-        let multiply_expr = LuaS.Symbol (pp_expr (LuaS.Binary (LuaS.MultiplyI (a, b)))) in
+      | MultiplyI (a, b) -> pp_expr a ^ " * " ^ pp_expr b
+      | Multiply (a, b, t) ->
+        let multiply_expr = Symbol (pp_expr (Binary (MultiplyI (a, b)))) in
         wrap t multiply_expr
-      | LuaS.IntegerDivide (a, b, t) -> pp_expr (c_int_type_op t "div" [ a; b ])
-      | LuaS.FloatDivide (_a, _b) -> failwith "Float Divide not supported yet"
-      | LuaS.Exp (a, b, t) -> pp_expr (c_int_type_op t "exp" [ a; b ])
-      | LuaS.Remainder (a, b, t) ->
-        let rem_expr = LuaS.Call ("math.fmod", [ a; b ]) in
+      | IntegerDivide (a, b, t) -> pp_expr (c_int_type_op t "div" [ a; b ])
+      | FloatDivide (_a, _b) -> failwith "Float Divide not supported yet"
+      | Exp (a, b, t) -> pp_expr (c_int_type_op t "exp" [ a; b ])
+      | Remainder (a, b, t) ->
+        let rem_expr = Call ("math.fmod", [ a; b ]) in
         wrap t rem_expr
-      | LuaS.Modulo (a, b, t) -> pp_expr (c_int_type_op t "mod" [ a; b ])
-      | LuaS.LessThan (a, b, t) ->
+      | Modulo (a, b, t) -> pp_expr (c_int_type_op t "mod" [ a; b ])
+      | LessThan (a, b, t) ->
         (match t with
          | "i8" | "i16" | "i32" | "i64" -> pp_expr a ^ " < " ^ pp_expr b
-         | _ -> pp_expr (LuaS.Call ("math.ult", [ a; b ])))
-      | LuaS.LessThanOrEqTo (a, b, t) ->
-        pp_expr (LuaS.Unary (LuaS.Not (LuaS.Binary (LuaS.LessThan (b, a, t)))))
-      | LuaS.Min (a, b, t) -> pp_expr (c_int_type_op t "min" [ a; b ])
-      | LuaS.Max (a, b, t) -> pp_expr (c_int_type_op t "max" [ a; b ])
-      | LuaS.BW_Xor (a, b, t) -> pp_expr (c_int_type_op t "bw_xor" [ a; b ])
-      | LuaS.BW_And (a, b, t) -> pp_expr (c_int_type_op t "bw_and" [ a; b ])
-      | LuaS.BW_Or (a, b, t) -> pp_expr (c_int_type_op t "bw_or" [ a; b ])
-      | LuaS.LeftShift (a, b, t) -> pp_expr (c_int_type_op t "shl" [ a; b ])
-      | LuaS.RightShift (a, b, t) ->
+         | _ -> pp_expr (Call ("math.ult", [ a; b ])))
+      | LessThanOrEqTo (a, b, t) ->
+        pp_expr (Unary (Not (Binary (LessThan (b, a, t)))))
+      | Min (a, b, t) -> pp_expr (c_int_type_op t "min" [ a; b ])
+      | Max (a, b, t) -> pp_expr (c_int_type_op t "max" [ a; b ])
+      | BW_Xor (a, b, t) -> pp_expr (c_int_type_op t "bw_xor" [ a; b ])
+      | BW_And (a, b, t) -> pp_expr (c_int_type_op t "bw_and" [ a; b ])
+      | BW_Or (a, b, t) -> pp_expr (c_int_type_op t "bw_or" [ a; b ])
+      | LeftShift (a, b, t) -> pp_expr (c_int_type_op t "shl" [ a; b ])
+      | RightShift (a, b, t) ->
         (match t with
          | "u8" | "u16" | "u32" | "u64" ->
-           let rhs_expr = LuaS.Symbol (pp_expr a ^ " >> " ^ pp_expr b) in
+           let rhs_expr = Symbol (pp_expr a ^ " >> " ^ pp_expr b) in
            wrap t rhs_expr
          | _ -> pp_expr (c_int_type_op t "shr" [ a; b ]))
-      | LuaS.Eq (a, b, can_prim_compare) ->
+      | Eq (a, b, can_prim_compare) ->
         (match can_prim_compare with
          | true -> "(" ^ pp_expr a ^ " == " ^ pp_expr b ^ ")"
-         | false -> pp_expr (LuaS.Call ("equals", [ a; b ])))
+         | false -> pp_expr (Call ("equals", [ a; b ])))
     in
     pp_binary_expr_type args
-  | LuaS.Unary args ->
+  | Unary args ->
     let pp_unary_expr_type args =
       let call_c_func name args =
-        LuaS.Call
+        Call
           ( pp_expr
-              (LuaS.Field
-                 (LuaS.Symbol "cn", LuaS.Field (LuaS.Symbol "c", LuaS.Symbol name))),
+              (Field
+                 (Symbol "cn", Field (Symbol "c", Symbol name))),
             args )
       in
       match args with
-      | LuaS.Not v -> "not (" ^ pp_expr v ^ ")"
-      | LuaS.Negate (v, t) ->
-        let neg_expr = LuaS.Symbol ("-" ^ pp_expr v) in
+      | Not v -> "not (" ^ pp_expr v ^ ")"
+      | Negate (v, t) ->
+        let neg_expr = Symbol ("-" ^ pp_expr v) in
         wrap t neg_expr
-      | LuaS.BW_FLS v -> pp_expr (call_c_func "fls" [ v ])
-      | LuaS.BW_FLSL v -> pp_expr (call_c_func "flsl" [ v ])
-      | LuaS.BW_Complement (v, t) -> pp_expr (c_int_type_op t "bw_compl" [ v ])
+      | BW_FLS v -> pp_expr (call_c_func "fls" [ v ])
+      | BW_FLSL v -> pp_expr (call_c_func "flsl" [ v ])
+      | BW_Complement (v, t) -> pp_expr (c_int_type_op t "bw_compl" [ v ])
     in
     pp_unary_expr_type args
 
 
 and pp_stmt = function
-  | LuaS.Assign (id, e_opt) ->
+  | Assign (id, e_opt) ->
     (match e_opt with Some x -> id ^ " = " ^ pp_expr x | None -> id)
-  | LuaS.Block stmts ->
+  | Block stmts ->
     let stmts_str = List.map pp_stmt stmts in
     "do\n" ^ indent stmts_str () ^ "\nend"
-  | LuaS.LocalAssign (id, e_opt) ->
+  | LocalAssign (id, e_opt) ->
     (match e_opt with
      | Some x -> "local " ^ id ^ " = " ^ pp_expr x
      | None -> "local " ^ id)
-  | LuaS.FunctionDef (fn, args, body, break_errors) -> pp_fn fn args body ~break_errors ()
-  | LuaS.LocalFunctionDef (fn, args, body) -> "local " ^ pp_fn fn args body ()
-  | LuaS.FunctionCall (fn, args) -> pp_expr (LuaS.Call (fn, args))
-  | LuaS.Return expr_opt ->
+  | FunctionDef (fn, args, body, break_errors) -> pp_fn fn args body ~break_errors ()
+  | LocalFunctionDef (fn, args, body) -> "local " ^ pp_fn fn args body ()
+  | FunctionCall (fn, args) -> pp_expr (Call (fn, args))
+  | Return expr_opt ->
     (match expr_opt with Some x -> "return " ^ pp_expr x | None -> "return")
-  | LuaS.IfElse cases ->
+  | IfElse cases ->
     let pp_if_statement cases =
       let render_body b = indent (List.map pp_stmt b) () in
       match cases with
@@ -185,13 +184,13 @@ and pp_stmt = function
         failwith "Syntax Error: 'if' statement must start with a condition."
     in
     pp_if_statement cases
-  | LuaS.SExpr expr -> pp_expr expr
-  | LuaS.While (cond, while_body) ->
+  | SExpr expr -> pp_expr expr
+  | While (cond, while_body) ->
     let while_cond = Printf.sprintf "while %s do\n" (pp_expr cond) in
     let body = List.map pp_stmt while_body in
     let indented_body = indent body () in
     while_cond ^ indented_body ^ "\nend"
-  | LuaS.LineBreak -> "\n"
+  | LineBreak -> "\n"
   | _ -> ""
 
 
