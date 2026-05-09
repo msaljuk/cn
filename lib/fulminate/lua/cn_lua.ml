@@ -95,10 +95,9 @@ let get_empty_lua_cn_exec =
 
 let get_cn_globals_sym_prefix = cn_globals_sym
 
-let make_local_assign stmt =
-  match stmt with
+let make_local_assign = function
   | LuaS.Assign (ident, expr_opt) -> LuaS.LocalAssign (ident, expr_opt)
-  | _ -> stmt
+  | stmt -> stmt
 
 
 let concat exec_list =
@@ -108,8 +107,7 @@ let concat exec_list =
   (* We only concat finalized execs - any halfway generated expression cannot be handled *)
   let _ =
     List.exists
-      (fun y ->
-         match y with
+      (function
          | LuaS.Nil -> false
          | _ ->
            (*@saljuk TODO: Eventually turn this assert on once all lua expressions are properly being generated *)
@@ -124,18 +122,15 @@ let convert_c_args_to_wrapper_args c_args =
   List.map (fun (tag, ctype) -> (tag, (CF.Ctype.no_qualifiers, ctype, false))) c_args
 
 
-let push_expr_to_exec (in_exec, expr) =
-  let stmts, wrappers, _ = in_exec in
+let push_expr_to_exec ((stmts, wrappers, _), expr) =
   (stmts, wrappers, expr)
 
 
-let pop_expr_from_exec in_exec =
-  let stmts, wrappers, expr = in_exec in
+let pop_expr_from_exec (stmts, wrappers, expr) =
   ((stmts, wrappers, get_empty_lua_expr), expr)
 
 
-let push_stmts_to_exec (in_exec, stmts) =
-  let stmts_pre, wrappers, expr = in_exec in
+let push_stmts_to_exec ((stmts_pre, wrappers, expr), stmts) =
   (stmts_pre @ stmts, wrappers, expr)
 
 
@@ -170,14 +165,12 @@ let debug_print_exprs exprs =
   List.iter (fun x -> print_endline (PP.pp_expr x)) exprs
 
 
-let is_function_empty func_body =
-  match func_body with
+let is_function_empty = function
   | LuaS.FunctionDef (_, _, body, _) -> List.is_empty body
   | _ -> false
 
 
-let get_lua_c_int_type_str bt =
-  match bt with
+let get_lua_c_int_type_str = function
   | BT.Loc () | BT.Integer -> "i64"
   | BT.Bits (sign, size) ->
     let sign_str = match sign with BT.Signed -> "i" | BT.Unsigned -> "u" in
@@ -253,40 +246,29 @@ let generate_lua_default_map_name sym = "default_" ^ Sym.pp_string sym
 let generate_lua_cn_empty_table = LuaS.Table ([], false)
 
 let generate_lua_ctype_symbol ctype =
+  let open CF.Ctype in
   let open LuaS in
   let get_ctype_str in_ctype =
     CF.Pp_utils.to_plain_pretty_string
-      (CF.Pp_ail.pp_ctype CF.Ctype.no_qualifiers in_ctype)
+      (CF.Pp_ail.pp_ctype no_qualifiers in_ctype)
   in
   let rec sym ctype =
     match rm_ctype ctype with
-    | CF.Ctype.Basic x ->
-      (match x with
-       | CF.Ctype.Integer i_type ->
-         (match i_type with
-          | CF.Ctype.Bool -> Symbol "bool"
-          (*@saljuk TODO: Buddy allocator uses char for number types 
-           but not sure if that'll always be the case *)
-          | CF.Ctype.Char -> Symbol "u_8"
-          (*@saljuk TODO: Flesh more of Signed/Unsigned out. *)
-          | CF.Ctype.Signed s ->
-            (match s with Long | LongLong -> Symbol "long" | _ -> Symbol "int")
-          | CF.Ctype.Unsigned y ->
-            let unsigned_prefix = "u_" in
-            (match y with
-             | CF.Ctype.Ichar -> Symbol (unsigned_prefix ^ "8")
-             | CF.Ctype.Long -> Symbol (unsigned_prefix ^ "long")
-             | _ -> Symbol (unsigned_prefix ^ "int"))
-          | _ -> failwith "Unsupported ctype. Could not get lua symbol")
-       | CF.Ctype.Floating f_type ->
-         (match f_type with
-          | CF.Ctype.RealFloating rf_type ->
-            (match rf_type with
-             | CF.Ctype.Float -> Symbol "float"
-             | _ -> failwith "Unsupported ctype. Could not get lua symbol")))
-    | CF.Ctype.Pointer (_, _) -> Symbol "pointer"
-    | CF.Ctype.Struct s_sym -> Symbol (Sym.pp_string s_sym)
-    | CF.Ctype.Array (array_c_type, size_opt) ->
+    | Basic (Integer Bool) -> Symbol "bool"
+    (*@saljuk TODO: Buddy allocator uses char for number types 
+      but not sure if that'll always be the case *)
+    | Basic (Integer Char) -> Symbol "u_8"
+    (*@saljuk TODO: Flesh more of Signed/Unsigned out. *)
+    | Basic (Integer (Signed (Long | LongLong))) -> Symbol "long"
+    | Basic (Integer (Signed _)) -> Symbol "int"
+    | Basic (Integer (Unsigned Ichar)) -> Symbol "u_8"
+    | Basic (Integer (Unsigned Long)) -> Symbol "u_long"
+    | Basic (Integer (Unsigned _)) -> Symbol "u_int"
+    | Basic (Floating (RealFloating Float)) -> Symbol "float"
+    | Basic _ -> failwith "Unsupported ctype. Could not get lua symbol"
+    | Pointer (_, _) -> Symbol "pointer"
+    | Struct s_sym -> Symbol (Sym.pp_string s_sym)
+    | Array (array_c_type, size_opt) ->
       let c_type_sym = sym array_c_type in
       let size = Option.value ~default:Z.zero size_opt in
       Call
@@ -304,36 +286,24 @@ let generate_lua_ctype_symbol ctype =
 
 
 let generate_lua_ctype_default_value ctype =
+  let open CF.Ctype in
   let open LuaS in
   (*@saljuk OPTIMIZATION: Replaced all bit-width integer makes with lua native number *)
   let zero_sym = Symbol "0" in
   let default_value ctype =
     match rm_ctype ctype with
-    | CF.Ctype.Basic x ->
-      (match x with
-       | CF.Ctype.Integer i_type ->
-         (match i_type with
-          | CF.Ctype.Bool -> Bool false
-          | CF.Ctype.Char -> Number zero_sym
-          | CF.Ctype.Signed s ->
-            (match s with
-             | Long | LongLong -> Number zero_sym
-             | _ -> Number zero_sym)
-          | CF.Ctype.Unsigned y ->
-            (match y with
-             | CF.Ctype.Ichar -> Number zero_sym
-             | CF.Ctype.Long -> Number zero_sym
-             | _ -> Number zero_sym)
-          | _ -> failwith "Unsupported ctype. Could not get default value for ctype")
-       | CF.Ctype.Floating f_type ->
-         (match f_type with
-          | CF.Ctype.RealFloating rf_type ->
-            (match rf_type with
-             | CF.Ctype.Float -> Number_Float Q.zero
-             | _ -> failwith "Unsupported ctype. Could not default value for ctype")))
-    | CF.Ctype.Pointer (_, _) -> Number zero_sym
-    | CF.Ctype.Struct s_sym -> Symbol (generate_lua_default_map_name s_sym)
-    | CF.Ctype.Array (_, _) -> generate_lua_cn_empty_table
+    | Basic (Integer Bool) -> Bool false
+    | Basic (Integer Char) -> Number zero_sym
+    | Basic (Integer (Signed (Long | LongLong))) -> Number zero_sym
+    | Basic (Integer (Signed _)) -> Number zero_sym
+    | Basic (Integer (Unsigned Ichar)) -> Number zero_sym
+    | Basic (Integer (Unsigned Long)) -> Number zero_sym
+    | Basic (Integer (Unsigned _)) -> Number zero_sym
+    | Basic (Floating (RealFloating Float)) -> Number_Float Q.zero
+    | Basic _ -> failwith "Unsupported ctype. Could not default value for ctype"
+    | Pointer (_, _) -> Number zero_sym
+    | Struct s_sym -> Symbol (generate_lua_default_map_name s_sym)
+    | Array (_, _) -> generate_lua_cn_empty_table
     | _ -> failwith "Unsupported type. Could not get default value for ctype"
   in
   default_value ctype
@@ -345,26 +315,20 @@ let generate_c_push_field_into_lua lua_state_expr c_field_expr c_type =
     mk_expr (A.AilEconst (ConstantInteger (IConstant (Z.of_int i, Decimal, None))))
   in
   let final_expr =
+    let open CF.Ctype in
     match rm_ctype c_type with
-    | CF.Ctype.Basic x ->
-      (match x with
-       | CF.Ctype.Integer i_type ->
-         (match i_type with
-          (* Since 'bools' in C are just typedefs as some version of a integer, we maintain there 
-           since some cn specs make comparisons to integers
-          *)
-          | CF.Ctype.Bool -> call "lua_pushinteger" [ lua_state_expr; c_field_expr ]
-          | CF.Ctype.Char ->
-            call "lua_pushlstring" [ lua_state_expr; c_field_expr; int_const 1 ]
-          | CF.Ctype.Signed _ | CF.Ctype.Unsigned _ | CF.Ctype.Size_t ->
-            call "lua_pushinteger" [ lua_state_expr; c_field_expr ]
-          | _ -> failwith "Unsupported type. Cannot push field into lua")
-       | CF.Ctype.Floating f_type ->
-         (match f_type with
-          | CF.Ctype.RealFloating rf_type ->
-            (match rf_type with
-             | CF.Ctype.Float | CF.Ctype.Double | CF.Ctype.LongDouble ->
-               call "lua_pushfloat" [ lua_state_expr; c_field_expr ])))
+    (* Since 'bools' in C are just typedefs as some version of a integer, we
+       maintain there since some cn specs make comparisons to integers
+    *)
+    | Basic (Integer Bool) ->
+        call "lua_pushinteger" [ lua_state_expr; c_field_expr ]
+    | Basic (Integer Char) ->
+        call "lua_pushlstring" [ lua_state_expr; c_field_expr; int_const 1 ]
+    | Basic (Integer (Signed _ | Unsigned _ | Size_t)) ->
+        call "lua_pushinteger" [ lua_state_expr; c_field_expr ]
+    | Basic (Integer _) -> failwith "Unsupported type. Cannot push field into lua"
+    | Basic (Floating (RealFloating (Float | Double | LongDouble))) ->
+        call "lua_pushfloat" [ lua_state_expr; c_field_expr ]
     | CF.Ctype.Pointer (_, _) ->
       call
         "lua_pushinteger"
@@ -453,8 +417,7 @@ let generate_c_fn_wrapper_def
   let generate_getfield field_name =
     call "lua_getfield" [ lua_state_expr; int_const (-1); str_expr field_name ]
   in
-  let generate_arg_push wrapper_fn_arg =
-    let arg_name, arg_type = wrapper_fn_arg in
+  let generate_arg_push (arg_name, (_, base, _)) =
     let arg_name_expr =
       let base = var (Sym.pp_string arg_name) in
       if global then
@@ -463,7 +426,6 @@ let generate_c_fn_wrapper_def
         base
     in
     let arg_ctype =
-      let _, base, _ = arg_type in
       if global then
         mk_ctype CF.Ctype.(Pointer (CF.Ctype.no_qualifiers, base))
       else
@@ -591,7 +553,7 @@ let generate_c_fn_push_struct_name struct_name =
   generate_c_fn_wrapper_name fn_sym
 
 
-let generate_c_fn_push_struct_offsets struct_data =
+let generate_c_fn_push_struct_offsets (struct_name, struct_members) =
     (*
        struct lua_State* L = lua_get_state();
   lua_rawgeti(L, LUA_REGISTRYINDEX, lua_cn_get_runtime_ref());
@@ -609,7 +571,6 @@ let generate_c_fn_push_struct_offsets struct_data =
   lua_setfield(L, -2, "s");
   lua_pop(L, 3);
     *)
-  let struct_name, struct_members = struct_data in
   let loc = Cerb_location.unknown in
   let attrs = CF.Annot.no_attributes in
   let id_prefix = generate_c_fn_push_struct_name struct_name in
@@ -701,7 +662,7 @@ let generate_c_fn_push_struct_offsets struct_data =
   (decl, def)
 
 
-let generate_c_fn_push_struct struct_data =
+let generate_c_fn_push_struct (struct_name, struct_members) =
   (*
      struct lua_State* L = lua_get_state();
 
@@ -716,7 +677,6 @@ let generate_c_fn_push_struct struct_data =
   lua_pushinteger(L, lua_convert_ptr_to_int(data->s));
   lua_setfield(L, -2, "s");
   *)
-  let struct_name, struct_members = struct_data in
   let loc = Cerb_location.unknown in
   let attrs = CF.Annot.no_attributes in
   let id = Sym.fresh (generate_c_fn_push_struct_name struct_name) in
@@ -864,7 +824,7 @@ let generate_c_fn_push_struct_array struct_tag =
   (decl, def)
 
 
-let generate_c_fn_get_struct struct_data =
+let generate_c_fn_get_struct (struct_name, _) =
   (*
      struct lua_State* L = lua_get_state();
   intptr_t ptr = luaL_checkinteger(L, 1);
@@ -872,7 +832,6 @@ let generate_c_fn_get_struct struct_data =
   lua_cn_push_s(data);
   return 1;
   *)
-  let struct_name, _ = struct_data in
   let struct_ptr_type =
     mk_ctype
       CF.Ctype.(Pointer (CF.Ctype.no_qualifiers, mk_ctype CF.Ctype.(Struct struct_name)))
@@ -1202,8 +1161,7 @@ let generate_lua_cn_spec_decl fn_sym =
 let generate_lua_push_frame_fn lua_fn_name c_fn_args =
   let get_args =
     List.map
-      (fun arg ->
-         let c_sym, _ = arg in
+      (fun (c_sym, _) ->
          let c_sym_as_lua_expr = LuaS.Symbol (Sym.pp_string c_sym) in
          LuaS.Assign
            ( Pp_lua.pp_expr (Field (cn_locals_sym, c_sym_as_lua_expr)),
@@ -1214,9 +1172,7 @@ let generate_lua_push_frame_fn lua_fn_name c_fn_args =
     [ LuaS.FunctionCall (Pp_lua.pp_expr cn_frames_push_fn_sym, []) ]
   in
   let lua_fn_body = initial_push_fn @ get_args in
-  let get_arg_name arg =
-    let c_sym, _ = arg in
-    LuaS.Symbol (Sym.pp_string c_sym)
+  let get_arg_name (c_sym, _) = LuaS.Symbol (Sym.pp_string c_sym)
   in
   let lua_fn_args = List.map get_arg_name c_fn_args in
   LuaS.FunctionDef (lua_fn_name, lua_fn_args, lua_fn_body, false)
@@ -1224,9 +1180,7 @@ let generate_lua_push_frame_fn lua_fn_name c_fn_args =
 
 let generate_lua_cn_fn_push_globals globals =
   let lua_fn_name = generate_lua_push_globals_fn_name in
-  let get_global_arg arg =
-    let c_sym, _ = arg in
-    convert c_sym
+  let get_global_arg (c_sym, _) = convert c_sym
   in
   let lua_fn_args = List.map get_global_arg globals in
   let lua_fn_body =
@@ -1311,11 +1265,11 @@ let generate_lua_cn_conj_loop
     if permission_only_bounds then
       (* Optimise Fulminate output if permission only consists of bounds *)
       loop_stmts @ [ incr_stmt ]
-    else (
+    else
       let if_stmt =
         generate_lua_cn_conditional [ (Some if_expr, loop_stmts); (None, []) ]
       in
-      [ if_stmt; incr_stmt ])
+      [ if_stmt; incr_stmt ]
   in
   LuaS.While (while_expr, loop_body)
 
@@ -1341,12 +1295,7 @@ let generate_lua_cn_each_pname_call pname ptr spec_mode loop_ownership_opt args 
     match loop_ownership_opt with Some x -> convert x | None -> LuaS.Symbol "nil"
   in
   let execs, exprs =
-    List.split
-      (List.map
-         (fun x ->
-            let exec, expr = pop_expr_from_exec x in
-            (exec, expr))
-         args)
+    List.split (List.map (fun x -> pop_expr_from_exec x) args)
   in
   let pname_call_expr =
     LuaS.Call
@@ -1521,13 +1470,8 @@ let cn_to_lua_unop (expr, bt, unop) =
         (Pp.plain (BT.pp bt))
     in
     (match bt with
-     | Bits (Unsigned, n) ->
-       if n == 64 then
-         LuaS.Unary (BW_FLSL expr)
-       else if n == 32 then
-         LuaS.Unary (BW_FLS expr)
-       else
-         failwith (__LOC__ ^ failure_msg)
+     | Bits (Unsigned, 64) -> LuaS.Unary (BW_FLSL expr)
+     | Bits (Unsigned, 32) -> LuaS.Unary (BW_FLS expr)
      | _ -> failwith (__LOC__ ^ failure_msg))
   | BW_Compl -> LuaS.Unary (BW_Complement (expr, lua_c_int_type))
   | BW_CLZ_NoSMT | BW_CTZ_NoSMT | BW_FFS_NoSMT ->
@@ -1578,11 +1522,10 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) =
     | Min -> LuaS.Binary (Min (expr_a, expr_b, lua_c_int_type))
     | Max -> LuaS.Binary (Max (expr_a, expr_b, lua_c_int_type))
     | EQ ->
-      let can_prim_compare =
-        if not (String.equal lua_c_int_type "incompatible") then
-          true
-        else (
-          match (bt_a, bt_b) with BT.Bool, BT.Bool -> true | _, _ -> false)
+      let can_prim_compare = match lua_c_int_type with
+        | "incompatible" -> 
+          (match bt_a, bt_b with BT.Bool, BT.Bool -> true | _ -> false)
+        | _ -> true
       in
       LuaS.Binary (Eq (expr_a, expr_b, can_prim_compare))
     | Implies -> LuaS.Call ("implies", [ expr_a; expr_b ])
@@ -1727,10 +1670,10 @@ let cn_to_lua_struct res_sym l =
 
 
 let cn_to_lua_cast _ to_type cast_exec =
-  let int_type_str = get_lua_c_int_type_str to_type in
-  if String.equal int_type_str "incompatible" then
-    cast_exec
-  else (
+  match get_lua_c_int_type_str to_type with
+  | "incompatible" -> cast_exec
+  | _ ->
+    let int_type_str = get_lua_c_int_type_str to_type in
     let exec, expr = pop_expr_from_exec cast_exec in
     let int_expr = LuaS.Number_Int (expr, int_type_str) in
-    push_expr_to_exec (exec, int_expr))
+    push_expr_to_exec (exec, int_expr)
