@@ -6155,7 +6155,7 @@ let cn_to_ail_pre_post
             let func_param_syms, _ = List.split params in
             List.map (fun sym -> mk_expr (A.AilEident sym)) func_param_syms)
         in
-        let gen_lua_function_frames () =
+        let lua_frame_function_push, lua_frame_function_pop =
           let func_params_expr = gen_params_expr c_func_params in
           let push_fn_wrapper_name =
             CnL.generate_c_push_frame_fn_wrapper_name c_func_name
@@ -6180,7 +6180,7 @@ let cn_to_ail_pre_post
               ([ push_fn_lua ], [ push_fn_wrapper_def ], CnL.get_empty_lua_expr) ),
             (CnL.generate_c_pop_frame_fn_wrapper_call, CnL.get_empty_lua_cn_exec) )
         in
-        let gen_lua_pre_post_wrappers () =
+        let lua_precond, lua_postcond =
           let open LuaS in
           let params_to_use = if is_lemma then c_func_params else [] in
           let wrapper_args = CnL.convert_c_args_to_wrapper_args params_to_use in
@@ -6254,14 +6254,10 @@ let cn_to_ail_pre_post
               ([ postcond_fn_lua ], [ postcond_fn_wrapper_def ], CnL.get_empty_lua_expr)
             ) )
         in
-        let lua_frame_function_push, lua_frame_function_pop =
-          gen_lua_function_frames ()
-        in
         let push_ss, push_ls = lua_frame_function_push in
         let pop_ss, pop_ls = lua_frame_function_pop in
         let push_ls = if is_lemma then CnL.get_empty_lua_cn_exec else push_ls in
         let pop_ls = if is_lemma then CnL.get_empty_lua_cn_exec else pop_ls in
-        let lua_precond, lua_postcond = gen_lua_pre_post_wrappers () in
         let precond_ss, precond_ls = lua_precond in
         let postcond_ss, postcond_ls = lua_postcond in
         let maybe_lemma_ls =
