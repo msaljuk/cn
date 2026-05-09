@@ -36,21 +36,23 @@ let break block delimiter =
 open Lua_syntax
 
 let rec pp_expr =
-  let c_int_type_op t o args =
-    Call (pp_expr (Field (Symbol t, Symbol o)), args)
+  let c_int_type_op t o args = Call (pp_expr (Field (Symbol t, Symbol o)), args)
   in
-  let wrap int_type expr = pp_expr (c_int_type_op int_type "make" [ expr ]) in
+  let wrap int_type expr = pp_expr (c_int_type_op int_type "make" [ expr ])
+  in
+  let pp_table_field = function
+    | Named (k, v) -> k ^ " = " ^ pp_expr v
+    | List x -> pp_expr x
+  in
   function
   | Nil -> "nil"
   | Bool b -> string_of_bool b
   | Number value -> pp_expr value
   | Number_Int (value, t) ->
     pp_expr (c_int_type_op t "make" [ value ])
-  | Number_IntLimit (limit, t) ->
-    (match String.lowercase_ascii limit with
-     | "max" -> pp_expr (c_int_type_op t "max_val" [])
-     | "min" -> pp_expr (c_int_type_op t "min_val" [])
-     | _ -> failwith "Only support min or max for limit parameter")
+  | Number_IntLimit ("max", t) -> pp_expr (c_int_type_op t "max_val" [])
+  | Number_IntLimit ("min", t) -> pp_expr (c_int_type_op t "min_val" [])
+  | Number_IntLimit _ -> failwith "Only support min or max for limit parameter"
   | Number_Float q -> Q.to_string q
   | String s -> "\"" ^ s ^ "\""
   | Symbol id -> id
@@ -59,20 +61,11 @@ let rec pp_expr =
     let args_str = String.concat ", " (List.map pp_expr args) in
     Printf.sprintf "%s(%s)" fn args_str
   | Function (args, body, is_multiline) -> pp_fn "" args body ~is_multiline ()
-  | Table (members, is_multiline) ->
-    let pp_table_field table_field =
-      match table_field with
-      | Named (k, v) -> k ^ " = " ^ pp_expr v
-      | List x -> pp_expr x
-    in
-    if List.is_empty members then
-      "{}"
-    else if is_multiline then (
-      let table_body = indent (List.map pp_table_field members) ~comma:true in
-      "{\n" ^ table_body ^ "\n}\n\n")
-    else (
-      let table_body = String.concat ", " (List.map pp_table_field members) in
-      "{ " ^ table_body ^ " }")
+  | Table ([], _) -> "{}"
+  | Table (members, true) ->
+      "{\n" ^ indent (List.map pp_table_field members) ~comma:true ^ "\n}\n\n"
+  | Table (members, false) ->
+      "{ " ^ String.concat ", " (List.map pp_table_field members) ^ " }"
   | TableGet (tbl, key) -> pp_expr tbl ^ "[" ^ pp_expr key ^ "]"
   | TableSet (tbl, key, value) ->
     pp_expr (TableGet (tbl, key)) ^ " = " ^ pp_expr value
@@ -100,10 +93,8 @@ let rec pp_expr =
         let rem_expr = Call ("math.fmod", [ a; b ]) in
         wrap t rem_expr
       | Modulo (a, b, t) -> pp_expr (c_int_type_op t "mod" [ a; b ])
-      | LessThan (a, b, t) ->
-        (match t with
-         | "i8" | "i16" | "i32" | "i64" -> pp_expr a ^ " < " ^ pp_expr b
-         | _ -> pp_expr (Call ("math.ult", [ a; b ])))
+      | LessThan (a, b, ("i8"|"i16"|"i32"|"i64")) -> pp_expr a ^ " < " ^ pp_expr b
+      | LessThan (a, b, _) -> pp_expr (Call ("math.ult", [ a; b ]))
       | LessThanOrEqTo (a, b, t) ->
         pp_expr (Unary (Not (Binary (LessThan (b, a, t)))))
       | Min (a, b, t) -> pp_expr (c_int_type_op t "min" [ a; b ])
@@ -112,16 +103,12 @@ let rec pp_expr =
       | BW_And (a, b, t) -> pp_expr (c_int_type_op t "bw_and" [ a; b ])
       | BW_Or (a, b, t) -> pp_expr (c_int_type_op t "bw_or" [ a; b ])
       | LeftShift (a, b, t) -> pp_expr (c_int_type_op t "shl" [ a; b ])
-      | RightShift (a, b, t) ->
-        (match t with
-         | "u8" | "u16" | "u32" | "u64" ->
+      | RightShift (a, b, ("u8"|"u16"|"u32"|"u64" as t)) ->
            let rhs_expr = Symbol (pp_expr a ^ " >> " ^ pp_expr b) in
            wrap t rhs_expr
-         | _ -> pp_expr (c_int_type_op t "shr" [ a; b ]))
-      | Eq (a, b, can_prim_compare) ->
-        (match can_prim_compare with
-         | true -> "(" ^ pp_expr a ^ " == " ^ pp_expr b ^ ")"
-         | false -> pp_expr (Call ("equals", [ a; b ])))
+      | RightShift (a, b, t) -> pp_expr (c_int_type_op t "shr" [ a; b ])
+      | Eq (a, b, true) -> "(" ^ pp_expr a ^ " == " ^ pp_expr b ^ ")"
+      | Eq (a, b, false) -> pp_expr (Call ("equals", [ a; b ]))
     in
     pp_binary_expr_type args
   | Unary args ->
@@ -144,22 +131,19 @@ let rec pp_expr =
     in
     pp_unary_expr_type args
 
-
 and pp_stmt = function
-  | Assign (id, e_opt) ->
-    (match e_opt with Some x -> id ^ " = " ^ pp_expr x | None -> id)
+  | Assign (id, None) -> id
+  | Assign (id, Some x) -> id ^ " = " ^ pp_expr x
   | Block stmts ->
     let stmts_str = List.map pp_stmt stmts in
     "do\n" ^ indent stmts_str ^ "\nend"
-  | LocalAssign (id, e_opt) ->
-    (match e_opt with
-     | Some x -> "local " ^ id ^ " = " ^ pp_expr x
-     | None -> "local " ^ id)
+  | LocalAssign (id, Some x) -> "local " ^ id ^ " = " ^ pp_expr x
+  | LocalAssign (id, None) -> "local " ^ id
   | FunctionDef (fn, args, body, break_errors) -> pp_fn fn args body ~break_errors ()
   | LocalFunctionDef (fn, args, body) -> "local " ^ pp_fn fn args body ()
   | FunctionCall (fn, args) -> pp_expr (Call (fn, args))
-  | Return expr_opt ->
-    (match expr_opt with Some x -> "return " ^ pp_expr x | None -> "return")
+  | Return (Some x) -> "return " ^ pp_expr x
+  | Return None -> "return"
   | IfElse cases ->
     let pp_if_statement cases =
       let render_body b = indent (List.map pp_stmt b) in
@@ -207,8 +191,8 @@ and pp_fn fn_name fn_args fn_body ?(is_multiline = true) ?(break_errors = false)
     else
       initial
   in
-  if is_multiline then (
+  if is_multiline then
     let indented_body = indent body in
-    header ^ "\n" ^ indented_body ^ end_str)
+    header ^ "\n" ^ indented_body ^ end_str
   else
     header ^ " " ^ String.concat "" body ^ end_str
