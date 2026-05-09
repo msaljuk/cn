@@ -6159,9 +6159,7 @@ let cn_to_ail_pre_post
             let func_param_syms, _ = List.split params in
             List.map (fun sym -> mk_expr (A.AilEident sym)) func_param_syms)
         in
-        let gen_lua_function_frames ()
-          : ('a A.statement_ * CnL.lua_cn_exec) * ('a A.statement_ * CnL.lua_cn_exec)
-          =
+        let gen_lua_function_frames () =
           let func_params_expr = gen_params_expr c_func_params in
           let push_fn_wrapper_name =
             CnL.generate_c_push_frame_fn_wrapper_name c_func_name
@@ -6187,9 +6185,7 @@ let cn_to_ail_pre_post
               ([ push_fn_lua ], [ push_fn_wrapper_def ], CnL.get_empty_lua_expr) ),
             (CnL.generate_c_pop_frame_fn_wrapper_call, CnL.get_empty_lua_cn_exec) )
         in
-        let gen_lua_pre_post_wrappers ()
-          : ('a A.statement_ * CnL.lua_cn_exec) * ('a A.statement_ * CnL.lua_cn_exec)
-          =
+        let gen_lua_pre_post_wrappers () =
           let open Lua.Lua_syntax in
           let params_to_use = if is_lemma then c_func_params else [] in
           let wrapper_args = CnL.convert_c_args_to_wrapper_args params_to_use in
