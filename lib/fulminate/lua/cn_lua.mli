@@ -127,12 +127,11 @@ Takes in
 - the list of C args that need to be pushed into Lua.
 - Whether or not these arguments are globals (if so, they don't appear in the wrapper prototype's args)
 *)
-val generate_c_fn_wrapper_def
-  :  string ->
+val generate_c_fn_wrapper_def :
+  ?global:bool ->
+  string ->
   string ->
   (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
-  ?global:bool ->
-  unit ->
   wrapper_function
 
 (*
@@ -198,13 +197,13 @@ val generate_lua_filename : string -> string -> string
    Utility used to generate the name of a Lua precondition function
 based on the name of the C function where it is called.
 *)
-val generate_lua_precondition_fn_name : Sym.t -> ?is_lemma:bool -> unit -> string
+val generate_lua_precondition_fn_name : ?is_lemma:bool -> Sym.t -> string
 
 (*
    Utility used to generate the name of a Lua postcondition function
 based on the name of the C function where it is called.
 *)
-val generate_lua_postcondition_fn_name : Sym.t -> ?is_lemma:bool -> unit -> string
+val generate_lua_postcondition_fn_name : ?is_lemma:bool -> Sym.t -> string
 
 (*
    Utility used to generate the name of a Lua function that pushes a bunch
@@ -405,13 +404,13 @@ val generate_lua_cn_predicate
   lua_cn_exec ->
   lua_statement
 
-val generate_lua_cn_bool_while_loop
-  :  Sym.t ->
+val generate_lua_cn_bool_while_loop :
+  ?if_cond_opt:lua_expression option ->
+  Sym.t ->
   BT.t ->
   lua_expression ->
   Sym.t * lua_expression ->
   lua_expression ->
-  ?if_cond_opt:lua_expression option ->
   lua_cn_exec ->
   lua_cn_exec
 
@@ -433,7 +432,7 @@ Returns:
 *)
 val cn_to_lua_const : IT.const -> BT.t -> lua_expression * bool
 
-val cn_to_lua_sym : CF.Ctype.union_tag -> ?is_global:bool -> unit -> lua_expression
+val cn_to_lua_sym : ?is_global:bool -> CF.Ctype.union_tag -> lua_expression
 
 val cn_to_lua_unop : lua_expression * BT.t * IT.unop -> lua_expression
 
