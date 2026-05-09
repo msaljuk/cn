@@ -1910,5 +1910,5 @@ let cn_to_lua_cast (_from_type : BT.t) (to_type : BT.t) (cast_exec : lua_cn_exec
     cast_exec
   else (
     let exec, expr = pop_expr_from_exec cast_exec in
-    let int_expr = LuaS.Number expr in
+    let int_expr = LuaS.Number_Int (expr, int_type_str) in
     push_expr_to_exec (exec, int_expr))
