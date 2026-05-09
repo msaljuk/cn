@@ -1,5 +1,5 @@
 
-let indent block ?(comma = false) () =
+let indent ?(comma = false) block =
   let sep = if comma then ",\n" else "\n" in
   let indent_line line =
     if Stdlib.(line = "") then "" else "    " ^ line
@@ -68,7 +68,7 @@ let rec pp_expr =
     if List.is_empty members then
       "{}"
     else if is_multiline then (
-      let table_body = indent (List.map pp_table_field members) ~comma:true () in
+      let table_body = indent (List.map pp_table_field members) ~comma:true in
       "{\n" ^ table_body ^ "\n}\n\n")
     else (
       let table_body = String.concat ", " (List.map pp_table_field members) in
@@ -150,7 +150,7 @@ and pp_stmt = function
     (match e_opt with Some x -> id ^ " = " ^ pp_expr x | None -> id)
   | Block stmts ->
     let stmts_str = List.map pp_stmt stmts in
-    "do\n" ^ indent stmts_str () ^ "\nend"
+    "do\n" ^ indent stmts_str ^ "\nend"
   | LocalAssign (id, e_opt) ->
     (match e_opt with
      | Some x -> "local " ^ id ^ " = " ^ pp_expr x
@@ -162,7 +162,7 @@ and pp_stmt = function
     (match expr_opt with Some x -> "return " ^ pp_expr x | None -> "return")
   | IfElse cases ->
     let pp_if_statement cases =
-      let render_body b = indent (List.map pp_stmt b) () in
+      let render_body b = indent (List.map pp_stmt b) in
       match cases with
       | [] -> failwith "Syntax Error: Must provide at least one valid case"
       (* If *)
@@ -188,7 +188,7 @@ and pp_stmt = function
   | While (cond, while_body) ->
     let while_cond = Printf.sprintf "while %s do\n" (pp_expr cond) in
     let body = List.map pp_stmt while_body in
-    let indented_body = indent body () in
+    let indented_body = indent body in
     while_cond ^ indented_body ^ "\nend"
   | LineBreak -> "\n"
   | _ -> ""
@@ -208,7 +208,7 @@ and pp_fn fn_name fn_args fn_body ?(is_multiline = true) ?(break_errors = false)
       initial
   in
   if is_multiline then (
-    let indented_body = indent body () in
+    let indented_body = indent body in
     header ^ "\n" ^ indented_body ^ end_str)
   else
     header ^ " " ^ String.concat "" body ^ end_str

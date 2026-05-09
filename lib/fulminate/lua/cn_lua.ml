@@ -384,7 +384,7 @@ let generate_c_push_field_into_lua lua_state_expr c_field_expr c_type =
 
 
 let generate_c_fn_wrapper_def
-    lua_fn_name wrapper_fn_name wrapper_fn_args ?(global = false) () =
+    ?(global = false) lua_fn_name wrapper_fn_name wrapper_fn_args =
   (*
      Example 
 
@@ -1008,7 +1008,7 @@ let generate_lua_lemma_fn_prefix c_fn_name =
   Pp_lua.pp_expr cn_lemma_sym ^ "." ^ Sym.pp_string c_fn_name ^ "."
 
 
-let generate_lua_precondition_fn_name c_fn_name ?(is_lemma = false) () =
+let generate_lua_precondition_fn_name ?(is_lemma = false) c_fn_name =
   let suffix = "precondition" in
   if is_lemma then
     generate_lua_lemma_fn_prefix c_fn_name ^ suffix
@@ -1016,7 +1016,7 @@ let generate_lua_precondition_fn_name c_fn_name ?(is_lemma = false) () =
     generate_lua_fn_prefix c_fn_name ^ suffix
 
 
-let generate_lua_postcondition_fn_name c_fn_name ?(is_lemma = false) () =
+let generate_lua_postcondition_fn_name ?(is_lemma = false) c_fn_name  =
   let suffix = "postcondition" in
   if is_lemma then
     generate_lua_lemma_fn_prefix c_fn_name ^ suffix
@@ -1043,7 +1043,6 @@ let generate_c_fn_push_globals globals =
     c_wrapper_fn_name
     converted_globals
     ~global:true
-    ()
 
 
 let generate_lua_inline_fn fn_name fn_args fn_body =
@@ -1062,11 +1061,11 @@ let generate_lua_cn_lemma_fn (fn_sym, fn_params) =
   let push_fn = FunctionCall (Pp_lua.pp_expr cn_frames_push_fn_sym, []) in
   let precond_fn_call =
     FunctionCall
-      (generate_lua_precondition_fn_name fn_sym ~is_lemma:true (), args_expr)
+      (generate_lua_precondition_fn_name fn_sym ~is_lemma:true, args_expr)
   in
   let postcond_fn_call =
     FunctionCall
-      (generate_lua_postcondition_fn_name fn_sym ~is_lemma:true (), args_expr)
+      (generate_lua_postcondition_fn_name fn_sym ~is_lemma:true, args_expr)
   in
   let pop_fn = FunctionCall (Pp_lua.pp_expr cn_frames_pop_fn_sym, []) in
   let fn_def =
@@ -1411,9 +1410,9 @@ let generate_lua_cn_predicate pred_sym (pred_def : Definition.Predicate.t) pred_
   LuaS.LocalFunctionDef (Sym.pp_string pred_sym, params, stmts)
 
 
-let generate_lua_cn_bool_while_loop
+let generate_lua_cn_bool_while_loop ?(if_cond_opt = None)
       sym bt start_int_const (end_sym, end_int_const) while_cond
-      ?(if_cond_opt = None) (stmts, _, expr) =
+      (stmts, _, expr) =
   let b = convert (Sym.fresh_anon ()) in
   let b_decl =
     generate_lua_cn_local_assignment (Pp_lua.pp_expr b) (Some (LuaS.Bool true))
@@ -1501,7 +1500,7 @@ let cn_to_lua_const constant _baseType =
   (lua_expression, is_unit)
 
 
-let cn_to_lua_sym c_sym ?(is_global = false) () =
+let cn_to_lua_sym ?(is_global = false) c_sym =
   let fixed_sym = fix_for_reserve_words_sym c_sym in
   let lua_sym = convert fixed_sym in
   if is_global then
