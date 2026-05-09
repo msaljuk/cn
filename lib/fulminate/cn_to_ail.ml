@@ -14,6 +14,7 @@ module AT = ArgumentTypes
 module OE = Ownership
 module RC = Runtime_config
 module CnL = Lua.Cn_lua
+module LuaS = Lua.Lua_syntax
 
 let getter_str filename sym =
   "cn_test_get_" ^ Utils.static_prefix filename ^ "_" ^ Sym.pp_string sym
@@ -2344,7 +2345,7 @@ let generate_map_get sym =
     mk_expr
       A.(
         AilEbinary
-          ( mk_expr A.(AilEconst (ConstantInteger (IConstant (Z.of_int 0, Decimal, None)))),
+          ( mk_expr (AilEconst (ConstantInteger (IConstant (Z.of_int 0, Decimal, None)))),
             Eq,
             mk_expr ret_ident ))
   in
@@ -3780,7 +3781,7 @@ let cn_to_ail_resource
                   A.(
                     AilEbinary
                       ( ail_sizeof_expr,
-                        A.(Arithmetic Mul),
+                        Arithmetic Mul,
                         mk_expr (wrap_with_convert_from (rm_expr range_expr) i_bt) ))
               in
               let ptr_member_of =
@@ -3935,7 +3936,6 @@ let cn_to_ail_resource
            in
            ([], [ ail_block ], CnL.get_empty_lua_cn_exec)
          | RC.Lua ->
-           let open Lua.Pp_lua in
            let start_assign, end_assign = gen_lua_start_end_stmts in
            let ptr_add_stmt = gen_lua_ptr_add_stmt () in
            let _, rhs_expr = CnL.pop_expr_from_exec ls in
@@ -3996,7 +3996,6 @@ let cn_to_ail_resource
                 in
                 ([], [], [ while_loop ], [], [])
               | RC.Lua ->
-                let open Lua.Pp_lua in
                 let ptr_add_stmt = gen_lua_ptr_add_stmt () in
                 let _, rhs_expr = CnL.pop_expr_from_exec ls in
                 let rhs_stmt = LuaS.SExpr rhs_expr in
@@ -4123,8 +4122,7 @@ let cn_to_ail_logical_constraint_aux
         | RC.C ->
           dest d spec_mode_opt ([], [], CnL.get_empty_lua_cn_exec, cn_bool_true_expr)
         | RC.Lua ->
-          let open Lua.Lua_syntax in
-          let lua_bool_expr = Bool true in
+          let lua_bool_expr = LuaS.Bool true in
           dest d spec_mode_opt ([], [], ([], [], lua_bool_expr), mk_expr ail_null))
      | _ ->
        (* Assume cond_it is of a particular form *)
@@ -6186,7 +6184,7 @@ let cn_to_ail_pre_post
             (CnL.generate_c_pop_frame_fn_wrapper_call, CnL.get_empty_lua_cn_exec) )
         in
         let gen_lua_pre_post_wrappers () =
-          let open Lua.Lua_syntax in
+          let open LuaS in
           let params_to_use = if is_lemma then c_func_params else [] in
           let wrapper_args = CnL.convert_c_args_to_wrapper_args params_to_use in
           let fn_wrapper_call_params_expr = gen_params_expr params_to_use in
@@ -6806,7 +6804,7 @@ let cn_to_ail_assume_resource
           A.(
             AilSwhile
               ( wrap_with_convert_from_cn_bool while_cond_expr,
-                mk_stmt A.(AilSblock ([], List.map mk_stmt [ if_stat; increment_stat ])),
+                mk_stmt (AilSblock ([], List.map mk_stmt [ if_stat; increment_stat ])),
                 0 ))
         in
         let ail_block =
