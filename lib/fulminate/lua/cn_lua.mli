@@ -127,8 +127,8 @@ Takes in
 - the list of C args that need to be pushed into Lua.
 - Whether or not these arguments are globals (if so, they don't appear in the wrapper prototype's args)
 *)
-val generate_c_fn_wrapper_def :
-  ?global:bool ->
+val generate_c_fn_wrapper_def
+  :  ?global:bool ->
   string ->
   string ->
   (CF.Ctype.union_tag * (CF.Ctype.qualifiers * CF.Ctype.ctype * bool)) list ->
@@ -404,8 +404,8 @@ val generate_lua_cn_predicate
   lua_cn_exec ->
   lua_statement
 
-val generate_lua_cn_bool_while_loop :
-  ?if_cond_opt:lua_expression option ->
+val generate_lua_cn_bool_while_loop
+  :  ?if_cond_opt:lua_expression option ->
   Sym.t ->
   BT.t ->
   lua_expression ->
