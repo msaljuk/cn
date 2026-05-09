@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail -o noclobber
 
-USAGE="USAGE: $0 -h\n       $0 [-nqul] FILE.c"
+USAGE="USAGE: $0 -h\n       $0 [-nquli] FILE.c"
 
 function echo_and_err() {
     printf "$1\n"
@@ -11,8 +11,9 @@ function echo_and_err() {
 QUIET=""
 NO_CHECK_OWNERSHIP=""
 RUNTIME=""
+LOOP_INVARIANTS=""
 
-while getopts "hnqul" flag; do
+while getopts "hnquli" flag; do
  case "$flag" in
    h)
    printf "${USAGE}"
@@ -30,6 +31,9 @@ while getopts "hnqul" flag; do
    ;;
    l)
    RUNTIME="--experimental-lua-runtime"
+   ;;
+   i)
+   LOOP_INVARIANTS="--without-loop-invariants"
    ;;
    \?)
    echo_and_err "${USAGE}"
@@ -54,7 +58,7 @@ if [[ -n "$QUIET" ]]; then
   exec 2>/dev/null
   if cn instrument "${INPUT_FN}" --run --no-debug-info --tmp \
        --output="${INPUT_BASENAME}.exec.c" \
-       ${NO_CHECK_OWNERSHIP} ${RUNTIME} > /dev/null; then
+       ${NO_CHECK_OWNERSHIP} ${RUNTIME} ${LOOP_INVARIANTS} > /dev/null; then
     :
   else
     exit 1
@@ -62,7 +66,7 @@ if [[ -n "$QUIET" ]]; then
 else
   if cn instrument "${INPUT_FN}" --run --no-debug-info --tmp --print-steps \
       --output="${INPUT_BASENAME}.exec.c" \
-      ${NO_CHECK_OWNERSHIP} ${RUNTIME}; then
+      ${NO_CHECK_OWNERSHIP} ${RUNTIME} ${LOOP_INVARIANTS}; then
     echo "Success!"
   else
     echo "Test $1 failed." >&2
