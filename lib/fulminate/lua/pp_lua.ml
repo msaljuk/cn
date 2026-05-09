@@ -3,10 +3,10 @@ include PPrint
 
 let indent block ?(comma = false) () =
   let sep = if comma then ",\n" else "\n" in
-  let indent_line (line : string) : string =
+  let indent_line line =
     if Stdlib.(line = "") then "" else "    " ^ line
   in
-  let process_string (s : string) : string =
+  let process_string s =
     let lines = Stdlib.String.split_on_char '\n' s in
     let indented = Stdlib.List.map indent_line lines in
     Stdlib.String.concat "\n" indented
@@ -15,7 +15,7 @@ let indent block ?(comma = false) () =
   Stdlib.String.concat sep indented_block
 
 
-let break (block : string list) (delimiter : string) =
+let break block delimiter =
   let contains s1 s2 =
     let re = Str.regexp_string s2 in
     try
@@ -44,15 +44,15 @@ let rec pp_expr =
   function
   | LuaS.Nil -> "nil"
   | LuaS.Bool b -> string_of_bool b
-  | LuaS.Number (value : LuaS.expr) -> pp_expr value
-  | LuaS.Number_Int ((value, t) : LuaS.expr * string) ->
+  | LuaS.Number value -> pp_expr value
+  | LuaS.Number_Int (value, t) ->
     pp_expr (c_int_type_op t "make" [ value ])
-  | LuaS.Number_IntLimit ((limit, t) : string * string) ->
+  | LuaS.Number_IntLimit (limit, t) ->
     (match String.lowercase_ascii limit with
      | "max" -> pp_expr (c_int_type_op t "max_val" [])
      | "min" -> pp_expr (c_int_type_op t "min_val" [])
      | _ -> failwith "Only support min or max for limit parameter")
-  | LuaS.Number_Float (q : Q.t) -> Q.to_string q
+  | LuaS.Number_Float q -> Q.to_string q
   | LuaS.String s -> "\"" ^ s ^ "\""
   | LuaS.Symbol id -> id
   | LuaS.Field (k, v) -> Printf.sprintf "%s.%s" (pp_expr k) (pp_expr v)
@@ -60,8 +60,8 @@ let rec pp_expr =
     let args_str = String.concat ", " (List.map pp_expr args) in
     Printf.sprintf "%s(%s)" fn args_str
   | LuaS.Function (args, body, is_multiline) -> pp_fn "" args body ~is_multiline ()
-  | LuaS.Table ((members, is_multiline) : LuaS.table_field_type list * bool) ->
-    let pp_table_field (table_field : LuaS.table_field_type) =
+  | LuaS.Table (members, is_multiline) ->
+    let pp_table_field table_field =
       match table_field with
       | LuaS.Named (k, v) -> k ^ " = " ^ pp_expr v
       | LuaS.List x -> pp_expr x
