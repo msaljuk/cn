@@ -1609,6 +1609,7 @@ let cn_to_lua_const (constant : IT.const) (_baseType : BT.t) : lua_expression * 
     | MemByte { alloc_id = _; value = i } -> LuaS.Number (z_sym i)
     | Bits ((sgn, sz), i) ->
       let z_min, _ = BT.bits_range (sgn, sz) in
+      let _, max_signed_range = BT.bits_range (BT.Signed, sz) in
       let int_type_str =
         let sign_str = match sgn with BT.Signed -> "i" | BT.Unsigned -> "u" in
         let size_str = string_of_int sz in
@@ -1619,6 +1620,8 @@ let cn_to_lua_const (constant : IT.const) (_baseType : BT.t) : lua_expression * 
           LuaS.Binary
             (LuaS.Subtract
                (z_sym (Z.neg (Z.sub (Z.neg i) Z.one)), z_sym Z.one, int_type_str))
+        else if Z.gt i max_signed_range && BT.equal_sign sgn BT.Unsigned then
+          LuaS.Symbol (Z.format "%#x" i)
         else
           LuaS.Number (z_sym i)
       in
