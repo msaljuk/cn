@@ -34,7 +34,7 @@ let break block delimiter =
 open Lua_syntax
 
 let rec pp_expr =
-  let c_int_type_op t o args = Call (pp_expr (Field (Symbol t, Symbol o)), args) in
+  let c_int_type_op t o args = Call (Field (Symbol t, Symbol o), args) in
   let wrap int_type expr = pp_expr (c_int_type_op int_type "make" [ expr ]) in
   let pp_table_field = function
     | Named (k, v) -> k ^ " = " ^ pp_expr v
@@ -54,7 +54,7 @@ let rec pp_expr =
   | Field (k, v) -> Printf.sprintf "%s.%s" (pp_expr k) (pp_expr v)
   | Call (fn, args) ->
     let args_str = String.concat ", " (List.map pp_expr args) in
-    Printf.sprintf "%s(%s)" fn args_str
+    Printf.sprintf "%s(%s)" (pp_expr fn) args_str
   | Function (args, body, is_multiline) -> pp_fn "" args body ~is_multiline ()
   | Table ([], _) -> "{}"
   | Table (members, true) ->
@@ -84,11 +84,11 @@ let rec pp_expr =
       | FloatDivide (_a, _b) -> failwith "Float Divide not supported yet"
       | Exp (a, b, t) -> pp_expr (c_int_type_op t "exp" [ a; b ])
       | Remainder (a, b, t) ->
-        let rem_expr = Call ("math.fmod", [ a; b ]) in
+        let rem_expr = Call (Symbol "math.fmod", [ a; b ]) in
         wrap t rem_expr
       | Modulo (a, b, t) -> pp_expr (c_int_type_op t "mod" [ a; b ])
       | LessThan (a, b, ("i8" | "i16" | "i32" | "i64")) -> pp_expr a ^ " < " ^ pp_expr b
-      | LessThan (a, b, _) -> pp_expr (Call ("math.ult", [ a; b ]))
+      | LessThan (a, b, _) -> pp_expr (Call (Symbol "math.ult", [ a; b ]))
       | LessThanOrEqTo (a, b, t) -> pp_expr (Unary (Not (Binary (LessThan (b, a, t)))))
       | Min (a, b, t) -> pp_expr (c_int_type_op t "min" [ a; b ])
       | Max (a, b, t) -> pp_expr (c_int_type_op t "max" [ a; b ])
@@ -101,13 +101,13 @@ let rec pp_expr =
         wrap t rhs_expr
       | RightShift (a, b, t) -> pp_expr (c_int_type_op t "shr" [ a; b ])
       | Eq (a, b, true) -> "(" ^ pp_expr a ^ " == " ^ pp_expr b ^ ")"
-      | Eq (a, b, false) -> pp_expr (Call ("equals", [ a; b ]))
+      | Eq (a, b, false) -> pp_expr (Call (Symbol "equals", [ a; b ]))
     in
     pp_binary_expr_type args
   | Unary args ->
     let pp_unary_expr_type args =
       let call_c_func name args =
-        Call (pp_expr (Field (Symbol "cn", Field (Symbol "c", Symbol name))), args)
+        Call (Field (Symbol "cn", Field (Symbol "c", Symbol name)), args)
       in
       match args with
       | Not v -> "not (" ^ pp_expr v ^ ")"

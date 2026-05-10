@@ -4410,8 +4410,7 @@ let cn_to_ail_function
     (Some (((loc, decl), def), ail_record_opt), None)
   | RC.Lua ->
     (* For lua, we only translate the user-defined functions. Anything else already exists in the 
-     * core runtime library.
-     *)
+       core runtime library. *)
     (match List.nth_opt matched_cn_functions 0 with
      | Some _ ->
        let lua_func_stmt = CnL.generate_lua_cn_function fn_sym lf_def lua_func_body in
@@ -5076,16 +5075,14 @@ let cn_to_ail_cnprog ~without_lemma_checks filename dts globals spec_mode_opt cn
       List.for_all Fun.id indv_body_results
     in
     (* Allows us to skip any inline statements that are more hints for the proof checker and not
-     * any meaningful Fulminate statement
-     *)
+       any meaningful Fulminate statement *)
     if are_bodies_empty then
       ([], [], CnL.get_empty_lua_cn_exec)
     else (
       (* We now have a map of each let binding i.e.
-       * { deref_read_q00 -> read_q0, read_q0 -> q }
-       * Traverse it to find the value that is not bound to anything - that is 
-       * our 'root' c parameter that we must push into Lua
-       *)
+         { deref_read_q00 -> read_q0, read_q0 -> q }
+         Traverse it to find the value that is not bound to anything - that is 
+         our 'root' c parameter that we must push into Lua *)
       let get_inline_stmt_args (map : (String.t * CF.Ctype.ctype) StringMap.t) =
         let all_values = StringMap.fold (fun _key value acc -> value :: acc) map [] in
         let global_sym_str = CnL.expr_to_string CnL.get_cn_globals_sym_prefix in
