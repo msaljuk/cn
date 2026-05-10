@@ -11,7 +11,7 @@ type expr =
   | String of string
   | Symbol of ident
   | Field of expr * expr
-  | Call of ident * expr list
+  | Call of expr * expr list
   | Function of
       expr list * stmt list * bool (* function(a, b) ... end - anonymous function *)
   | Table of table_field_type list * bool
@@ -65,7 +65,7 @@ and stmt =
       ident * expr list * stmt list * bool (* function x(a, b) \n body \n end *)
   | LocalFunctionDef of
       ident * expr list * stmt list (* local function x(a, b) \n body \n end *)
-  | FunctionCall of ident * expr list (* assert(false) *)
+  | FunctionCall of expr * expr list (* assert(false) *)
   | Return of expr option (* return false *)
   | LocalTable of expr * expr list (* local x = { a = 5, b = 7 } *)
   | IfElse of (expr option * stmt list) list (* if(cond) then ... else ... *)

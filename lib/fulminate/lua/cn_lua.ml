@@ -77,7 +77,7 @@ let lua_c_number_unsigned_types = [ "u8"; "u16"; "u32"; "u64" ]
 
 let lua_c_number_signed_types = [ "i8"; "i16"; "i32"; "i64" ]
 
-let cn_generate_get_field_prefix_sym = LuaS.Symbol "cn.c.generate_get_"
+let cn_generate_get_field_prefix_sym sym = LuaS.Symbol ("cn.c.generate_get_" ^ sym)
 
 let get_empty_lua_expr = LuaS.Nil
 
@@ -259,7 +259,7 @@ let generate_lua_ctype_symbol ctype =
       let c_type_sym = sym array_c_type in
       let size = Option.value ~default:Z.zero size_opt in
       Call
-        ( "array",
+        ( Symbol "array",
           [ String (Pp_lua.pp_expr c_type_sym); Number (Symbol (Z.to_string size)) ] )
       (*failwith ("Unsupported type. Could not get lua symbol for type " ^ (get_ctype_str array_c_type)
        ^ "and size " ^ Z.to_string (Option.value ~default:Z.minus_one size_opt))*)
@@ -936,7 +936,7 @@ let generate_lua_ctype_get ctype =
   let ctype_sym_expr = generate_lua_ctype_symbol ctype in
   match ctype_sym_expr with
   | LuaS.Call (array_prefix, array_args) ->
-    LuaS.Call (Pp_lua.pp_expr cn_generate_get_field_prefix_sym ^ array_prefix, array_args)
+    LuaS.Call (cn_generate_get_field_prefix_sym (Pp_lua.pp_expr array_prefix), array_args)
   | _ ->
     LuaS.Symbol (Pp_lua.pp_expr cn_get_field_prefix_sym ^ Pp_lua.pp_expr ctype_sym_expr)
 
@@ -1000,14 +1000,16 @@ let generate_lua_cn_inline_lemma_call in_exec =
 let generate_lua_cn_lemma_fn (fn_sym, fn_params) =
   let open LuaS in
   let args_expr = List.map (fun (sym, _) -> convert sym) fn_params in
-  let push_fn = FunctionCall (Pp_lua.pp_expr cn_frames_push_fn_sym, []) in
+  let push_fn = FunctionCall (cn_frames_push_fn_sym, []) in
   let precond_fn_call =
-    FunctionCall (generate_lua_precondition_fn_name fn_sym ~is_lemma:true, args_expr)
+    FunctionCall
+      (Symbol (generate_lua_precondition_fn_name fn_sym ~is_lemma:true), args_expr)
   in
   let postcond_fn_call =
-    FunctionCall (generate_lua_postcondition_fn_name fn_sym ~is_lemma:true, args_expr)
+    FunctionCall
+      (Symbol (generate_lua_postcondition_fn_name fn_sym ~is_lemma:true), args_expr)
   in
-  let pop_fn = FunctionCall (Pp_lua.pp_expr cn_frames_pop_fn_sym, []) in
+  let pop_fn = FunctionCall (cn_frames_pop_fn_sym, []) in
   let fn_def =
     FunctionDef
       ( Pp_lua.pp_expr (Field (cn_lemma_sym, convert fn_sym)),
@@ -1020,8 +1022,7 @@ let generate_lua_cn_lemma_fn (fn_sym, fn_params) =
 
 let generate_lua_cn_get_or_put_ownership spec_mode ptr sizeof loop_ownership =
   LuaS.FunctionCall
-    ( Pp_lua.pp_expr cn_get_or_put_ownership_sym,
-      [ spec_mode; ptr; sizeof; loop_ownership ] )
+    (cn_get_or_put_ownership_sym, [ spec_mode; ptr; sizeof; loop_ownership ])
 
 
 let generate_lua_cn_const_number number = LuaS.Number (Symbol (Z.to_string number))
@@ -1030,7 +1031,7 @@ let generate_lua_owned_fn_name = Pp_lua.pp_expr cn_owned_sym
 
 let generate_lua_runtime_core_req (* local cn = require("lua_cn_runtime_core") *) =
   LuaS.LocalAssign
-    (get_expr_str cn_sym, Some (Call ("require", [ String "lua_cn_runtime_core" ])))
+    (get_expr_str cn_sym, Some (Call (Symbol "require", [ String "lua_cn_runtime_core" ])))
 
 
 let generate_lua_runtime_return (* return cn *) = LuaS.Return (Some cn_sym)
@@ -1111,7 +1112,7 @@ let generate_lua_cn_match_case_equality (subject, case) =
 
 
 let generate_lua_cn_map_define map_sym default_expr =
-  let map_def_expr = LuaS.Call (Pp_lua.pp_expr cn_map_def_sym, [ default_expr ]) in
+  let map_def_expr = LuaS.Call (cn_map_def_sym, [ default_expr ]) in
   let map_sym_str = Sym.pp_string map_sym in
   (*@saljuk $HACK: We want to figure out if this is a frame local or a function local.
     Ideally, this info would come from someplace upstream, but the cn_to_lua_resource
@@ -1143,9 +1144,7 @@ let generate_lua_push_frame_fn lua_fn_name c_fn_args =
              Some c_sym_as_lua_expr ))
       c_fn_args
   in
-  let initial_push_fn =
-    [ LuaS.FunctionCall (Pp_lua.pp_expr cn_frames_push_fn_sym, []) ]
-  in
+  let initial_push_fn = [ LuaS.FunctionCall (cn_frames_push_fn_sym, []) ] in
   let lua_fn_body = initial_push_fn @ get_args in
   let get_arg_name (c_sym, _) = LuaS.Symbol (Sym.pp_string c_sym) in
   let lua_fn_args = List.map get_arg_name c_fn_args in
@@ -1165,12 +1164,10 @@ let generate_lua_cn_fn_push_globals globals =
 
 
 let generate_lua_cn_error_stack_push msg =
-  LuaS.FunctionCall (get_expr_str cn_error_stack_push_sym, [ String msg ])
+  LuaS.FunctionCall (cn_error_stack_push_sym, [ String msg ])
 
 
-let generate_lua_cn_error_stack_pop =
-  LuaS.FunctionCall (get_expr_str cn_error_stack_pop_sym, [])
-
+let generate_lua_cn_error_stack_pop = LuaS.FunctionCall (cn_error_stack_pop_sym, [])
 
 let generate_lua_cn_assert error_msg in_exec spec_mode =
   let exec', assert_expr = pop_expr_from_exec in_exec in
@@ -1185,9 +1182,7 @@ let generate_lua_cn_assert error_msg in_exec spec_mode =
     let push_err_stmt = generate_lua_cn_error_stack_push error_msg in
     let pop_err_stmt = generate_lua_cn_error_stack_pop in
     let spec_mode_field = LuaS.Symbol (Sym.pp_string spec_mode) in
-    let core_stmt =
-      LuaS.FunctionCall (Pp_lua.pp_expr cn_assert_sym, [ assert_expr; spec_mode_field ])
-    in
+    let core_stmt = LuaS.FunctionCall (cn_assert_sym, [ assert_expr; spec_mode_field ]) in
     let stmts = [ push_err_stmt; core_stmt; pop_err_stmt ] in
     let cn_exec_for_assert = push_stmts_to_exec (exec', stmts) in
     cn_exec_for_assert)
@@ -1199,10 +1194,12 @@ let generate_lua_cn_return expr is_unit =
   LuaS.Return (if is_unit then None else Some expr)
 
 
+let of_ail_symbol sym = LuaS.Symbol (Sym.pp_string sym)
+
 let generate_lua_cn_pname_resource_call pname args =
   let execs_and_exprs = List.map (fun x -> pop_expr_from_exec x) args in
   let execs, exprs = List.split execs_and_exprs in
-  let final_expr = LuaS.Call (Sym.pp_string pname, exprs) in
+  let final_expr = LuaS.Call (of_ail_symbol pname, exprs) in
   push_expr_to_exec (concat execs, final_expr)
 
 
@@ -1278,7 +1275,7 @@ let generate_lua_cn_each_pname_call pname ptr spec_mode loop_ownership_opt args 
   let execs, exprs = List.split (List.map (fun x -> pop_expr_from_exec x) args) in
   let pname_call_expr =
     LuaS.Call
-      ( Sym.pp_string pname,
+      ( of_ail_symbol pname,
         [ convert ptr ] @ exprs @ [ convert spec_mode; loop_ownership ] )
   in
   push_expr_to_exec (concat execs, pname_call_expr)
@@ -1505,7 +1502,7 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) =
         | _ -> true
       in
       LuaS.Binary (Eq (expr_a, expr_b, can_prim_compare))
-    | Implies -> LuaS.Call ("implies", [ expr_a; expr_b ])
+    | Implies -> LuaS.Call (Symbol "implies", [ expr_a; expr_b ])
     | SetUnion -> failwith (__LOC__ ^ ": TODO SetUnion")
     | SetIntersection -> failwith (__LOC__ ^ ": TODO SetIntersection")
     | SetDifference -> failwith (__LOC__ ^ ": TODO SetDifference")
@@ -1578,7 +1575,7 @@ let cn_to_lua_record record_data =
 
 let cn_to_lua_constructor dt sym args =
   let ail_to_lua_sym sym = LuaS.Symbol (Sym.pp_string sym) in
-  LuaS.(Call (Pp_lua.pp_expr (Field (ail_to_lua_sym dt, ail_to_lua_sym sym)), args))
+  LuaS.(Call (Field (ail_to_lua_sym dt, ail_to_lua_sym sym), args))
 
 
 let cn_to_lua_member_shift struct_expr struct_tag member_tag =
@@ -1589,7 +1586,7 @@ let cn_to_lua_member_shift struct_expr struct_tag member_tag =
     if true then
       LuaS.(Binary (AddI (struct_expr, offsets_field_expr)))
     else
-      LuaS.Call (Pp_lua.pp_expr cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
+      LuaS.Call (cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
   in
   member_shift_expr
 
@@ -1603,7 +1600,7 @@ let cn_to_lua_array_shift ptr_exec offset_exec ctype =
     if true then
       LuaS.(Binary (AddI (ptr_expr, Binary (MultiplyI (offset_expr, sizeof_expr)))))
     else
-      Call (Pp_lua.pp_expr cn_array_shift_sym, [ ptr_expr; offset_expr; sizeof_expr ])
+      Call (cn_array_shift_sym, [ ptr_expr; offset_expr; sizeof_expr ])
   in
   push_expr_to_exec (concat [ l1; l2 ], array_shift_expr)
 
@@ -1623,7 +1620,7 @@ let cn_to_lua_map_get map_exec key_exec =
 let cn_to_lua_apply sym in_execs =
   let execs_and_exprs = List.map pop_expr_from_exec in_execs in
   let execs, exprs = List.split execs_and_exprs in
-  let apply_expr = LuaS.Call (Sym.pp_string sym, exprs) in
+  let apply_expr = LuaS.Call (of_ail_symbol sym, exprs) in
   let merged_execs = concat execs in
   let final_exec = push_expr_to_exec (merged_execs, apply_expr) in
   final_exec
