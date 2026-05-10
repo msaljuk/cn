@@ -31,11 +31,27 @@ let break block delimiter =
   block |> loop false
 
 
+let mask = function
+  | "i32"|"u32" -> "0xffffffff"
+  | "i16"|"u16" -> "0xffff"
+  | "i8" |"u8"  -> "0xff"
+  | _ -> assert false
+and sign = function
+  | "i32" -> "0x80000000"
+  | "i16" -> "0x8000"
+  | "i8"  -> "0x80"
+  | _ -> assert false
+let normalised str = function
+  | "i64"|"u64" -> "(" ^ str ^ ")"
+  | ("u8"|"u16"|"u32" as t) -> "((" ^ str ^ ") & " ^ mask t ^ ")"
+  | ("i8"|"i16"|"i32" as t) -> "(((" ^ str ^ ") & " ^ mask t ^ ") ~ " ^ sign t ^ " - " ^ sign t ^ ")"
+  | _ -> assert false
+
 open Lua_syntax
 
 let rec pp_expr =
   let c_int_type_op t o args = Call (Field (Symbol t, Symbol o), args) in
-  let wrap int_type expr = pp_expr (c_int_type_op int_type "make" [ expr ]) in
+  let wrap int_type expr = normalised (pp_expr expr) int_type in
   let pp_table_field = function
     | Named (k, v) -> k ^ " = " ^ pp_expr v
     | List x -> pp_expr x
