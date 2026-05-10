@@ -28,7 +28,7 @@
  (files
   (cn/c_number_types.lua as runtime/lua/c_number_types.lua)
   (cn/fast_deep_compare.lua as runtime/lua/fast_deep_compare.lua)
-  (cn/lua_cn_runtime_core.lua as runtime/lua/lua_cn_runtime_core.lua))
+  (cn/lua_cn_runtime_core.lua as runtime/lua/lua_cn_runtime_core.lua)
   (cn/ProFi.lua as runtime/lua/ProFi.lua))
  (section share)
  (package cn))
