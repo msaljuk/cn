@@ -1038,6 +1038,16 @@ let generate_lua_runtime_return (* return cn *) = LuaS.Return (Some cn_sym)
 
 let generate_lua_env_req (* _ENV = cn.env *) = LuaS.Assign ("_ENV", Some cn_env_sym)
 
+let generate_lua_math_locals =
+  let open LuaS in
+  [ LocalAssign ("math", Some (Symbol "math"));
+    LineBreak;
+    LocalAssign ("ult", Some (Field (Symbol "math", Symbol "ult")));
+    LineBreak;
+    LocalAssign ("fmod", Some (Field (Symbol "math", Symbol "fmod")));
+    LineBreak;
+    ]
+
 let generate_lua_c_number_locals =
   let open LuaS in
   let generate_local_for_number_type num_type =
@@ -1085,6 +1095,8 @@ let generate_lua_locals_for_optimization =
     ]
   in
   c_locals
+  @ [ LineBreak ]
+  @ generate_lua_math_locals
   @ [ LineBreak ]
   @ generate_lua_c_number_locals
   @ [ LineBreak ]
