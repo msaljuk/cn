@@ -255,6 +255,8 @@ val generate_lua_runtime_return : LuaS.stmt
 *)
 val generate_lua_env_req : LuaS.stmt
 
+val generate_lua_math_locals : lua_statements
+
 (*
    Utility used to generate locals bound to each c number type
    (For optimization)
