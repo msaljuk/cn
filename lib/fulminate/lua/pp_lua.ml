@@ -100,11 +100,11 @@ let rec pp_expr =
       | FloatDivide (_a, _b) -> failwith "Float Divide not supported yet"
       | Exp (a, b, t) -> pp_expr (c_int_type_op t "exp" [ a; b ])
       | Remainder (a, b, t) ->
-        let rem_expr = Call (Symbol "math.fmod", [ a; b ]) in
+        let rem_expr = Call (Symbol "fmod", [ a; b ]) in
         wrap t rem_expr
       | Modulo (a, b, t) -> pp_expr (c_int_type_op t "mod" [ a; b ])
       | LessThan (a, b, ("i8" | "i16" | "i32" | "i64")) -> pp_expr a ^ " < " ^ pp_expr b
-      | LessThan (a, b, _) -> pp_expr (Call (Symbol "math.ult", [ a; b ]))
+      | LessThan (a, b, _) -> pp_expr (Call (Symbol "ult", [ a; b ]))
       | LessThanOrEqTo (a, b, t) -> pp_expr (Unary (Not (Binary (LessThan (b, a, t)))))
       | Min (a, b, t) -> pp_expr (c_int_type_op t "min" [ a; b ])
       | Max (a, b, t) -> pp_expr (c_int_type_op t "max" [ a; b ])
