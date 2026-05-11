@@ -1669,5 +1669,5 @@ let cn_to_lua_cast _ to_type cast_exec =
   | _ ->
     let int_type_str = get_lua_c_int_type_str to_type in
     let exec, expr = pop_expr_from_exec cast_exec in
-    let int_expr = LuaS.Number_Int (expr, int_type_str) in
+    let int_expr = LuaS.Normalise (expr, int_type_str) in
     push_expr_to_exec (exec, int_expr)
