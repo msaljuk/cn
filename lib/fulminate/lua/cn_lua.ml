@@ -1398,6 +1398,10 @@ let generate_lua_cn_struct_default struct_sym struct_members =
 (*         Cn-to-Lua Terms            *)
 (* ---------------------------------- *)
 
+let denormalised t = function
+  | LuaS.Normalise (e, t') when String.equal t t' -> e
+  | exp -> exp
+
 let cn_to_lua_const constant _baseType =
   let z_sym z = LuaS.Symbol (Z.to_string z) in
   let lua_expression =
@@ -1484,20 +1488,27 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) =
     | _, _ -> "incompatible"
   in
   let lua_c_int_type = get_lua_c_int_type_str bt_a bt_b in
+  let norm_invariant e t =
+    match expr_a, expr_b with
+    | (LuaS.Normalise _, _) | (_, LuaS.Normalise _) -> LuaS.Normalise (e, t)
+    | _ -> e
+  in
+  let expr_a_d = denormalised lua_c_int_type expr_a
+  and expr_b_d = denormalised lua_c_int_type expr_b in
   let lua_expression =
     match binop with
     | IT.And -> LuaS.Binary (And (expr_a, expr_b))
     | IT.Or -> LuaS.Binary (Or (expr_a, expr_b))
-    | Add -> LuaS.Binary (Add (expr_a, expr_b, lua_c_int_type))
-    | Sub -> LuaS.Binary (Subtract (expr_a, expr_b, lua_c_int_type))
-    | Mul | MulNoSMT -> LuaS.Binary (Multiply (expr_a, expr_b, lua_c_int_type))
+    | Add -> Normalise (LuaS.Binary (AddI (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Sub -> Normalise (LuaS.Binary (SubtractI (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Mul | MulNoSMT -> Normalise (LuaS.Binary (MultiplyI (expr_a_d, expr_b_d)), lua_c_int_type)
     | Div | DivNoSMT -> LuaS.Binary (IntegerDivide (expr_a, expr_b, lua_c_int_type))
     | Exp | ExpNoSMT -> LuaS.Binary (Exp (expr_a, expr_b, lua_c_int_type))
     | Rem | RemNoSMT -> LuaS.Binary (Remainder (expr_a, expr_b, lua_c_int_type))
     | Mod | ModNoSMT -> LuaS.Binary (Modulo (expr_a, expr_b, lua_c_int_type))
-    | BW_Xor -> LuaS.Binary (BW_Xor (expr_a, expr_b, lua_c_int_type))
-    | BW_And -> LuaS.Binary (BW_And (expr_a, expr_b, lua_c_int_type))
-    | BW_Or -> LuaS.(Binary (BW_Or (expr_a, expr_b, lua_c_int_type)))
+    | BW_Xor -> norm_invariant (LuaS.Binary (BW_Xor (expr_a_d, expr_b_d, lua_c_int_type))) lua_c_int_type
+    | BW_And -> norm_invariant (LuaS.Binary (BW_And (expr_a_d, expr_b_d, lua_c_int_type))) lua_c_int_type
+    | BW_Or -> norm_invariant (LuaS.(Binary (BW_Or (expr_a_d, expr_b_d, lua_c_int_type)))) lua_c_int_type
     | ShiftLeft -> LuaS.Binary (LeftShift (expr_a, expr_b, lua_c_int_type))
     | ShiftRight -> LuaS.Binary (RightShift (expr_a, expr_b, lua_c_int_type))
     | LT -> LuaS.Binary (LessThan (expr_a, expr_b, lua_c_int_type))
