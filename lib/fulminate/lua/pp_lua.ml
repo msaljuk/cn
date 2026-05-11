@@ -108,10 +108,10 @@ let rec pp_expr =
       | LessThanOrEqTo (a, b, t) -> pp_expr (Unary (Not (Binary (LessThan (b, a, t)))))
       | Min (a, b, t) -> pp_expr (c_int_type_op t "min" [ a; b ])
       | Max (a, b, t) -> pp_expr (c_int_type_op t "max" [ a; b ])
-      | BW_Xor (a, b, t) -> pp_expr (c_int_type_op t "bw_xor" [ a; b ])
-      | BW_And (a, b, t) -> pp_expr (c_int_type_op t "bw_and" [ a; b ])
-      | BW_Or (a, b, t) -> pp_expr (c_int_type_op t "bw_or" [ a; b ])
-      | LeftShift (a, b, t) -> pp_expr (c_int_type_op t "shl" [ a; b ])
+      | BW_Xor (a, b, _) -> pp_expr a ^ " ~ " ^ pp_expr b
+      | BW_And (a, b, _) -> pp_expr a ^ " & " ^ pp_expr b
+      | BW_Or (a, b, _) -> pp_expr a ^ " | " ^ pp_expr b
+      | LeftShift (a, b, _) -> "(" ^ pp_expr a ^ ") << (" ^ pp_expr b ^ ")"
       | RightShift (a, b, (("u8" | "u16" | "u32" | "u64") as t)) ->
         let rhs_expr = Symbol (pp_expr a ^ " >> " ^ pp_expr b) in
         wrap t rhs_expr
@@ -119,7 +119,7 @@ let rec pp_expr =
       | Eq (a, b, true) -> "(" ^ pp_expr a ^ " == " ^ pp_expr b ^ ")"
       | Eq (a, b, false) -> pp_expr (Call (Symbol "equals", [ a; b ]))
     in
-    pp_binary_expr_type args
+    "(" ^ pp_binary_expr_type args ^ ")"
   | Unary args ->
     let pp_unary_expr_type args =
       let call_c_func name args =
