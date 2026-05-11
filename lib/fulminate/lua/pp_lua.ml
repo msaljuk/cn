@@ -60,9 +60,9 @@ let rec pp_expr =
   | Nil -> "nil"
   | Bool b -> string_of_bool b
   | Number value -> pp_expr value
-  | Number_Int (value, t) -> pp_expr (c_int_type_op t "make" [ value ])
-  | Number_IntLimit ("max", t) -> pp_expr (c_int_type_op t "max_val" [])
-  | Number_IntLimit ("min", t) -> pp_expr (c_int_type_op t "min_val" [])
+  | Number_Int _ -> assert false
+  | Number_IntLimit ("MAX", t) -> pp_expr (c_int_type_op t "max_val" [])
+  | Number_IntLimit ("MIN", t) -> pp_expr (c_int_type_op t "min_val" [])
   | Number_IntLimit _ -> failwith "Only support min or max for limit parameter"
   | Number_Float q -> Q.to_string q
   | String s -> "\"" ^ s ^ "\""
