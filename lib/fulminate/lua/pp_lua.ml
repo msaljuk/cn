@@ -135,6 +135,7 @@ let rec pp_expr =
       | BW_Complement (v, t) -> pp_expr (c_int_type_op t "bw_compl" [ v ])
     in
     pp_unary_expr_type args
+  | Normalise (expr, t) -> normalised (pp_expr expr) t
 
 
 and pp_stmt = function
