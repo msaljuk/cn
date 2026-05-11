@@ -32,20 +32,26 @@ let break block delimiter =
 
 
 let mask = function
-  | "i32"|"u32" -> "0xffffffff"
-  | "i16"|"u16" -> "0xffff"
-  | "i8" |"u8"  -> "0xff"
+  | "i32" | "u32" -> "0xffffffff"
+  | "i16" | "u16" -> "0xffff"
+  | "i8" | "u8" -> "0xff"
   | _ -> assert false
+
+
 and sign = function
   | "i32" -> "0x80000000"
   | "i16" -> "0x8000"
-  | "i8"  -> "0x80"
+  | "i8" -> "0x80"
   | _ -> assert false
+
+
 let normalised str = function
-  | "i64"|"u64" -> "(" ^ str ^ ")"
-  | ("u8"|"u16"|"u32" as t) -> "((" ^ str ^ ") & " ^ mask t ^ ")"
-  | ("i8"|"i16"|"i32" as t) -> "(((" ^ str ^ ") & " ^ mask t ^ ") ~ " ^ sign t ^ " - " ^ sign t ^ ")"
+  | "i64" | "u64" -> "(" ^ str ^ ")"
+  | ("u8" | "u16" | "u32") as t -> "((" ^ str ^ ") & " ^ mask t ^ ")"
+  | ("i8" | "i16" | "i32") as t ->
+    "((((" ^ str ^ ") & " ^ mask t ^ ") ~ " ^ sign t ^ ") " ^ " - " ^ sign t ^ ")"
   | _ -> assert false
+
 
 open Lua_syntax
 
