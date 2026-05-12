@@ -30,6 +30,11 @@ let break block delimiter =
   in
   block |> loop false
 
+let rec list_last = function
+| [] -> invalid_arg "list_last"
+| [x] -> ([], x)
+| x::xs -> let h, t = list_last xs in (x::h, t)
+
 
 let mask = function
   | "i32" | "u32" -> "0xffffffff"
@@ -54,6 +59,19 @@ let normalised str = function
 
 
 open Lua_syntax
+
+type the_real_if = RIfElse of (expr * stmt list) * (expr * stmt list) list * stmt list
+
+let the_real_if = function
+| (Some cond, stmts)::rest ->
+    let cons = (cond, stmts) in
+  ( match list_last rest with
+    | alts, (None, stmts) ->
+        let f = function (Some cond, stmts) -> cond, stmts | _ -> assert false in
+        RIfElse (cons, List.map f alts, stmts)
+    | _ -> assert false )
+| _ -> assert false
+
 
 let rec pp_expr =
   let c_int_type_op t o args = Call (Field (Symbol t, Symbol o), args) in
