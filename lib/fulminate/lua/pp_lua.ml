@@ -43,6 +43,18 @@ let precedence = function
 
 open PPrint
 
+(* NOTE: Big missing part is that some LuaS arithmetic operations implicitly
+   reduce (those that emit Reduce), and others don't (AddI etc). This:
+
+   a) complicates code emitter (e.g. reduction code is directly printed, and not
+   represented in the AST, to not trigger more reduction); and
+   b) makes fragile invariants across the code (e.g. decisions about reduction
+   are scattered between AST construction and printing).
+
+   Eventually, implicitly-reducing ops should be phased out and all reduction
+   nodes should be added explicitly at the point of Lua AST construction.
+   *)
+
 let mask = function
   | "i32" | "u32" -> !^"0xffffffff"
   | "i16" | "u16" -> !^"0xffff"
@@ -195,6 +207,10 @@ and pp_fn ?name args body =
   in
   surround indent 1 hdr (pp_block body) !^"end" ^^ hardline
 
+
+(* Stuff below is a hack since this is consumed and printed as a string. Should
+   be consumed (and combined) as a `document`, and directly dumped to an
+   `output_channel`. *)
 
 let to_string doc =
   let b = Buffer.create 117 in
