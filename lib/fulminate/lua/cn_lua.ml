@@ -1041,20 +1041,15 @@ let generate_lua_env_req (* _ENV = cn.env *) = LuaS.Assign ("_ENV", Some cn_env_
 let generate_lua_math_locals =
   let open LuaS in
   [ LocalAssign ("math", Some (Symbol "math"));
-    LineBreak;
     LocalAssign ("ult", Some (Field (Symbol "math", Symbol "ult")));
-    LineBreak;
-    LocalAssign ("fmod", Some (Field (Symbol "math", Symbol "fmod")));
-    LineBreak
+    LocalAssign ("fmod", Some (Field (Symbol "math", Symbol "fmod")))
   ]
 
 
 let generate_lua_c_number_locals =
   let open LuaS in
   let generate_local_for_number_type num_type =
-    [ LocalAssign (num_type, Some (Field (lua_c_number_library_sym, Symbol num_type)));
-      LineBreak
-    ]
+    [ LocalAssign (num_type, Some (Field (lua_c_number_library_sym, Symbol num_type))) ]
   in
   let unsigned_locals =
     List.concat (List.map generate_local_for_number_type lua_c_number_unsigned_types)
@@ -1069,9 +1064,7 @@ let generate_lua_cn_spec_modes =
   let open LuaS in
   let generate_local_for_spec_mode spec_mode_str =
     let spec_mode_field = Field (cn_sym, cn_spec_mode_var_sym) in
-    [ LocalAssign (spec_mode_str, Some (Field (spec_mode_field, Symbol spec_mode_str)));
-      LineBreak
-    ]
+    [ LocalAssign (spec_mode_str, Some (Field (spec_mode_field, Symbol spec_mode_str))) ]
   in
   let spec_mode_stmts =
     List.concat
@@ -1088,11 +1081,9 @@ let generate_lua_locals_for_optimization =
     [ LocalAssign
         ( Pp_lua.pp_expr cn_sizeof_field_sym,
           Some (Field (cn_sym, Field (c_sym, cn_sizeof_field_sym))) );
-      LineBreak;
       LocalAssign
         ( Pp_lua.pp_expr cn_offsets_field_sym,
-          Some (Field (cn_sym, Field (c_sym, cn_offsets_field_sym))) );
-      LineBreak
+          Some (Field (cn_sym, Field (c_sym, cn_offsets_field_sym))) )
     ]
   in
   c_locals
