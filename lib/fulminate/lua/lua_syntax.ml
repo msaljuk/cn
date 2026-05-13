@@ -19,7 +19,7 @@ type expr =
   | TableSet of expr * expr * expr
   | Binary of binary_expr_type
   | Unary of unary_expr_type
-  | Normalise of expr * string
+  | Reduce of expr * string
 
 and table_field_type =
   | Named of ident * expr (* { a = 5 } *)
