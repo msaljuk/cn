@@ -1391,7 +1391,7 @@ let generate_lua_cn_struct_default struct_sym struct_members =
 (* ---------------------------------- *)
 
 let denormalised t = function
-  | LuaS.Normalise (e, t') when String.equal t t' -> e
+  | LuaS.Reduce (e, t') when String.equal t t' -> e
   | exp -> exp
 
 
@@ -1482,7 +1482,7 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) =
   let lua_c_int_type = get_lua_c_int_type_str bt_a bt_b in
   let norm_invariant e t =
     match (expr_a, expr_b) with
-    | LuaS.Normalise _, _ | _, LuaS.Normalise _ -> LuaS.Normalise (e, t)
+    | LuaS.Reduce _, _ | _, LuaS.Reduce _ -> LuaS.Reduce (e, t)
     | _ -> e
   in
   let expr_a_d = denormalised lua_c_int_type expr_a
@@ -1491,10 +1491,10 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) =
     match binop with
     | IT.And -> LuaS.Binary (And (expr_a, expr_b))
     | IT.Or -> LuaS.Binary (Or (expr_a, expr_b))
-    | Add -> Normalise (LuaS.Binary (AddI (expr_a_d, expr_b_d)), lua_c_int_type)
-    | Sub -> Normalise (LuaS.Binary (SubtractI (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Add -> Reduce (LuaS.Binary (AddI (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Sub -> Reduce (LuaS.Binary (SubtractI (expr_a_d, expr_b_d)), lua_c_int_type)
     | Mul | MulNoSMT ->
-      Normalise (LuaS.Binary (MultiplyI (expr_a_d, expr_b_d)), lua_c_int_type)
+      Reduce (LuaS.Binary (MultiplyI (expr_a_d, expr_b_d)), lua_c_int_type)
     | Div | DivNoSMT -> LuaS.Binary (IntegerDivide (expr_a, expr_b, lua_c_int_type))
     | Exp | ExpNoSMT -> LuaS.Binary (Exp (expr_a, expr_b, lua_c_int_type))
     | Rem | RemNoSMT -> LuaS.Binary (Remainder (expr_a, expr_b, lua_c_int_type))
@@ -1671,5 +1671,5 @@ let cn_to_lua_cast _ to_type cast_exec =
   | _ ->
     let int_type_str = get_lua_c_int_type_str to_type in
     let exec, expr = pop_expr_from_exec cast_exec in
-    let int_expr = LuaS.Normalise (expr, int_type_str) in
+    let int_expr = LuaS.Reduce (expr, int_type_str) in
     push_expr_to_exec (exec, int_expr)

@@ -57,7 +57,7 @@ and sign = function
   | _ -> assert false
 
 
-let normalised pp t =
+let reduce pp t =
   let ( - ) = infix 1 1 !^"-"
   and ( land ) = infix 1 1 !^"&"
   and ( lxor ) = infix 1 1 !^"~" in
@@ -109,7 +109,7 @@ let rec pp_expr ?(prec = 0) = function
     let prec' = precedence expr in
     let binary indent kw a b =
       infix indent 1 kw (pp_expr ~prec:(prec' - 1) a) (pp_expr ~prec:prec' b)
-    and renormalise expr t = pp_expr ~prec (Normalise (expr, t))
+    and renormalise expr t = pp_expr ~prec (Reduce (expr, t))
     and replace = pp_expr ~prec in
     let pp =
       match args with
@@ -152,8 +152,7 @@ let rec pp_expr ?(prec = 0) = function
       | BW_Complement (v, t) -> pp_expr ~prec (c_int_type_op t "bw_compl" [ v ])
     in
     guard ~prec prec' (align (group pp))
-  | Normalise (expr, t) ->
-    normalised (pp_expr ~prec:(max prec 6) expr) t |> group |> align
+  | Reduce (expr, t) -> reduce (pp_expr ~prec:(max prec 6) expr) t |> group |> align
 
 
 and pp_stmt = function
