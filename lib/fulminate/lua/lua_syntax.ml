@@ -48,6 +48,7 @@ and binary_expr_type =
   | BW_And of expr * expr * string
   | LeftShift of expr * expr * string
   | RightShift of expr * expr * string
+  (* NOTE: Add NotEq node. *)
   | Eq of expr * expr * bool
 
 and unary_expr_type =
@@ -69,6 +70,9 @@ and stmt =
   | FunctionCall of expr * expr list (* assert(false) *)
   | Return of expr option (* return false *)
   | LocalTable of expr * expr list (* local x = { a = 5, b = 7 } *)
+  (* NOTE: Make this
+   `(expr * stmt list) * (expr * stmt list) list * stmt list option`, then
+     remove workaround from the printer. *)
   | IfElse of (expr option * stmt list) list (* if(cond) then ... else ... *)
   | SExpr of expr (* used to carry an expression as a statement (similar to A.AilSexpr) *)
   | While of expr * stmt list (* while(cond_expr) do\n body \n end *)
