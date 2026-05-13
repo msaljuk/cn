@@ -26,6 +26,21 @@ let the_real_if = function
   | _ -> assert false
 
 
+let precedence = function
+  | Binary (Exp _) -> 12
+  | Unary _ -> 11
+  | Binary (Multiply _ | MultiplyI _ | IntegerDivide _ | FloatDivide _ | Modulo _) -> 10
+  | Binary (Add _ | AddI _ | Subtract _ | SubtractI _) -> 9
+  | Binary (LeftShift _ | RightShift _) -> 7
+  | Binary (BW_And _) -> 6
+  | Binary (BW_Xor _) -> 5
+  | Binary (BW_Or _) -> 4
+  | Binary (LessThan _ | LessThanOrEqTo _ | Eq _) -> 3
+  | Binary (And _) -> 2
+  | Binary (Or _) -> 1
+  | _ -> 0
+
+
 open PPrint
 
 let mask = function
@@ -47,10 +62,9 @@ let normalised pp t =
   and ( land ) = infix 1 1 !^"&"
   and ( lxor ) = infix 1 1 !^"~" in
   match t with
-  | "i64" | "u64" -> pp |> parens
-  | ("u8" | "u16" | "u32") as t -> parens pp land mask t |> parens
-  | ("i8" | "i16" | "i32") as t ->
-    parens (parens pp land mask t lxor sign t) - sign t |> parens
+  | "i64" | "u64" -> pp
+  | ("u8" | "u16" | "u32") as t -> pp land mask t |> parens
+  | ("i8" | "i16" | "i32") as t -> parens (pp land mask t lxor sign t) - sign t |> parens
   | _ -> assert false
 
 
@@ -64,7 +78,9 @@ let call_c_func name args =
   Call (Field (Symbol "cn", Field (Symbol "c", Symbol name)), args)
 
 
-let rec pp_expr = function
+let guard ~prec here d = if here <= prec then parens d else d
+
+let rec pp_expr ?(prec = 0) = function
   | Nil -> !^"nil"
   | Bool true -> !^"true"
   | Bool false -> !^"false"
@@ -89,50 +105,55 @@ let rec pp_expr = function
   | TableGet (tbl, key) -> pp_expr tbl ^^ brackets (pp_expr key)
   | TableSet (tbl, key, value) ->
     pp_expr (TableGet (tbl, key)) ^^ !^" = " ^^ pp_expr value
-  | Binary args ->
-    let res =
+  | Binary args as expr ->
+    let prec' = precedence expr in
+    let binary indent kw a b =
+      infix indent 1 kw (pp_expr ~prec:(prec' - 1) a) (pp_expr ~prec:prec' b)
+    and renormalise expr t = pp_expr ~prec (Normalise (expr, t))
+    and replace = pp_expr ~prec in
+    let pp =
       match args with
-      | Or (a, b) -> infix 0 1 !^"or" (pp_expr a) (pp_expr b)
-      | And (a, b) -> infix 0 1 !^"and" (pp_expr a) (pp_expr b)
-      | AddI (a, b) -> infix 2 1 !^"+" (pp_expr a) (pp_expr b)
-      | Add (a, b, t) -> pp_expr (Normalise (Binary (AddI (a, b)), t))
-      | SubtractI (a, b) -> infix 2 1 !^"-" (pp_expr a) (pp_expr b)
-      | Subtract (a, b, t) -> pp_expr (Normalise (Binary (SubtractI (a, b)), t))
-      | MultiplyI (a, b) -> infix 2 1 !^"*" (pp_expr a) (pp_expr b)
-      | Multiply (a, b, t) -> pp_expr (Normalise (Binary (MultiplyI (a, b)), t))
-      | IntegerDivide (a, b, t) -> pp_expr (c_int_type_op t "div" [ a; b ])
+      | Or (a, b) -> binary 0 !^"or" a b
+      | And (a, b) -> binary 0 !^"and" a b
+      | AddI (a, b) -> binary 2 !^"+" a b
+      | Add (a, b, t) -> renormalise (Binary (AddI (a, b))) t
+      | SubtractI (a, b) -> binary 2 !^"-" a b
+      | Subtract (a, b, t) -> renormalise (Binary (SubtractI (a, b))) t
+      | MultiplyI (a, b) -> binary 2 !^"*" a b
+      | Multiply (a, b, t) -> renormalise (Binary (MultiplyI (a, b))) t
+      | IntegerDivide (a, b, t) -> replace (c_int_type_op t "div" [ a; b ])
       | FloatDivide (_a, _b) -> failwith "Float Divide not supported yet"
-      | Exp (a, b, t) -> pp_expr (c_int_type_op t "exp" [ a; b ])
-      | Remainder (a, b, t) -> pp_expr (Normalise (Call (Symbol "fmod", [ a; b ]), t))
-      | Modulo (a, b, t) -> pp_expr (c_int_type_op t "mod" [ a; b ])
-      | LessThan (a, b, ("i8" | "i16" | "i32" | "i64")) ->
-        infix 2 1 !^"<" (pp_expr a) (pp_expr b)
-      | LessThan (a, b, _) -> pp_expr (Call (Symbol "ult", [ a; b ]))
-      | LessThanOrEqTo (a, b, t) -> pp_expr (Unary (Not (Binary (LessThan (b, a, t)))))
-      | Min (a, b, t) -> pp_expr (c_int_type_op t "min" [ a; b ])
-      | Max (a, b, t) -> pp_expr (c_int_type_op t "max" [ a; b ])
-      | BW_Xor (a, b, _) -> infix 2 1 !^"~" (pp_expr a) (pp_expr b)
-      | BW_And (a, b, _) -> infix 2 1 !^"&" (pp_expr a) (pp_expr b)
-      | BW_Or (a, b, _) -> infix 2 1 !^"|" (pp_expr a) (pp_expr b)
-      | LeftShift (a, b, _) -> infix 2 1 !^"<<" (pp_expr a) (pp_expr b)
-      | RightShift (a, b, ("u8" | "u16" | "u32" | "u64")) ->
-        infix 2 1 !^">>" (pp_expr a) (pp_expr b)
-      | RightShift (a, b, t) -> pp_expr (c_int_type_op t "shr" [ a; b ])
-      | Eq (a, b, true) -> infix 0 1 !^"==" (pp_expr a) (pp_expr b)
-      | Eq (a, b, false) -> pp_expr (Call (Symbol "equals", [ a; b ]))
+      | Exp (a, b, t) -> replace (c_int_type_op t "exp" [ a; b ])
+      | Remainder (a, b, t) -> renormalise (Call (Symbol "fmod", [ a; b ])) t
+      | Modulo (a, b, t) -> replace (c_int_type_op t "mod" [ a; b ])
+      | LessThan (a, b, ("i8" | "i16" | "i32" | "i64")) -> binary 2 !^"<" a b
+      | LessThan (a, b, _) -> replace (Call (Symbol "ult", [ a; b ]))
+      | LessThanOrEqTo (a, b, t) -> replace (Unary (Not (Binary (LessThan (b, a, t)))))
+      | Min (a, b, t) -> replace (c_int_type_op t "min" [ a; b ])
+      | Max (a, b, t) -> replace (c_int_type_op t "max" [ a; b ])
+      | BW_Xor (a, b, _) -> binary 2 !^"~" a b
+      | BW_And (a, b, _) -> binary 2 !^"&" a b
+      | BW_Or (a, b, _) -> binary 2 !^"|" a b
+      | LeftShift (a, b, _) -> binary 2 !^"<<" a b
+      | RightShift (a, b, ("u8" | "u16" | "u32" | "u64")) -> binary 2 !^">>" a b
+      | RightShift (a, b, t) -> replace (c_int_type_op t "shr" [ a; b ])
+      | Eq (a, b, true) -> binary 0 !^"==" a b
+      | Eq (a, b, false) -> replace (Call (Symbol "equals", [ a; b ]))
     in
-    parens (align (group res))
-  | Unary args ->
-    let res =
+    guard ~prec prec' (group pp |> align)
+  | Unary args as expr ->
+    let prec' = precedence expr in
+    let pp =
       match args with
-      | Not v -> prefix 1 1 !^"not" (pp_expr v)
-      | Negate (v, _) -> prefix 1 1 !^"-" (pp_expr v)
-      | BW_FLS v -> pp_expr (call_c_func "fls" [ v ])
-      | BW_FLSL v -> pp_expr (call_c_func "flsl" [ v ])
-      | BW_Complement (v, t) -> pp_expr (c_int_type_op t "bw_compl" [ v ])
+      | Not v -> prefix 2 1 !^"not" (pp_expr ~prec:prec' v)
+      | Negate (v, _) -> prefix 2 1 !^"-" (pp_expr ~prec:prec' v)
+      | BW_FLS v -> pp_expr ~prec (call_c_func "fls" [ v ])
+      | BW_FLSL v -> pp_expr ~prec (call_c_func "flsl" [ v ])
+      | BW_Complement (v, t) -> pp_expr ~prec (c_int_type_op t "bw_compl" [ v ])
     in
-    parens (align (group res))
-  | Normalise (expr, t) -> align (group (normalised (pp_expr expr) t))
+    guard ~prec prec' (align (group pp))
+  | Normalise (expr, t) ->
+    normalised (pp_expr ~prec:(max prec 6) expr) t |> group |> align
 
 
 and pp_stmt = function
