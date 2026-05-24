@@ -4449,7 +4449,7 @@ let rec cn_to_ail_lat
         (* Make this let be a local let in lua *)
         let stmts, wrappers, _ = l1 in
         let local_stmt = CnL.make_local_assign (List.hd stmts) in
-        ([ local_stmt ], wrappers, CnL.get_empty_lua_expr)
+        ([ local_stmt ] @ List.tl stmts, wrappers, CnL.get_empty_lua_expr)
     in
     let b2, s2, l2 =
       cn_to_ail_lat
