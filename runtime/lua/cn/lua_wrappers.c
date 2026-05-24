@@ -162,6 +162,18 @@ static int c_get_u_long() {
     return 1;
 }
 
+static int c_get_u_long_long() {
+    unsigned long long* addr = (unsigned long long*)luaL_checkinteger(lua_state, 1);
+    lua_pushinteger(lua_state, *addr);
+    return 1;
+}
+
+static int c_get_size_t() {
+    size_t* addr = (size_t*)luaL_checkinteger(lua_state, 1);
+    lua_pushinteger(lua_state, *addr);
+    return 1;
+}
+
 static int c_get_float() {
     float* addr = (float*)luaL_checkinteger(lua_state, 1);
     lua_pushnumber(lua_state, *addr);
@@ -233,6 +245,8 @@ void push_cn_c_tables() {
         lua_setfield(lua_state, -2, "long_long");
         lua_pushinteger(lua_state, (lua_Integer)sizeof(unsigned long long));
         lua_setfield(lua_state, -2, "u_long_long");
+        lua_pushinteger(lua_state, (lua_Integer)sizeof(size_t));
+        lua_setfield(lua_state, -2, "size_t");
 
         lua_pushinteger(lua_state, (lua_Integer)sizeof(float));
         lua_setfield(lua_state, -2, "float");
@@ -281,6 +295,8 @@ void bind_cn_c_functions() {
     lua_cn_register_c_func("get_u_int", c_get_u_int);
     lua_cn_register_c_func("get_long", c_get_long);
     lua_cn_register_c_func("get_u_long", c_get_u_long);
+    lua_cn_register_c_func("get_u_long_long", c_get_u_long_long);
+    lua_cn_register_c_func("get_size_t", c_get_size_t);
     lua_cn_register_c_func("get_float", c_get_float);
     lua_cn_register_c_func("get_pointer", c_get_pointer);
 
@@ -461,6 +477,7 @@ DEFINE_PUSH_ARRAY_FUNC(u_long,      unsigned long,       lua_pushinteger)
 DEFINE_PUSH_ARRAY_FUNC(long,        long,                lua_pushinteger)
 DEFINE_PUSH_ARRAY_FUNC(long_long,   long long,           lua_pushinteger)
 DEFINE_PUSH_ARRAY_FUNC(u_long_long, unsigned long long,  lua_pushinteger)
+DEFINE_PUSH_ARRAY_FUNC(size_t,      size_t,              lua_pushinteger)
 DEFINE_PUSH_ARRAY_FUNC(float,       float,               lua_pushnumber)
 DEFINE_PUSH_ARRAY_FUNC(double,      double,              lua_pushnumber)
 DEFINE_PUSH_ARRAY_FUNC(bool,        bool,                lua_pushboolean)

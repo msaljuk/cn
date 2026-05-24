@@ -250,9 +250,12 @@ let generate_lua_ctype_symbol ctype =
     | Basic (Integer (Signed _)) -> Symbol "int"
     | Basic (Integer (Unsigned Ichar)) -> Symbol "u_8"
     | Basic (Integer (Unsigned Long)) -> Symbol "u_long"
-    | Basic (Integer (Unsigned _)) -> Symbol "u_int"
+    | Basic (Integer (Unsigned Int_)) -> Symbol "u_int"
+    | Basic (Integer (Unsigned LongLong)) -> Symbol "u_long_long"
+    | Basic (Integer CF.Ctype.Size_t) -> Symbol "size_t"
     | Basic (Floating (RealFloating Float)) -> Symbol "float"
-    | Basic _ -> failwith "Unsupported ctype. Could not get lua symbol"
+    | Basic _ ->
+      failwith ("Unsupported ctype. Could not get lua symbol for " ^ get_ctype_str ctype)
     | Pointer (_, _) -> Symbol "pointer"
     | Struct s_sym -> Symbol (Sym.pp_string s_sym)
     | Array (array_c_type, size_opt) ->
@@ -299,6 +302,7 @@ let generate_c_push_field_into_lua lua_state_expr c_field_expr c_type =
   let int_const i =
     mk_expr (A.AilEconst (ConstantInteger (IConstant (Z.of_int i, Decimal, None))))
   in
+  let addressof_field field_expr = mk_expr (A.AilEunary (Address, field_expr)) in
   let final_expr =
     let open CF.Ctype in
     match rm_ctype c_type with
@@ -307,7 +311,7 @@ let generate_c_push_field_into_lua lua_state_expr c_field_expr c_type =
     *)
     | Basic (Integer Bool) -> call "lua_pushinteger" [ lua_state_expr; c_field_expr ]
     | Basic (Integer Char) ->
-      call "lua_pushlstring" [ lua_state_expr; c_field_expr; int_const 1 ]
+      call "lua_pushlstring" [ lua_state_expr; addressof_field c_field_expr; int_const 1 ]
     | Basic (Integer (Signed _ | Unsigned _ | Size_t)) ->
       call "lua_pushinteger" [ lua_state_expr; c_field_expr ]
     | Basic (Integer _) -> failwith "Unsupported type. Cannot push field into lua"
@@ -318,8 +322,7 @@ let generate_c_push_field_into_lua lua_state_expr c_field_expr c_type =
         "lua_pushinteger"
         [ lua_state_expr; call "lua_convert_ptr_to_int" [ c_field_expr ] ]
     | CF.Ctype.Struct s_sym ->
-      let addressof_field = A.AilEunary (Address, c_field_expr) in
-      call ("lua_cn_push_" ^ Sym.pp_string s_sym) [ mk_expr addressof_field ]
+      call ("lua_cn_push_" ^ Sym.pp_string s_sym) [ addressof_field c_field_expr ]
     | CF.Ctype.Array (arr_c_type, arr_size_opt) ->
       let arr_c_type_expr = generate_lua_ctype_symbol arr_c_type in
       let arr_size = Option.value ~default:Z.zero arr_size_opt in

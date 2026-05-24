@@ -53,7 +53,7 @@ open PPrint
 
    Eventually, implicitly-reducing ops should be phased out and all reduction
    nodes should be added explicitly at the point of Lua AST construction.
-   *)
+*)
 
 let mask = function
   | "i32" | "u32" -> !^"0xffffffff"
