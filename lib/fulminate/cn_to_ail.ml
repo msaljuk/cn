@@ -5969,27 +5969,40 @@ let rec cn_to_ail_pre_post_aux
         at
     else (
       let cn_to_ail_ghost_at (sym, bt) ghost_idx =
-        let cn_sym = generate_sym_with_suffix ~suffix:"_cn" sym in
+        let cn_sym =
+          match RC.get_runtime () with
+          | RC.C -> generate_sym_with_suffix ~suffix:"_cn" sym
+          | RC.Lua -> Sym.fresh (CnL.prepend_cn_local sym)
+        in
         let cn_ctype = bt_to_ail_ctype bt in
         let binding = create_binding cn_sym cn_ctype in
-        let gen_load_arg_from_ghost_frame cn_ctype ghost_idx =
-          A.AilEcast
-            ( C.no_qualifiers,
-              cn_ctype,
-              mk_expr
-                (AilEcall
-                   ( mk_expr (AilEident (Sym.fresh "load_arg_from_ghost_frame")),
-                     [ mk_expr
-                         (AilEconst
-                            (ConstantInteger
-                               (IConstant (Z.of_int ghost_idx, Decimal, None))))
-                     ] )) )
-        in
-        let rhs = gen_load_arg_from_ghost_frame cn_ctype ghost_idx in
-        let decl = A.(AilSdeclaration [ (cn_sym, Some (mk_expr rhs)) ]) in
-        (cn_sym, (binding, decl))
+        match RC.get_runtime () with
+        | RC.C ->
+          let gen_load_arg_from_ghost_frame cn_ctype ghost_idx =
+            A.AilEcast
+              ( C.no_qualifiers,
+                cn_ctype,
+                mk_expr
+                  (AilEcall
+                     ( mk_expr (AilEident (Sym.fresh "load_arg_from_ghost_frame")),
+                       [ mk_expr
+                           (AilEconst
+                              (ConstantInteger
+                                 (IConstant (Z.of_int ghost_idx, Decimal, None))))
+                       ] )) )
+          in
+          let rhs = gen_load_arg_from_ghost_frame cn_ctype ghost_idx in
+          let decl = A.(AilSdeclaration [ (cn_sym, Some (mk_expr rhs)) ]) in
+          (cn_sym, (binding, decl), CnL.get_empty_lua_stmt)
+        | RC.Lua ->
+          let lua_stmt =
+            CnL.generate_lua_cn_assignment
+              (Sym.pp_string cn_sym)
+              (Some (CnL.generate_lua_cn_const_number (Z.of_int ghost_idx)))
+          in
+          (cn_sym, (binding, A.AilSexpr (mk_expr ail_null)), lua_stmt)
       in
-      let cn_sym, (binding, decl) = cn_to_ail_ghost_at (sym, bt) ghost_idx in
+      let cn_sym, (binding, decl), lua_stmt = cn_to_ail_ghost_at (sym, bt) ghost_idx in
       let subst_at = ESE.fn_args_and_body_subst (ESE.sym_subst (sym, bt, cn_sym)) at in
       let ghost_bts, ail_executable_spec =
         cn_to_ail_pre_post_aux
@@ -6010,7 +6023,9 @@ let rec cn_to_ail_pre_post_aux
       ( bt :: ghost_bts,
         prepend_to_precondition
           ail_executable_spec
-          ([ binding ], [ decl ], CnL.get_empty_lua_cn_exec) ))
+          ( [ binding ],
+            [ decl ],
+            ([ lua_stmt ], CnL.get_empty_wrapper_functions, CnL.get_empty_lua_expr) ) ))
   | AT.L lat ->
     let ail_executable_spec =
       cn_to_ail_lat_2
