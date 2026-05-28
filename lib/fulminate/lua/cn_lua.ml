@@ -1258,7 +1258,8 @@ let generate_lua_cn_conj_loop
 let generate_lua_cn_increment_stmt sym int_type =
   let sym_str = Sym.pp_string sym in
   let int_type_str = get_lua_c_int_type_str int_type in
-  LuaS.Assign (sym_str, Some (Binary (Add (Symbol sym_str, Symbol "1", int_type_str))))
+  LuaS.Assign
+    (sym_str, Some (Reduce (Binary (Add (Symbol sym_str, Symbol "1")), int_type_str)))
 
 
 let generate_lua_cn_each_ownership_opt
@@ -1270,7 +1271,7 @@ let generate_lua_cn_each_ownership_opt
       range_type
   =
   let sizeof_expr =
-    LuaS.Binary (Multiply (range, sizeof, get_lua_c_int_type_str range_type))
+    LuaS.(Reduce (Binary (Multiply (range, sizeof)), get_lua_c_int_type_str range_type))
   in
   generate_lua_cn_get_or_put_ownership spec_mode ptr sizeof_expr loop_ownership
 
@@ -1414,8 +1415,10 @@ let cn_to_lua_const constant _baseType =
       in
       let final_expr =
         if Z.equal i z_min && BT.equal_sign sgn BT.Signed then
-          LuaS.Binary
-            (Subtract (z_sym (Z.neg (Z.sub (Z.neg i) Z.one)), z_sym Z.one, int_type_str))
+          LuaS.(
+            Reduce
+              ( Binary (Subtract (z_sym (Z.neg (Z.sub (Z.neg i) Z.one)), z_sym Z.one)),
+                int_type_str ))
         else if Z.gt i max_signed_range && BT.equal_sign sgn BT.Unsigned then
           LuaS.Symbol (Z.format "%#x" i)
         else
@@ -1494,11 +1497,12 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) =
     match binop with
     | IT.And -> LuaS.Binary (And (expr_a, expr_b))
     | IT.Or -> LuaS.Binary (Or (expr_a, expr_b))
-    | Add -> Reduce (LuaS.Binary (AddI (expr_a_d, expr_b_d)), lua_c_int_type)
-    | Sub -> Reduce (LuaS.Binary (SubtractI (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Add -> LuaS.Reduce (Binary (Add (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Sub -> LuaS.Reduce (Binary (Subtract (expr_a_d, expr_b_d)), lua_c_int_type)
     | Mul | MulNoSMT ->
-      Reduce (LuaS.Binary (MultiplyI (expr_a_d, expr_b_d)), lua_c_int_type)
-    | Div | DivNoSMT -> LuaS.Binary (IntegerDivide (expr_a, expr_b, lua_c_int_type))
+      LuaS.Reduce (Binary (Multiply (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Div | DivNoSMT ->
+      LuaS. (Binary (IntegerDivide (expr_a, expr_b)))
     | Exp | ExpNoSMT -> LuaS.Binary (Exp (expr_a, expr_b, lua_c_int_type))
     | Rem | RemNoSMT -> LuaS.Binary (Remainder (expr_a, expr_b, lua_c_int_type))
     | Mod | ModNoSMT -> LuaS.Binary (Modulo (expr_a, expr_b, lua_c_int_type))
@@ -1612,7 +1616,7 @@ let cn_to_lua_member_shift struct_expr struct_tag member_tag =
   (*@saljuk OPTIMIZATION: Print out member shift inline *)
   let member_shift_expr =
     if true then
-      LuaS.(Binary (AddI (struct_expr, offsets_field_expr)))
+      LuaS.(Binary (Add (struct_expr, offsets_field_expr)))
     else
       LuaS.Call (cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
   in
@@ -1625,8 +1629,9 @@ let cn_to_lua_array_shift ptr_exec offset_exec ctype =
   let sizeof_expr = generate_lua_ctype_sizeof ctype in
   (*@saljuk OPTIMIZATION: Print out array shift inline *)
   let array_shift_expr =
-    if true then
-      LuaS.(Binary (AddI (ptr_expr, Binary (MultiplyI (offset_expr, sizeof_expr)))))
+    if true then (
+      let mult_expr = LuaS.Binary (Multiply (offset_expr, sizeof_expr)) in
+      LuaS.(Binary (Add (ptr_expr, mult_expr))))
     else
       Call (cn_array_shift_sym, [ ptr_expr; offset_expr; sizeof_expr ])
   in
