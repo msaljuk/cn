@@ -137,7 +137,9 @@ let rec pp_expr ?(prec = 0) = function
       | Modulo (a, b, t) -> replace (c_int_type_op t "mod" [ a; b ])
       | LessThan (a, b, ("i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32")) ->
         binary 2 !^"<" a b
-      | LessThan (a, b, _) -> replace (Call (Symbol "ult", [ a; b ]))
+      | LessThan (a, b, _) -> 
+        let mask = Symbol("0x8000000000000000") in
+        binary 2 !^"<" (Binary(BW_Xor(a, mask, "u64"))) (Binary(BW_Xor(b, mask, "u64")))
       | LessThanOrEqTo (a, b, t) -> replace (Unary (Not (Binary (LessThan (b, a, t)))))
       | Min (a, b, t) -> replace (c_int_type_op t "min" [ a; b ])
       | Max (a, b, t) -> replace (c_int_type_op t "max" [ a; b ])
