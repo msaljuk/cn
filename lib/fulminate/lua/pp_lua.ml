@@ -29,8 +29,8 @@ let the_real_if = function
 let precedence = function
   | Binary (Exp _) -> 12
   | Unary _ -> 11
-  | Binary (Multiply _ | MultiplyI _ | IntegerDivide _ | FloatDivide _ | Modulo _) -> 10
-  | Binary (Add _ | AddI _ | Subtract _ | SubtractI _) -> 9
+  | Binary (Multiply _ | IntegerDivide _ | FloatDivide _ | Modulo _) -> 10
+  | Binary (Add _ | Subtract _) -> 9
   | Binary (LeftShift _ | RightShift _) -> 7
   | Binary (BW_And _) -> 6
   | Binary (BW_Xor _) -> 5
@@ -127,19 +127,19 @@ let rec pp_expr ?(prec = 0) = function
       match args with
       | Or (a, b) -> binary 0 !^"or" a b
       | And (a, b) -> binary 0 !^"and" a b
-      | AddI (a, b) -> binary 2 !^"+" a b
-      | Add (a, b, t) -> renormalise (Binary (AddI (a, b))) t
-      | SubtractI (a, b) -> binary 2 !^"-" a b
-      | Subtract (a, b, t) -> renormalise (Binary (SubtractI (a, b))) t
-      | MultiplyI (a, b) -> binary 2 !^"*" a b
-      | Multiply (a, b, t) -> renormalise (Binary (MultiplyI (a, b))) t
-      | IntegerDivide (a, b, t) -> replace (c_int_type_op t "div" [ a; b ])
+      | Add (a, b) -> binary 2 !^"+" a b
+      | Subtract (a, b) -> binary 2 !^"-" a b
+      | Multiply (a, b) -> binary 2 !^"*" a b
+      | IntegerDivide (a, b) -> binary 2 !^"//" a b
       | FloatDivide (_a, _b) -> failwith "Float Divide not supported yet"
       | Exp (a, b, t) -> replace (c_int_type_op t "exp" [ a; b ])
       | Remainder (a, b, t) -> renormalise (Call (Symbol "fmod", [ a; b ])) t
       | Modulo (a, b, t) -> replace (c_int_type_op t "mod" [ a; b ])
-      | LessThan (a, b, ("i8" | "i16" | "i32" | "i64")) -> binary 2 !^"<" a b
-      | LessThan (a, b, _) -> replace (Call (Symbol "ult", [ a; b ]))
+      | LessThan (a, b, ("i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32")) ->
+        binary 2 !^"<" a b
+      | LessThan (a, b, _) -> 
+        let mask = Symbol("0x8000000000000000") in
+        binary 2 !^"<" (Binary(BW_Xor(a, mask, "u64"))) (Binary(BW_Xor(b, mask, "u64")))
       | LessThanOrEqTo (a, b, t) -> replace (Unary (Not (Binary (LessThan (b, a, t)))))
       | Min (a, b, t) -> replace (c_int_type_op t "min" [ a; b ])
       | Max (a, b, t) -> replace (c_int_type_op t "max" [ a; b ])
@@ -151,17 +151,19 @@ let rec pp_expr ?(prec = 0) = function
       | RightShift (a, b, t) -> replace (c_int_type_op t "shr" [ a; b ])
       | Eq (a, b, true) -> binary 0 !^"==" a b
       | Eq (a, b, false) -> replace (Call (Symbol "equals", [ a; b ]))
+      | NotEq (a, b) -> binary 0 !^"~=" a b
     in
     guard ~prec prec' (group pp |> align)
   | Unary args as expr ->
     let prec' = precedence expr in
     let pp =
       match args with
+      | Not (Binary (Eq (a, b, true))) -> pp_expr ~prec (Binary (NotEq (a, b)))
       | Not v -> prefix 2 1 !^"not" (pp_expr ~prec:prec' v)
-      | Negate (v, _) -> prefix 2 1 !^"-" (pp_expr ~prec:prec' v)
+      | Negate v -> prefix 2 0 !^"-" (pp_expr ~prec:prec' v)
       | BW_FLS v -> pp_expr ~prec (call_c_func "fls" [ v ])
       | BW_FLSL v -> pp_expr ~prec (call_c_func "flsl" [ v ])
-      | BW_Complement (v, t) -> pp_expr ~prec (c_int_type_op t "bw_compl" [ v ])
+      | BW_Complement v -> prefix 2 0 !^"~" (pp_expr ~prec:prec' v)
     in
     guard ~prec prec' (align (group pp))
   | Reduce (expr, t) -> reduce (pp_expr ~prec:(max prec 6) expr) t |> group |> align
@@ -193,6 +195,12 @@ and pp_stmt = function
   | While (cond, while_body) ->
     let hdr = surround indent 1 !^"while" (pp_expr cond) !^"do" in
     surround indent 1 hdr (pp_block while_body) !^"end"
+  | ForLoop (index, start_i, end_i, for_body) ->
+    let loop_init =
+      concat [ pp_expr index; !^" = "; pp_expr start_i; !^", "; pp_expr end_i ]
+    in
+    let hdr = surround indent 1 !^"for" loop_init !^"do" in
+    surround indent 1 hdr (pp_block for_body) !^"end"
   | LineBreak -> !^""
   | _ -> !^""
 

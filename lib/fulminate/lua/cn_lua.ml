@@ -1235,6 +1235,47 @@ let generate_lua_cn_resource sym ctype in_exec is_local_res =
   push_stmts_to_exec (exec, [ stmt ])
 
 
+let extract_for_from_while while_cond loop_body incr_stmt =
+  let index =
+    match incr_stmt with
+    | LuaS.Assign (ident, _) -> LuaS.Symbol ident
+    | _ ->
+      failwith
+        "Unsupported increment statement. Could not extract for from while. Probably \
+         requires some work in extract_for_from_while"
+  in
+  let start_expr, end_expr, maybe_incr_stmt =
+    let u64_bias = Z.shift_left Z.one 63 in
+    let u64_limit = Z.add u64_bias Z.one in
+    let convert_start_u64 expr =
+      LuaS.Binary (Subtract (expr, LuaS.Symbol (Z.format "%#x" u64_bias)))
+    in
+    let convert_end_u64 expr =
+      LuaS.Binary (Subtract (expr, LuaS.Symbol (Z.format "%#x" u64_limit)))
+    in
+    let shadowed_index_u64 expr =
+      generate_lua_cn_local_assignment
+        (Pp_lua.pp_expr expr)
+        (Some (LuaS.Binary (Add (expr, LuaS.Symbol (Z.format "%#x" u64_bias)))))
+    in
+    match while_cond with
+    | LuaS.Call (Symbol "ult", [ a; b ]) ->
+      (convert_start_u64 a, convert_end_u64 b, Some (shadowed_index_u64 a))
+    | LuaS.Binary (LessThan (a, b, "u64")) ->
+      (convert_start_u64 a, convert_end_u64 b, Some (shadowed_index_u64 a))
+    | LuaS.Binary (LessThan (a, b, _)) ->
+      (a, LuaS.Binary (Subtract (b, generate_lua_cn_const_number (Z.of_int 1))), None)
+    | _ ->
+      failwith
+        "Unsupported while condition. Could not extract for from while. Probably \
+         requires some work in extract_for_from_while"
+  in
+  let loop_body =
+    match maybe_incr_stmt with Some x -> [ x ] @ loop_body | _ -> loop_body
+  in
+  LuaS.ForLoop (index, start_expr, end_expr, loop_body)
+
+
 let generate_lua_cn_conj_loop
       ~permission_only_bounds
       loop_stmts
@@ -1245,20 +1286,26 @@ let generate_lua_cn_conj_loop
   let loop_body =
     if permission_only_bounds then
       (* Optimise Fulminate output if permission only consists of bounds *)
-      loop_stmts @ [ incr_stmt ]
+      loop_stmts
     else (
       let if_stmt =
         generate_lua_cn_conditional [ (Some if_expr, loop_stmts); (None, []) ]
       in
-      [ if_stmt; incr_stmt ])
+      [ if_stmt ])
   in
-  LuaS.While (while_expr, loop_body)
+  (*@saljuk OPTIMISATION: Convert while loops to for loops *)
+  if true then
+    extract_for_from_while while_expr loop_body incr_stmt
+  else (
+    let loop_body = loop_body @ [ incr_stmt ] in
+    LuaS.While (while_expr, loop_body))
 
 
 let generate_lua_cn_increment_stmt sym int_type =
   let sym_str = Sym.pp_string sym in
   let int_type_str = get_lua_c_int_type_str int_type in
-  LuaS.Assign (sym_str, Some (Binary (Add (Symbol sym_str, Symbol "1", int_type_str))))
+  LuaS.Assign
+    (sym_str, Some (Reduce (Binary (Add (Symbol sym_str, Symbol "1")), int_type_str)))
 
 
 let generate_lua_cn_each_ownership_opt
@@ -1270,7 +1317,7 @@ let generate_lua_cn_each_ownership_opt
       range_type
   =
   let sizeof_expr =
-    LuaS.Binary (Multiply (range, sizeof, get_lua_c_int_type_str range_type))
+    LuaS.(Reduce (Binary (Multiply (range, sizeof)), get_lua_c_int_type_str range_type))
   in
   generate_lua_cn_get_or_put_ownership spec_mode ptr sizeof_expr loop_ownership
 
@@ -1348,13 +1395,6 @@ let generate_lua_cn_bool_while_loop
   let b_decl =
     generate_lua_cn_local_assignment (Pp_lua.pp_expr b) (Some (LuaS.Bool true))
   in
-  let incr_stmt = generate_lua_cn_increment_stmt sym bt in
-  let start_stmt =
-    generate_lua_cn_local_assignment (Sym.pp_string sym) (Some start_int_const)
-  in
-  let end_stmt =
-    generate_lua_cn_local_assignment (Sym.pp_string end_sym) (Some end_int_const)
-  in
   let bool_and_expr = LuaS.Binary (And (b, expr)) in
   let bool_assign_stmt =
     generate_lua_cn_assignment (Pp_lua.pp_expr b) (Some bool_and_expr)
@@ -1366,12 +1406,26 @@ let generate_lua_cn_bool_while_loop
         [ (Some if_cond_expr, stmts @ [ bool_assign_stmt ]); (None, get_empty_lua_stmts) ]
       in
       let lua_if_stmt = generate_lua_cn_conditional cases in
-      [ lua_if_stmt; incr_stmt ]
-    | None -> [ bool_assign_stmt; incr_stmt ]
+      [ lua_if_stmt ]
+    | None -> [ bool_assign_stmt ]
   in
-  let while_loop = LuaS.While (while_cond, loop_body) in
-  let block = LuaS.Block [ start_stmt; end_stmt; while_loop ] in
-  ([ b_decl; block ], [], b)
+  let incr_stmt = generate_lua_cn_increment_stmt sym bt in
+  let start_stmt =
+    generate_lua_cn_local_assignment (Sym.pp_string sym) (Some start_int_const)
+  in
+  let end_stmt =
+    generate_lua_cn_local_assignment (Sym.pp_string end_sym) (Some end_int_const)
+  in
+  (*@saljuk OPTIMISATION: Convert while loops to for loops *)
+  if true then (
+    let for_loop = extract_for_from_while while_cond loop_body incr_stmt in
+    let block = LuaS.Block [ start_stmt; end_stmt; for_loop ] in
+    ([ b_decl; block ], [], b))
+  else (
+    let loop_body = loop_body @ [ incr_stmt ] in
+    let while_loop = LuaS.While (while_cond, loop_body) in
+    let block = LuaS.Block [ start_stmt; end_stmt; while_loop ] in
+    ([ b_decl; block ], [], b))
 
 
 let generate_lua_cn_struct_default struct_sym struct_members =
@@ -1414,8 +1468,10 @@ let cn_to_lua_const constant _baseType =
       in
       let final_expr =
         if Z.equal i z_min && BT.equal_sign sgn BT.Signed then
-          LuaS.Binary
-            (Subtract (z_sym (Z.neg (Z.sub (Z.neg i) Z.one)), z_sym Z.one, int_type_str))
+          LuaS.(
+            Reduce
+              ( Binary (Subtract (z_sym (Z.neg (Z.sub (Z.neg i) Z.one)), z_sym Z.one)),
+                int_type_str ))
         else if Z.gt i max_signed_range && BT.equal_sign sgn BT.Unsigned then
           LuaS.Symbol (Z.format "%#x" i)
         else
@@ -1448,7 +1504,7 @@ let cn_to_lua_unop (expr, bt, unop) =
   let lua_c_int_type = get_lua_c_int_type_str bt in
   match unop with
   | IT.Not -> LuaS.Unary (Not expr)
-  | Negate -> LuaS.Unary (Negate (expr, lua_c_int_type))
+  | Negate -> LuaS.Unary (Negate expr)
   | BW_FLS_NoSMT ->
     let failure_msg =
       Printf.sprintf
@@ -1459,7 +1515,7 @@ let cn_to_lua_unop (expr, bt, unop) =
      | Bits (Unsigned, 64) -> LuaS.Unary (BW_FLSL expr)
      | Bits (Unsigned, 32) -> LuaS.Unary (BW_FLS expr)
      | _ -> failwith (__LOC__ ^ failure_msg))
-  | BW_Compl -> LuaS.Unary (BW_Complement (expr, lua_c_int_type))
+  | BW_Compl -> LuaS.Reduce (Unary (BW_Complement expr), lua_c_int_type)
   | BW_CLZ_NoSMT | BW_CTZ_NoSMT | BW_FFS_NoSMT ->
     failwith (__LOC__ ^ ": Failure in trying to translate SMT-only unop from C source")
 
@@ -1494,11 +1550,11 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) =
     match binop with
     | IT.And -> LuaS.Binary (And (expr_a, expr_b))
     | IT.Or -> LuaS.Binary (Or (expr_a, expr_b))
-    | Add -> Reduce (LuaS.Binary (AddI (expr_a_d, expr_b_d)), lua_c_int_type)
-    | Sub -> Reduce (LuaS.Binary (SubtractI (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Add -> LuaS.Reduce (Binary (Add (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Sub -> LuaS.Reduce (Binary (Subtract (expr_a_d, expr_b_d)), lua_c_int_type)
     | Mul | MulNoSMT ->
-      Reduce (LuaS.Binary (MultiplyI (expr_a_d, expr_b_d)), lua_c_int_type)
-    | Div | DivNoSMT -> LuaS.Binary (IntegerDivide (expr_a, expr_b, lua_c_int_type))
+      LuaS.Reduce (Binary (Multiply (expr_a_d, expr_b_d)), lua_c_int_type)
+    | Div | DivNoSMT -> LuaS.(Binary (IntegerDivide (expr_a, expr_b)))
     | Exp | ExpNoSMT -> LuaS.Binary (Exp (expr_a, expr_b, lua_c_int_type))
     | Rem | RemNoSMT -> LuaS.Binary (Remainder (expr_a, expr_b, lua_c_int_type))
     | Mod | ModNoSMT -> LuaS.Binary (Modulo (expr_a, expr_b, lua_c_int_type))
@@ -1612,7 +1668,7 @@ let cn_to_lua_member_shift struct_expr struct_tag member_tag =
   (*@saljuk OPTIMIZATION: Print out member shift inline *)
   let member_shift_expr =
     if true then
-      LuaS.(Binary (AddI (struct_expr, offsets_field_expr)))
+      LuaS.(Binary (Add (struct_expr, offsets_field_expr)))
     else
       LuaS.Call (cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
   in
@@ -1625,8 +1681,9 @@ let cn_to_lua_array_shift ptr_exec offset_exec ctype =
   let sizeof_expr = generate_lua_ctype_sizeof ctype in
   (*@saljuk OPTIMIZATION: Print out array shift inline *)
   let array_shift_expr =
-    if true then
-      LuaS.(Binary (AddI (ptr_expr, Binary (MultiplyI (offset_expr, sizeof_expr)))))
+    if true then (
+      let mult_expr = LuaS.Binary (Multiply (offset_expr, sizeof_expr)) in
+      LuaS.(Binary (Add (ptr_expr, mult_expr))))
     else
       Call (cn_array_shift_sym, [ ptr_expr; offset_expr; sizeof_expr ])
   in
