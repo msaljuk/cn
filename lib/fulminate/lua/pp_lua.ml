@@ -157,10 +157,10 @@ let rec pp_expr ?(prec = 0) = function
       match args with
       | Not (Binary (Eq (a, b, true))) -> pp_expr ~prec (Binary (NotEq (a, b))) 
       | Not v -> prefix 2 1 !^"not" (pp_expr ~prec:prec' v)
-      | Negate (v, _) -> prefix 2 1 !^"-" (pp_expr ~prec:prec' v)
+      | Negate (v) -> prefix 2 0 !^"-" (pp_expr ~prec:prec' v)
       | BW_FLS v -> pp_expr ~prec (call_c_func "fls" [ v ])
       | BW_FLSL v -> pp_expr ~prec (call_c_func "flsl" [ v ])
-      | BW_Complement (v, t) -> pp_expr ~prec (c_int_type_op t "bw_compl" [ v ])
+      | BW_Complement (v) -> prefix 2 0 !^"~" (pp_expr ~prec:prec' v)
     in
     guard ~prec prec' (align (group pp))
   | Reduce (expr, t) -> reduce (pp_expr ~prec:(max prec 6) expr) t |> group |> align

@@ -1451,7 +1451,7 @@ let cn_to_lua_unop (expr, bt, unop) =
   let lua_c_int_type = get_lua_c_int_type_str bt in
   match unop with
   | IT.Not -> LuaS.Unary (Not expr)
-  | Negate -> LuaS.Unary (Negate (expr, lua_c_int_type))
+  | Negate -> LuaS.Unary (Negate (expr))
   | BW_FLS_NoSMT ->
     let failure_msg =
       Printf.sprintf
@@ -1462,7 +1462,7 @@ let cn_to_lua_unop (expr, bt, unop) =
      | Bits (Unsigned, 64) -> LuaS.Unary (BW_FLSL expr)
      | Bits (Unsigned, 32) -> LuaS.Unary (BW_FLS expr)
      | _ -> failwith (__LOC__ ^ failure_msg))
-  | BW_Compl -> LuaS.Unary (BW_Complement (expr, lua_c_int_type))
+  | BW_Compl -> LuaS.Reduce (Unary (BW_Complement (expr)), lua_c_int_type)
   | BW_CLZ_NoSMT | BW_CTZ_NoSMT | BW_FFS_NoSMT ->
     failwith (__LOC__ ^ ": Failure in trying to translate SMT-only unop from C source")
 

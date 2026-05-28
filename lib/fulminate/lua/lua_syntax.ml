@@ -50,10 +50,10 @@ and binary_expr_type =
 
 and unary_expr_type =
   | Not of expr
-  | Negate of expr * string
+  | Negate of expr
   | BW_FLS of expr
   | BW_FLSL of expr
-  | BW_Complement of expr * string
+  | BW_Complement of expr
 
 (* Lua Statements *)
 and stmt =
