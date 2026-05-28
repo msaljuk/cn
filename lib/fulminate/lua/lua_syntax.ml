@@ -28,13 +28,10 @@ and table_field_type =
 and binary_expr_type =
   | And of expr * expr
   | Or of expr * expr
-  | AddI of expr * expr
-  | Add of expr * expr * string
-  | SubtractI of expr * expr
-  | Subtract of expr * expr * string
-  | MultiplyI of expr * expr
-  | Multiply of expr * expr * string
-  | IntegerDivide of expr * expr * string
+  | Add of expr * expr
+  | Subtract of expr * expr
+  | Multiply of expr * expr
+  | IntegerDivide of expr * expr
   | FloatDivide of expr * expr
   | Exp of expr * expr * string
   | Remainder of expr * expr * string

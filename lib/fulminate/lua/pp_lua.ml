@@ -29,8 +29,8 @@ let the_real_if = function
 let precedence = function
   | Binary (Exp _) -> 12
   | Unary _ -> 11
-  | Binary (Multiply _ | MultiplyI _ | IntegerDivide _ | FloatDivide _ | Modulo _) -> 10
-  | Binary (Add _ | AddI _ | Subtract _ | SubtractI _) -> 9
+  | Binary (Multiply _ | IntegerDivide _ | FloatDivide _ | Modulo _) -> 10
+  | Binary (Add _ | Subtract _) -> 9
   | Binary (LeftShift _ | RightShift _) -> 7
   | Binary (BW_And _) -> 6
   | Binary (BW_Xor _) -> 5
@@ -127,13 +127,10 @@ let rec pp_expr ?(prec = 0) = function
       match args with
       | Or (a, b) -> binary 0 !^"or" a b
       | And (a, b) -> binary 0 !^"and" a b
-      | AddI (a, b) -> binary 2 !^"+" a b
-      | Add (a, b, t) -> renormalise (Binary (AddI (a, b))) t
-      | SubtractI (a, b) -> binary 2 !^"-" a b
-      | Subtract (a, b, t) -> renormalise (Binary (SubtractI (a, b))) t
-      | MultiplyI (a, b) -> binary 2 !^"*" a b
-      | Multiply (a, b, t) -> renormalise (Binary (MultiplyI (a, b))) t
-      | IntegerDivide (a, b, t) -> replace (c_int_type_op t "div" [ a; b ])
+      | Add (a, b) -> binary 2 !^"+" a b
+      | Subtract (a, b) -> binary 2 !^"-" a b
+      | Multiply (a, b) -> binary 2 !^"*" a b
+      | IntegerDivide (a, b) -> binary 2 !^"//" a b
       | FloatDivide (_a, _b) -> failwith "Float Divide not supported yet"
       | Exp (a, b, t) -> replace (c_int_type_op t "exp" [ a; b ])
       | Remainder (a, b, t) -> renormalise (Call (Symbol "fmod", [ a; b ])) t
@@ -165,7 +162,6 @@ let rec pp_expr ?(prec = 0) = function
     in
     guard ~prec prec' (align (group pp))
   | Reduce (expr, t) -> reduce (pp_expr ~prec:(max prec 6) expr) t |> group |> align
-
 
 and pp_stmt = function
   | Assign (id, None) -> !^id
