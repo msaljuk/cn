@@ -17,6 +17,7 @@ CHECK_SCRIPT="${RUNTIME_PREFIX}/libexec/cn-runtime-single-file.sh"
 
 SCRIPT_OPT="-qu"
 if [ "${1:-}" = "lua" ]; then
+    echo "IN LUA MODE"
     SCRIPT_OPT+="l"
     SCRIPT_OPT+="i"
 fi
