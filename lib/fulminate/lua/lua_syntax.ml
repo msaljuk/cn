@@ -73,5 +73,6 @@ and stmt =
   | IfElse of (expr option * stmt list) list (* if(cond) then ... else ... *)
   | SExpr of expr (* used to carry an expression as a statement (similar to A.AilSexpr) *)
   | While of expr * stmt list (* while(cond_expr) do\n body \n end *)
+  | ForLoop of expr * expr * expr * stmt list (* for i = start, end do\n body \nend*)
   | LineBreak (* used to add an empty line *)
   | Empty

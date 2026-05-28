@@ -193,6 +193,12 @@ and pp_stmt = function
   | While (cond, while_body) ->
     let hdr = surround indent 1 !^"while" (pp_expr cond) !^"do" in
     surround indent 1 hdr (pp_block while_body) !^"end"
+  | ForLoop (index, start_i, end_i, for_body) ->
+    let loop_init =
+      concat [ pp_expr index; !^" = "; pp_expr start_i; !^", "; pp_expr end_i ]
+    in
+    let hdr = surround indent 1 !^"for" loop_init !^"do" in
+    surround indent 1 hdr (pp_block for_body) !^"end"
   | LineBreak -> !^""
   | _ -> !^""
 

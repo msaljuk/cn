@@ -1235,6 +1235,47 @@ let generate_lua_cn_resource sym ctype in_exec is_local_res =
   push_stmts_to_exec (exec, [ stmt ])
 
 
+let extract_for_from_while while_cond loop_body incr_stmt =
+  let index =
+    match incr_stmt with
+    | LuaS.Assign (ident, _) -> LuaS.Symbol ident
+    | _ ->
+      failwith
+        "Unsupported increment statement. Could not extract for from while. Probably \
+         requires some work in extract_for_from_while"
+  in
+  let start_expr, end_expr, maybe_incr_stmt =
+    let u64_bias = Z.shift_left Z.one 63 in
+    let u64_limit = Z.add u64_bias Z.one in
+    let convert_start_u64 expr =
+      LuaS.Binary (Subtract (expr, LuaS.Symbol (Z.format "%#x" u64_bias)))
+    in
+    let convert_end_u64 expr =
+      LuaS.Binary (Subtract (expr, LuaS.Symbol (Z.format "%#x" u64_limit)))
+    in
+    let shadowed_index_u64 expr =
+      generate_lua_cn_local_assignment
+        (Pp_lua.pp_expr expr)
+        (Some (LuaS.Binary (Add (expr, LuaS.Symbol (Z.format "%#x" u64_bias)))))
+    in
+    match while_cond with
+    | LuaS.Call (Symbol "ult", [ a; b ]) ->
+      (convert_start_u64 a, convert_end_u64 b, Some (shadowed_index_u64 a))
+    | LuaS.Binary (LessThan (a, b, "u64")) ->
+      (convert_start_u64 a, convert_end_u64 b, Some (shadowed_index_u64 a))
+    | LuaS.Binary (LessThan (a, b, _)) ->
+      (a, LuaS.Binary (Subtract (b, generate_lua_cn_const_number (Z.of_int 1))), None)
+    | _ ->
+      failwith
+        "Unsupported while condition. Could not extract for from while. Probably \
+         requires some work in extract_for_from_while"
+  in
+  let loop_body =
+    match maybe_incr_stmt with Some x -> [ x ] @ loop_body | _ -> loop_body
+  in
+  LuaS.ForLoop (index, start_expr, end_expr, loop_body)
+
+
 let generate_lua_cn_conj_loop
       ~permission_only_bounds
       loop_stmts
@@ -1245,14 +1286,19 @@ let generate_lua_cn_conj_loop
   let loop_body =
     if permission_only_bounds then
       (* Optimise Fulminate output if permission only consists of bounds *)
-      loop_stmts @ [ incr_stmt ]
+      loop_stmts
     else (
       let if_stmt =
         generate_lua_cn_conditional [ (Some if_expr, loop_stmts); (None, []) ]
       in
-      [ if_stmt; incr_stmt ])
+      [ if_stmt ])
   in
-  LuaS.While (while_expr, loop_body)
+  (*@saljuk OPTIMISATION: Convert while loops to for loops *)
+  if true then
+    extract_for_from_while while_expr loop_body incr_stmt
+  else (
+    let loop_body = loop_body @ [ incr_stmt ] in
+    LuaS.While (while_expr, loop_body))
 
 
 let generate_lua_cn_increment_stmt sym int_type =
@@ -1349,13 +1395,6 @@ let generate_lua_cn_bool_while_loop
   let b_decl =
     generate_lua_cn_local_assignment (Pp_lua.pp_expr b) (Some (LuaS.Bool true))
   in
-  let incr_stmt = generate_lua_cn_increment_stmt sym bt in
-  let start_stmt =
-    generate_lua_cn_local_assignment (Sym.pp_string sym) (Some start_int_const)
-  in
-  let end_stmt =
-    generate_lua_cn_local_assignment (Sym.pp_string end_sym) (Some end_int_const)
-  in
   let bool_and_expr = LuaS.Binary (And (b, expr)) in
   let bool_assign_stmt =
     generate_lua_cn_assignment (Pp_lua.pp_expr b) (Some bool_and_expr)
@@ -1367,12 +1406,26 @@ let generate_lua_cn_bool_while_loop
         [ (Some if_cond_expr, stmts @ [ bool_assign_stmt ]); (None, get_empty_lua_stmts) ]
       in
       let lua_if_stmt = generate_lua_cn_conditional cases in
-      [ lua_if_stmt; incr_stmt ]
-    | None -> [ bool_assign_stmt; incr_stmt ]
+      [ lua_if_stmt ]
+    | None -> [ bool_assign_stmt ]
   in
-  let while_loop = LuaS.While (while_cond, loop_body) in
-  let block = LuaS.Block [ start_stmt; end_stmt; while_loop ] in
-  ([ b_decl; block ], [], b)
+  let incr_stmt = generate_lua_cn_increment_stmt sym bt in
+  let start_stmt =
+    generate_lua_cn_local_assignment (Sym.pp_string sym) (Some start_int_const)
+  in
+  let end_stmt =
+    generate_lua_cn_local_assignment (Sym.pp_string end_sym) (Some end_int_const)
+  in
+  (*@saljuk OPTIMISATION: Convert while loops to for loops *)
+  if true then (
+    let for_loop = extract_for_from_while while_cond loop_body incr_stmt in
+    let block = LuaS.Block [ start_stmt; end_stmt; for_loop ] in
+    ([ b_decl; block ], [], b))
+  else (
+    let loop_body = loop_body @ [ incr_stmt ] in
+    let while_loop = LuaS.While (while_cond, loop_body) in
+    let block = LuaS.Block [ start_stmt; end_stmt; while_loop ] in
+    ([ b_decl; block ], [], b))
 
 
 let generate_lua_cn_struct_default struct_sym struct_members =
