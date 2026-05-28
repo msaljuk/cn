@@ -148,12 +148,14 @@ let rec pp_expr ?(prec = 0) = function
       | RightShift (a, b, t) -> replace (c_int_type_op t "shr" [ a; b ])
       | Eq (a, b, true) -> binary 0 !^"==" a b
       | Eq (a, b, false) -> replace (Call (Symbol "equals", [ a; b ]))
+      | NotEq (a, b) -> binary 0 !^"~=" a b
     in
     guard ~prec prec' (group pp |> align)
   | Unary args as expr ->
     let prec' = precedence expr in
     let pp =
       match args with
+      | Not (Binary (Eq (a, b, true))) -> pp_expr ~prec (Binary (NotEq (a, b))) 
       | Not v -> prefix 2 1 !^"not" (pp_expr ~prec:prec' v)
       | Negate (v, _) -> prefix 2 1 !^"-" (pp_expr ~prec:prec' v)
       | BW_FLS v -> pp_expr ~prec (call_c_func "fls" [ v ])
