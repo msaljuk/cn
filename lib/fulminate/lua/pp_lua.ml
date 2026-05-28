@@ -135,7 +135,7 @@ let rec pp_expr ?(prec = 0) = function
       | Exp (a, b, t) -> replace (c_int_type_op t "exp" [ a; b ])
       | Remainder (a, b, t) -> renormalise (Call (Symbol "fmod", [ a; b ])) t
       | Modulo (a, b, t) -> replace (c_int_type_op t "mod" [ a; b ])
-      | LessThan (a, b, ("i8" | "i16" | "i32" | "i64")) -> binary 2 !^"<" a b
+      | LessThan (a, b, ("i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32")) -> binary 2 !^"<" a b
       | LessThan (a, b, _) -> replace (Call (Symbol "ult", [ a; b ]))
       | LessThanOrEqTo (a, b, t) -> replace (Unary (Not (Binary (LessThan (b, a, t)))))
       | Min (a, b, t) -> replace (c_int_type_op t "min" [ a; b ])
