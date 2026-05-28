@@ -45,8 +45,8 @@ and binary_expr_type =
   | BW_And of expr * expr * string
   | LeftShift of expr * expr * string
   | RightShift of expr * expr * string
-  (* NOTE: Add NotEq node. *)
   | Eq of expr * expr * bool
+  | NotEq of expr * expr
 
 and unary_expr_type =
   | Not of expr
