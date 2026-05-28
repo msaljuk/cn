@@ -248,4 +248,7 @@ function C.generate_get_array(array_type, array_size)
     end
 end
 
+-- Experimental: try Lua's generational GC
+collectgarbage("generational")
+
 return cn

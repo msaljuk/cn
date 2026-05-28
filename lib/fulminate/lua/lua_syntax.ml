@@ -28,13 +28,10 @@ and table_field_type =
 and binary_expr_type =
   | And of expr * expr
   | Or of expr * expr
-  | AddI of expr * expr
-  | Add of expr * expr * string
-  | SubtractI of expr * expr
-  | Subtract of expr * expr * string
-  | MultiplyI of expr * expr
-  | Multiply of expr * expr * string
-  | IntegerDivide of expr * expr * string
+  | Add of expr * expr
+  | Subtract of expr * expr
+  | Multiply of expr * expr
+  | IntegerDivide of expr * expr
   | FloatDivide of expr * expr
   | Exp of expr * expr * string
   | Remainder of expr * expr * string
@@ -48,15 +45,15 @@ and binary_expr_type =
   | BW_And of expr * expr * string
   | LeftShift of expr * expr * string
   | RightShift of expr * expr * string
-  (* NOTE: Add NotEq node. *)
   | Eq of expr * expr * bool
+  | NotEq of expr * expr
 
 and unary_expr_type =
   | Not of expr
-  | Negate of expr * string
+  | Negate of expr
   | BW_FLS of expr
   | BW_FLSL of expr
-  | BW_Complement of expr * string
+  | BW_Complement of expr
 
 (* Lua Statements *)
 and stmt =
@@ -76,5 +73,6 @@ and stmt =
   | IfElse of (expr option * stmt list) list (* if(cond) then ... else ... *)
   | SExpr of expr (* used to carry an expression as a statement (similar to A.AilSexpr) *)
   | While of expr * stmt list (* while(cond_expr) do\n body \n end *)
+  | ForLoop of expr * expr * expr * stmt list (* for i = start, end do\n body \nend*)
   | LineBreak (* used to add an empty line *)
   | Empty
