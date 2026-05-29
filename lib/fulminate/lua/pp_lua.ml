@@ -135,7 +135,8 @@ let rec pp_expr ?(prec = 0) = function
       | Exp (a, b, t) -> replace (c_int_type_op t "exp" [ a; b ])
       | Remainder (a, b, t) -> renormalise (Call (Symbol "fmod", [ a; b ])) t
       | Modulo (a, b, t) -> replace (c_int_type_op t "mod" [ a; b ])
-      | LessThan (a, b, ("i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32")) -> binary 2 !^"<" a b
+      | LessThan (a, b, ("i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32")) ->
+        binary 2 !^"<" a b
       | LessThan (a, b, _) -> replace (Call (Symbol "ult", [ a; b ]))
       | LessThanOrEqTo (a, b, t) -> replace (Unary (Not (Binary (LessThan (b, a, t)))))
       | Min (a, b, t) -> replace (c_int_type_op t "min" [ a; b ])
@@ -155,15 +156,16 @@ let rec pp_expr ?(prec = 0) = function
     let prec' = precedence expr in
     let pp =
       match args with
-      | Not (Binary (Eq (a, b, true))) -> pp_expr ~prec (Binary (NotEq (a, b))) 
+      | Not (Binary (Eq (a, b, true))) -> pp_expr ~prec (Binary (NotEq (a, b)))
       | Not v -> prefix 2 1 !^"not" (pp_expr ~prec:prec' v)
-      | Negate (v) -> prefix 2 0 !^"-" (pp_expr ~prec:prec' v)
+      | Negate v -> prefix 2 0 !^"-" (pp_expr ~prec:prec' v)
       | BW_FLS v -> pp_expr ~prec (call_c_func "fls" [ v ])
       | BW_FLSL v -> pp_expr ~prec (call_c_func "flsl" [ v ])
-      | BW_Complement (v) -> prefix 2 0 !^"~" (pp_expr ~prec:prec' v)
+      | BW_Complement v -> prefix 2 0 !^"~" (pp_expr ~prec:prec' v)
     in
     guard ~prec prec' (align (group pp))
   | Reduce (expr, t) -> reduce (pp_expr ~prec:(max prec 6) expr) t |> group |> align
+
 
 and pp_stmt = function
   | Assign (id, None) -> !^id

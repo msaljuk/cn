@@ -1451,7 +1451,7 @@ let cn_to_lua_unop (expr, bt, unop) =
   let lua_c_int_type = get_lua_c_int_type_str bt in
   match unop with
   | IT.Not -> LuaS.Unary (Not expr)
-  | Negate -> LuaS.Unary (Negate (expr))
+  | Negate -> LuaS.Unary (Negate expr)
   | BW_FLS_NoSMT ->
     let failure_msg =
       Printf.sprintf
@@ -1462,7 +1462,7 @@ let cn_to_lua_unop (expr, bt, unop) =
      | Bits (Unsigned, 64) -> LuaS.Unary (BW_FLSL expr)
      | Bits (Unsigned, 32) -> LuaS.Unary (BW_FLS expr)
      | _ -> failwith (__LOC__ ^ failure_msg))
-  | BW_Compl -> LuaS.Reduce (Unary (BW_Complement (expr)), lua_c_int_type)
+  | BW_Compl -> LuaS.Reduce (Unary (BW_Complement expr), lua_c_int_type)
   | BW_CLZ_NoSMT | BW_CTZ_NoSMT | BW_FFS_NoSMT ->
     failwith (__LOC__ ^ ": Failure in trying to translate SMT-only unop from C source")
 
@@ -1501,8 +1501,7 @@ let cn_to_lua_binop (expr_a, expr_b, bt_a, bt_b, binop) =
     | Sub -> LuaS.Reduce (Binary (Subtract (expr_a_d, expr_b_d)), lua_c_int_type)
     | Mul | MulNoSMT ->
       LuaS.Reduce (Binary (Multiply (expr_a_d, expr_b_d)), lua_c_int_type)
-    | Div | DivNoSMT ->
-      LuaS. (Binary (IntegerDivide (expr_a, expr_b)))
+    | Div | DivNoSMT -> LuaS.(Binary (IntegerDivide (expr_a, expr_b)))
     | Exp | ExpNoSMT -> LuaS.Binary (Exp (expr_a, expr_b, lua_c_int_type))
     | Rem | RemNoSMT -> LuaS.Binary (Remainder (expr_a, expr_b, lua_c_int_type))
     | Mod | ModNoSMT -> LuaS.Binary (Modulo (expr_a, expr_b, lua_c_int_type))
@@ -1616,7 +1615,7 @@ let cn_to_lua_member_shift struct_expr struct_tag member_tag =
   (*@saljuk OPTIMIZATION: Print out member shift inline *)
   let member_shift_expr =
     if true then
-      LuaS.(Binary (Add (struct_expr, offsets_field_expr)))
+      LuaS.Reduce (Binary (Add (struct_expr, offsets_field_expr)), "u64")
     else
       LuaS.Call (cn_member_shift_sym, [ struct_expr; offsets_field_expr ])
   in
@@ -1630,8 +1629,10 @@ let cn_to_lua_array_shift ptr_exec offset_exec ctype =
   (*@saljuk OPTIMIZATION: Print out array shift inline *)
   let array_shift_expr =
     if true then (
-      let mult_expr = LuaS.Binary (Multiply (offset_expr, sizeof_expr)) in
-      LuaS.(Binary (Add (ptr_expr, mult_expr))))
+      let mult_expr =
+        LuaS.Reduce (LuaS.Binary (Multiply (offset_expr, sizeof_expr)), "u64")
+      in
+      LuaS.Reduce (Binary (Add (ptr_expr, mult_expr)), "u64"))
     else
       Call (cn_array_shift_sym, [ ptr_expr; offset_expr; sizeof_expr ])
   in
