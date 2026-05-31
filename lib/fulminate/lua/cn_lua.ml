@@ -1115,7 +1115,7 @@ let generate_lua_cn_match_case_equality (subject, case) =
   let tag_sym = LuaS.Symbol "tag" in
   let subject_field = LuaS.Field (subject, tag_sym) in
   let case_str = LuaS.String case in
-  LuaS.Binary (Eq (subject_field, case_str, false))
+  LuaS.Binary (Eq (subject_field, case_str, true))
 
 
 let generate_lua_cn_map_define map_sym default_expr =
