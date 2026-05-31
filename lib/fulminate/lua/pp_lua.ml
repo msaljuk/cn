@@ -16,10 +16,13 @@ let the_real_if = function
   | (Some cond, stmts) :: rest ->
     let cons = (cond, stmts) in
     let alts, fin =
-      match list_last rest with
-      | alts, (None, []) -> (alts, None)
-      | alts, (None, stmts) -> (alts, Some stmts)
-      | _, (Some _, _) -> (rest, None)
+      if List.is_empty rest then 
+        ([], None)
+      else 
+        match list_last rest with
+        | alts, (None, []) -> (alts, None)
+        | alts, (None, stmts) -> (alts, Some stmts)
+        | _, (Some _, _) -> (rest, None)
     in
     let f = function Some cond, stmts -> (cond, stmts) | _ -> assert false in
     RealIfElse (cons, List.map f alts, fin)
