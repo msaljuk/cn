@@ -130,13 +130,9 @@ let ail_null = A.(AilEconst (ConstantInteger (IConstant (Z.zero, Decimal, None))
 let gather_error_message_from_loc cn_source_loc =
   let loc_str = Cerb_location.location_to_string cn_source_loc in
   let _, loc_str_2 = Cerb_location.head_pos_of_location cn_source_loc in
-  let loc_str_escaped = Str.global_replace (Str.regexp_string "\"") "\'" loc_str in
-  let loc_str_2_escaped = Str.global_replace (Str.regexp_string "\n") "\\n" loc_str_2 in
-  let loc_str_2_escaped =
-    Str.global_replace (Str.regexp_string "\"") "\'" loc_str_2_escaped
-  in
-  loc_str_2_escaped ^ loc_str_escaped
-
+  let combined = loc_str_2 ^ loc_str in
+  let escaped = String.escaped combined in
+  Str.global_replace (Str.regexp_string "\\\"") "'" escaped
 
 let generate_error_msg_info_update_stats ?(cn_source_loc_opt = None) () =
   let cn_source_loc_arg =
