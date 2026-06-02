@@ -2180,6 +2180,17 @@ let rec cn_to_ail_expr_aux
         let result_binding = create_binding result_sym (bt_to_ail_ctype basetype) in
         let result_decl = A.(AilSdeclaration [ (result_sym, None) ]) in
         let bs, ss, ls = translate 1 vars cases (Some result_sym) in
+        let ls =
+          match RC.get_runtime () with
+          | RC.C -> ls
+          | RC.Lua ->
+            let lua_result_expr = CnL.convert result_sym in
+            let lua_result_decl =
+              CnL.generate_lua_cn_local_assignment (Sym.pp_string result_sym) None
+            in
+            let ls_ss, ls_ws, _ = ls in
+            (lua_result_decl :: ls_ss, ls_ws, lua_result_expr)
+        in
         dest
           PassBack
           spec_mode_opt
