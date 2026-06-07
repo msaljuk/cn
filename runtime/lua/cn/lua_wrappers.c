@@ -41,7 +41,12 @@ static int c_assert_wrapper() {
     bool cond  = lua_toboolean(lua_state, 1);
     int64_t spec_mode = (int64_t)luaL_checkinteger(lua_state, 2);
 
-    cn_assert(convert_to_cn_bool(cond), (enum spec_mode)spec_mode);
+    // @saljuk NOTE: Inlining an equivalent implementation of cn_assert that avoids
+    // cn_bool
+    if (!cond) {
+        cn_dump_error_msgs();
+        cn_failure(CN_FAILURE_ASSERT, spec_mode);
+    }
 
     return 0;
 }
