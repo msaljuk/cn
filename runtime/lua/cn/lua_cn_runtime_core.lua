@@ -35,6 +35,7 @@ local cn = {
         NON_SPEC = 6
     },
     inline = {},
+    lemma = {},
     c = {
         -- c asserts
         assert = {},

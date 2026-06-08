@@ -1136,8 +1136,12 @@ let generate_lua_cn_map_define map_sym default_expr =
     generate_lua_cn_local_assignment map_sym_str (Some map_def_expr)
 
 
-let generate_lua_cn_spec_decl fn_sym =
-  let fn_name = Pp_lua.pp_expr cn_sym ^ "." ^ Sym.pp_string fn_sym in
+let generate_lua_cn_spec_decl ?(is_lemma = false) fn_sym =
+  let fn_name =
+    Pp_lua.pp_expr (if is_lemma then cn_lemma_sym else cn_sym)
+    ^ "."
+    ^ Sym.pp_string fn_sym
+  in
   LuaS.Assign (fn_name, Some generate_lua_cn_empty_table)
 
 
