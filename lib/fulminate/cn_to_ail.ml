@@ -134,6 +134,7 @@ let gather_error_message_from_loc cn_source_loc =
   let escaped = String.escaped combined in
   Str.global_replace (Str.regexp_string "\\\"") "'" escaped
 
+
 let generate_error_msg_info_update_stats ?(cn_source_loc_opt = None) () =
   let cn_source_loc_arg =
     match cn_source_loc_opt with
@@ -6366,13 +6367,14 @@ let cn_to_ail_lemma filename dts preds globals (sym, (loc, lemmat)) =
   match RC.get_runtime () with
   | RC.C -> ([ decl ], [ def ], [])
   | RC.Lua ->
+    let func_dec_l = CnL.generate_lua_cn_spec_decl ~is_lemma:true sym in
     let pre_stmts, pre_wrapper_funcs, _ = pre_ls in
     let post_stmts, post_wrapper_funcs, _ = post_ls in
     let pre_wrapper_decls, pre_wrapper_defs = List.split pre_wrapper_funcs in
     let post_wrapper_decls, post_wrapper_defs = List.split post_wrapper_funcs in
     ( pre_wrapper_decls @ post_wrapper_decls @ [ decl ],
       pre_wrapper_defs @ post_wrapper_defs @ [ def ],
-      pre_stmts @ post_stmts )
+      [ func_dec_l ] @ pre_stmts @ post_stmts )
 
 
 let cn_to_ail_lemmas filename dts preds globals lemmata

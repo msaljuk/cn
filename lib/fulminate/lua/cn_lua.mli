@@ -304,7 +304,7 @@ val generate_lua_cn_match_case_equality : lua_expression * string -> lua_express
 
 val generate_lua_cn_map_define : CF.Ctype.union_tag -> lua_expression -> lua_statement
 
-val generate_lua_cn_spec_decl : CF.Ctype.union_tag -> lua_statement
+val generate_lua_cn_spec_decl : ?is_lemma:bool -> CF.Ctype.union_tag -> lua_statement
 
 (*
    Utility used to generate a Lua function that pushes a bunch of 
