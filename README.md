@@ -3,6 +3,7 @@
 [![Spec Testing](https://github.com/rems-project/cn/actions/workflows/spec-testing.yml/badge.svg)](https://github.com/rems-project/cn/actions/workflows/spec-testing.yml)
 [![Rocq](https://github.com/rems-project/cn/actions/workflows/rocq.yml/badge.svg)](https://github.com/rems-project/cn/actions/workflows/rocq.yml)
 
+*NOTE:* This repository has been forked from CN to add a new Lua-based runtime for Fulminate (dubbed Silver Fulminate). For more instructions on how to use Silver Fulminate, refer to the [Fulminate README.](doc/README-FULMINATE.md) 
 
 # CN
 

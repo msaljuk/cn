@@ -32,6 +32,10 @@ cn instrument <your-file>.c --output-dir <path/to/output/dir>
 
 The translation tool injects the executable precondition right before the source function body, at the start of the given function; the executable postcondition into a label called `cn_epilogue`, which gets jumped to via a `goto` wherever there is a return statement in the source; and the executable assertions inplace, wherever they were defined in the source.
 
+### Silver Fulminate
+
+This fork adds an experimental Lua-based runtime replacement for Fulminate. To use Lua as your runtime for executing CN specifications, simply add `--experimental-lua-runtime` when you call `cn instrument`.
+
 ### Compiling, linking and running executable CN specifications
 
 To compile and link the output files described in the above section, and also to run these examples on some manually-produced concrete inputs (i.e. via a handwritten `main` function), one can run the following command:
