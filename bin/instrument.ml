@@ -466,43 +466,6 @@ let run_existing_term =
   Term.(
     const run_existing
     $ Common.Flags.cc
-    $ Common.Flags.macros
-    $ Common.Flags.permissive
-    $ Common.Flags.incl_dirs
-    $ Common.Flags.incl_files
-    $ Common.Flags.loc_pp
-    $ Common.Flags.debug_level
-    $ Common.Flags.print_level
-    $ Common.Flags.print_sym_nums
-    $ Common.Flags.no_timestamps
-    $ Flags.only
-    $ Flags.skip
-    $ Common.Flags.diag
-    $ Common.Flags.csv_times
-    $ Common.Flags.astprints
-    $ Common.Flags.dont_use_vip
-    $ Common.Flags.fail_fast
-    $ Common.Flags.no_inherit_loc
-    $ Common.Flags.magic_comment_char_dollar
-    $ Common.Flags.allow_split_magic_comments
-    $ Flags.output
-    $ Flags.output_dir
-    $ Flags.without_ownership_checking
-    $ Flags.without_loop_invariants
-    $ Flags.with_loop_leak_checks
-    $ Flags.without_lemma_checks
-    $ Flags.without_inline_statements
-    $ Term.map
-        (fun (x, y) -> x || y)
-        (Term.product Flags.with_test_gen Flags.with_testing)
-    $ Flags.run
-    $ Flags.no_debug_info
-    $ Flags.exec_c_locs_mode
-    $ Flags.correct_missing_ownership_mode
-    $ Flags.experimental_ownership_stack_mode ~docs:s_fulminate
-    $ Flags.experimental_unions
-    $ Flags.experimental_curly_braces
-    $ Flags.mktemp
     $ Flags.print_steps
     $ Flags.experimental_lua_runtime
     $ one_file)
@@ -523,18 +486,18 @@ let instrument_term =
   $ Common.Flags.permissive
   $ Common.Flags.incl_dirs
   $ Common.Flags.incl_files
-  $ Verify.Flags.loc_pp
+  $ Common.Flags.loc_pp
   $ Common.Flags.debug_level
   $ Common.Flags.print_level
   $ Common.Flags.print_sym_nums
   $ Common.Flags.no_timestamps
   $ Flags.only
   $ Flags.skip
-  $ Verify.Flags.diag
+  $ Common.Flags.diag
   $ Common.Flags.csv_times
   $ Common.Flags.astprints
-  $ Verify.Flags.dont_use_vip
-  $ Verify.Flags.fail_fast
+  $ Common.Flags.dont_use_vip
+  $ Common.Flags.fail_fast
   $ Common.Flags.no_inherit_loc
   $ Common.Flags.magic_comment_char_dollar
   $ Common.Flags.allow_split_magic_comments
@@ -550,7 +513,7 @@ let instrument_term =
   $ Flags.no_debug_info
   $ Flags.exec_c_locs_mode
   $ Flags.correct_missing_ownership_mode
-  $ Flags.experimental_ownership_stack_mode
+  $ Flags.experimental_ownership_stack_mode ~docs:s_fulminate
   $ Flags.experimental_unions
   $ Flags.experimental_curly_braces
   $ Flags.experimental_lua_runtime
